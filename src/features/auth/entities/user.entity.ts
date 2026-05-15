@@ -1,11 +1,27 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
-import { RoleEnum } from '../types/role.enum';
+import { HydratedDocument, Types } from 'mongoose';
 
 export type UserDocument = HydratedDocument<User>;
 
-@Schema({ timestamps: true, collection: 'users' })
+@Schema({
+  timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
+  collection: 'users',
+})
 export class User {
+  @Prop({
+    type: Types.ObjectId,
+    ref: 'Role',
+    required: true,
+    index: true,
+  })
+  role_id: Types.ObjectId;
+
+  @Prop({ required: true, trim: true })
+  name: string;
+
+  @Prop({ required: true, unique: true, trim: true, index: true })
+  phone: string;
+
   @Prop({
     required: true,
     unique: true,
@@ -16,21 +32,19 @@ export class User {
   email: string;
 
   @Prop({ required: true })
-  passwordHash: string;
+  password_hash: string;
 
-  @Prop({ required: true, trim: true })
-  fullName: string;
+  @Prop()
+  avatar_url?: string;
 
-  @Prop({
-    type: String,
-    enum: Object.values(RoleEnum),
-    default: RoleEnum.CUSTOMER,
-    index: true,
-  })
-  role: RoleEnum;
+  @Prop()
+  date_of_birth?: Date;
 
   @Prop({ default: true })
-  isActive: boolean;
+  is_active: boolean;
+
+  @Prop()
+  delete_requested_at?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

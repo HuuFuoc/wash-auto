@@ -1,14 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { User, UserDocument } from '../entities/user.entity';
-import { RoleEnum } from '../types/role.enum';
 
 export interface ICreateUserInput {
+  roleId: Types.ObjectId;
+  name: string;
+  phone: string;
   email: string;
   passwordHash: string;
-  fullName: string;
-  role?: RoleEnum;
+  avatarUrl?: string;
+  dateOfBirth?: Date;
 }
 
 @Injectable()
@@ -28,12 +30,20 @@ export class UserRepository {
     return found !== null;
   }
 
+  async existsByPhone(phone: string): Promise<boolean> {
+    const found = await this.userModel.exists({ phone }).exec();
+    return found !== null;
+  }
+
   async createUser(input: ICreateUserInput): Promise<UserDocument> {
     return this.userModel.create({
+      role_id: input.roleId,
+      name: input.name,
+      phone: input.phone,
       email: input.email.toLowerCase(),
-      passwordHash: input.passwordHash,
-      fullName: input.fullName,
-      role: input.role ?? RoleEnum.CUSTOMER,
+      password_hash: input.passwordHash,
+      avatar_url: input.avatarUrl,
+      date_of_birth: input.dateOfBirth,
     });
   }
 }

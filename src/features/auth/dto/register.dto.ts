@@ -1,13 +1,32 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  IsDate,
   IsEmail,
   IsNotEmpty,
+  IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
 
 export class RegisterDto {
+  @ApiProperty({ example: 'Nguyen Van A' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  name: string;
+
+  @ApiProperty({ example: '0901234567' })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^[0-9+\-\s]{8,20}$/, {
+    message: 'phone must be 8-20 chars (digits, +, -, spaces)',
+  })
+  @MaxLength(20)
+  phone: string;
+
   @ApiProperty({ example: 'customer@example.com' })
   @IsEmail()
   @MaxLength(255)
@@ -20,9 +39,9 @@ export class RegisterDto {
   @MaxLength(72)
   password: string;
 
-  @ApiProperty({ example: 'Nguyen Van A' })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(100)
-  fullName: string;
+  @ApiPropertyOptional({ example: '1995-01-15' })
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  dateOfBirth?: Date;
 }
