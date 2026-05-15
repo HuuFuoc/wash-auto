@@ -10,6 +10,7 @@ import { CacheModule } from './core/cache/cache.module';
 import { DatabaseModule } from './core/database/database.module';
 import { AuthModule } from './features/auth/auth.module';
 import { ServiceTypeModule } from './features/service-type/service-type.module';
+import { UserModule } from './features/user/user.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { ServiceTypeModule } from './features/service-type/service-type.module';
     CacheModule,
     AuthModule,
     ServiceTypeModule,
+    UserModule,
   ],
   controllers: [AppController],
   providers: [AppService],
