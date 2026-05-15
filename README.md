@@ -1,5 +1,7 @@
 # SWD_SU26_BE
 
+Wash Automation & VIP Experience
+
 Backend API cho dự án môn WDP301 - Kỳ 8 FPT University, xây dựng bằng [NestJS](https://nestjs.com) và TypeScript.
 
 ## Yêu cầu hệ thống
