@@ -11,6 +11,7 @@ import { DatabaseModule } from './core/database/database.module';
 import { AuthModule } from './features/auth/auth.module';
 import { ServiceTypeModule } from './features/service-type/service-type.module';
 import { UserModule } from './features/user/user.module';
+import { VehicleTypeModule } from './features/vehicle-type/vehicle-type.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { UserModule } from './features/user/user.module';
     AuthModule,
     ServiceTypeModule,
     UserModule,
+    VehicleTypeModule,
   ],
   controllers: [AppController],
   providers: [AppService],
