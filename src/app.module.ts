@@ -9,6 +9,7 @@ import databaseConfig from './config/database.config';
 import { CacheModule } from './core/cache/cache.module';
 import { DatabaseModule } from './core/database/database.module';
 import { AuthModule } from './features/auth/auth.module';
+import { ServiceTypeModule } from './features/service-type/service-type.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { AuthModule } from './features/auth/auth.module';
     DatabaseModule,
     CacheModule,
     AuthModule,
+    ServiceTypeModule,
   ],
   controllers: [AppController],
   providers: [AppService],
