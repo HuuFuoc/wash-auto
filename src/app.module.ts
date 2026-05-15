@@ -2,14 +2,23 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { DatabaseModule } from './database/database.module';
-import { RedisModule } from './redis/redis.module';
+import appConfig from './config/app.config';
+import authConfig from './config/auth.config';
+import cacheConfig from './config/cache.config';
+import databaseConfig from './config/database.config';
+import { CacheModule } from './core/cache/cache.module';
+import { DatabaseModule } from './core/database/database.module';
+import { AuthModule } from './features/auth/auth.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: [appConfig, databaseConfig, authConfig, cacheConfig],
+    }),
     DatabaseModule,
-    RedisModule,
+    CacheModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
