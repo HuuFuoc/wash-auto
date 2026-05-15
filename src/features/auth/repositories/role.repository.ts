@@ -36,7 +36,7 @@ export class RoleRepository {
             is_active: true,
           },
         },
-        { upsert: true, new: true },
+        { upsert: true, returnDocument: 'after' },
       )
       .exec();
     if (!doc) {
