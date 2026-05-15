@@ -23,6 +23,10 @@ export class UserRepository {
     return this.userModel.findOne({ email: email.toLowerCase() }).exec();
   }
 
+  async findById(id: Types.ObjectId | string): Promise<UserDocument | null> {
+    return this.userModel.findById(id).exec();
+  }
+
   async existsByEmail(email: string): Promise<boolean> {
     const found = await this.userModel
       .exists({ email: email.toLowerCase() })

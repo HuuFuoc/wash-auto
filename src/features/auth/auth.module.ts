@@ -8,6 +8,7 @@ import { Role, RoleSchema } from './entities/role.entity';
 import { User, UserSchema } from './entities/user.entity';
 import { RoleRepository } from './repositories/role.repository';
 import { UserRepository } from './repositories/user.repository';
+import { RefreshTokenService } from './services/refresh-token.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RoleEnum } from './types/role.enum';
 
@@ -55,7 +56,13 @@ const DEFAULT_ROLES: IDefaultRole[] = [
     JwtModule.register({}),
   ],
   controllers: [AuthController],
-  providers: [AuthService, UserRepository, RoleRepository, JwtStrategy],
+  providers: [
+    AuthService,
+    UserRepository,
+    RoleRepository,
+    RefreshTokenService,
+    JwtStrategy,
+  ],
   exports: [AuthService, UserRepository, RoleRepository],
 })
 export class AuthModule implements OnModuleInit {
