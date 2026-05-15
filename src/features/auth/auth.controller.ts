@@ -14,7 +14,9 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../shared/decorators/current-user.decorator';
+import { Roles } from '../../shared/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard';
+import { RolesGuard } from '../../shared/guards/roles.guard';
 import type { IAuthPayload } from '../../shared/types/auth-payload.type';
 import { AuthService } from './auth.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
@@ -22,6 +24,7 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UserResponseDto } from './dto/user-response.dto';
+import { RoleEnum } from './types/role.enum';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -77,5 +80,20 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Missing or invalid access token' })
   getMe(@CurrentUser() user: IAuthPayload): IAuthPayload {
     return user;
+  }
+
+  @Get('admin-only')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(RoleEnum.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Demo endpoint restricted to admin role' })
+  @ApiResponse({ status: 200 })
+  @ApiResponse({ status: 401, description: 'Missing or invalid access token' })
+  @ApiResponse({ status: 403, description: 'Authenticated but not an admin' })
+  adminOnly(@CurrentUser() user: IAuthPayload): {
+    ok: true;
+    user: IAuthPayload;
+  } {
+    return { ok: true, user };
   }
 }
