@@ -50,8 +50,9 @@ export class OrderResponseDto {
     dto.status = doc.status;
     dto.checkoutUrl = doc.checkout_url;
     dto.notes = doc.notes;
-    dto.createdAt = (doc as any).created_at;
-    dto.updatedAt = (doc as any).updated_at;
+    const ts = doc as unknown as { created_at: Date; updated_at: Date };
+    dto.createdAt = ts.created_at;
+    dto.updatedAt = ts.updated_at;
     return dto;
   }
 }

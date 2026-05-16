@@ -40,7 +40,10 @@ export class PaymentController {
       'Creates a new order and returns a PayOS checkout URL for payment. Amount is derived from the selected service type base price.',
   })
   @ApiResponse({ status: 201, type: OrderResponseDto })
-  @ApiResponse({ status: 400, description: 'Service type not found or inactive' })
+  @ApiResponse({
+    status: 400,
+    description: 'Service type not found or inactive',
+  })
   @ApiResponse({ status: 404, description: 'Vehicle not found' })
   create(
     @CurrentUser() user: IAuthPayload,

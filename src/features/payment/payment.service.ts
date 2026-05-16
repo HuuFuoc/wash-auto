@@ -51,9 +51,7 @@ export class PaymentService {
       throw new BadRequestException('Service type not found or inactive');
     }
 
-    const amount = Math.round(
-      parseFloat(serviceType.base_price.toString()),
-    );
+    const amount = Math.round(parseFloat(serviceType.base_price.toString()));
 
     const orderCode = this.generateOrderCode();
     const description = `Rua xe ${orderCode}`;
@@ -98,7 +96,9 @@ export class PaymentService {
         status: OrderStatus.CANCELLED,
       });
       this.logger.error('Failed to create PayOS payment link', err);
-      throw new BadRequestException('Failed to create payment link. Please try again.');
+      throw new BadRequestException(
+        'Failed to create payment link. Please try again.',
+      );
     }
   }
 
@@ -119,7 +119,7 @@ export class PaymentService {
     ]);
 
     return {
-      data: docs.map(OrderResponseDto.fromDocument),
+      data: docs.map((d) => OrderResponseDto.fromDocument(d)),
       meta: {
         page,
         limit,
@@ -129,10 +129,7 @@ export class PaymentService {
     };
   }
 
-  async getMyOrder(
-    customerId: string,
-    id: string,
-  ): Promise<OrderResponseDto> {
+  async getMyOrder(customerId: string, id: string): Promise<OrderResponseDto> {
     const doc = await this.orderRepository.findByIdForOwner(id, customerId);
     if (!doc) throw new NotFoundException('Order not found');
     return OrderResponseDto.fromDocument(doc);
@@ -173,7 +170,9 @@ export class PaymentService {
   }
 
   async handleWebhook(body: unknown): Promise<void> {
-    let webhookData: Awaited<ReturnType<typeof this.payosService.verifyWebhookData>>;
+    let webhookData: Awaited<
+      ReturnType<typeof this.payosService.verifyWebhookData>
+    >;
     try {
       webhookData = await this.payosService.verifyWebhookData(
         body as Parameters<typeof this.payosService.verifyWebhookData>[0],
@@ -186,9 +185,7 @@ export class PaymentService {
     const { orderCode, amount, transactionDateTime, reference, code, desc } =
       webhookData;
 
-    const order = await this.orderRepository.findByOrderCode(
-      Number(orderCode),
-    );
+    const order = await this.orderRepository.findByOrderCode(Number(orderCode));
     if (!order) {
       this.logger.warn('Webhook received for unknown orderCode', { orderCode });
       return;
@@ -238,7 +235,7 @@ export class PaymentService {
     ]);
 
     return {
-      data: docs.map(OrderResponseDto.fromDocument),
+      data: docs.map((d) => OrderResponseDto.fromDocument(d)),
       meta: {
         page,
         limit,
