@@ -10,6 +10,7 @@ import { CacheModule } from './core/cache/cache.module';
 import { DatabaseModule } from './core/database/database.module';
 import { AuthModule } from './features/auth/auth.module';
 import { ServiceTypeModule } from './features/service-type/service-type.module';
+import { TierConfigModule } from './features/tier-config/tier-config.module';
 import { UserModule } from './features/user/user.module';
 import { VehicleModule } from './features/vehicle/vehicle.module';
 import { VehicleTypeModule } from './features/vehicle-type/vehicle-type.module';
@@ -27,6 +28,7 @@ import { VehicleTypeModule } from './features/vehicle-type/vehicle-type.module';
     UserModule,
     VehicleTypeModule,
     VehicleModule,
+    TierConfigModule,
   ],
   controllers: [AppController],
   providers: [AppService],
