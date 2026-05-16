@@ -58,3 +58,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Project docs (kept local, not tracked)
 /docs
+
+# Claude Code local settings (per-machine)
+/.claude
