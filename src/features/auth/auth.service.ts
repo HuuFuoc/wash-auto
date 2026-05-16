@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import type { SignOptions } from 'jsonwebtoken';
 import { IAuthPayload } from '../../shared/types/auth-payload.type';
+import { LoyaltyService } from '../loyalty/loyalty.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -33,6 +34,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly jwtService: JwtService,
     private readonly refreshTokenService: RefreshTokenService,
+    private readonly loyaltyService: LoyaltyService,
   ) {}
 
   async register(dto: RegisterDto): Promise<UserResponseDto> {
@@ -65,6 +67,18 @@ export class AuthService {
       passwordHash,
       dateOfBirth: dto.dateOfBirth,
     });
+
+    // Auto-create loyalty account at Member tier. Idempotent —
+    // safe if a later read endpoint also lazy-creates.
+    try {
+      await this.loyaltyService.ensureForCustomer(user._id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        'Loyalty auto-create failed during register; will lazy-create on first /me/loyalty read',
+        { userId: user._id.toString(), error: message },
+      );
+    }
 
     return UserResponseDto.fromDocument(user, RoleEnum.CUSTOMER);
   }

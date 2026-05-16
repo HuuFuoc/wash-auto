@@ -2,6 +2,7 @@ import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { PassportModule } from '@nestjs/passport';
+import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { Role, RoleSchema } from './entities/role.entity';
@@ -54,6 +55,7 @@ const DEFAULT_ROLES: IDefaultRole[] = [
     ]),
     PassportModule,
     JwtModule.register({}),
+    LoyaltyModule,
   ],
   controllers: [AuthController],
   providers: [
