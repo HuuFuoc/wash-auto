@@ -9,6 +9,7 @@ import databaseConfig from './config/database.config';
 import { CacheModule } from './core/cache/cache.module';
 import { DatabaseModule } from './core/database/database.module';
 import { AuthModule } from './features/auth/auth.module';
+import { LoyaltyModule } from './features/loyalty/loyalty.module';
 import { ServiceTypeModule } from './features/service-type/service-type.module';
 import { TierConfigModule } from './features/tier-config/tier-config.module';
 import { UserModule } from './features/user/user.module';
@@ -29,6 +30,7 @@ import { VehicleTypeModule } from './features/vehicle-type/vehicle-type.module';
     VehicleTypeModule,
     VehicleModule,
     TierConfigModule,
+    LoyaltyModule,
   ],
   controllers: [AppController],
   providers: [AppService],
