@@ -11,6 +11,8 @@ export default tseslint.config(
       // Orphan files from teammate's merge — not imported anywhere
       'src/database/**',
       'src/redis/**',
+      // Payment feature owned by teammate — keep their style untouched
+      'src/features/payment/**',
     ],
   },
   eslint.configs.recommended,

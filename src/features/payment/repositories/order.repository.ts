@@ -1,11 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import {
-  Order,
-  OrderDocument,
-  OrderStatus,
-} from '../entities/order.entity';
+import { Order, OrderDocument, OrderStatus } from '../entities/order.entity';
 
 export interface ICreateOrderInput {
   customerId: Types.ObjectId;
@@ -72,7 +68,8 @@ export class OrderRepository {
   ): Promise<OrderDocument | null> {
     const update: Record<string, unknown> = {};
     if (input.status !== undefined) update.status = input.status;
-    if (input.checkoutUrl !== undefined) update.checkout_url = input.checkoutUrl;
+    if (input.checkoutUrl !== undefined)
+      update.checkout_url = input.checkoutUrl;
     if (input.paymentLinkId !== undefined)
       update.payment_link_id = input.paymentLinkId;
 

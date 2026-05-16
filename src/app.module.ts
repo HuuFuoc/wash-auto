@@ -13,6 +13,7 @@ import { AuthModule } from './features/auth/auth.module';
 import { LoyaltyModule } from './features/loyalty/loyalty.module';
 import { ServiceTypeModule } from './features/service-type/service-type.module';
 import { PaymentModule } from './features/payment/payment.module';
+import { StaffShiftModule } from './features/staff-shift/staff-shift.module';
 import { TierConfigModule } from './features/tier-config/tier-config.module';
 import { UserModule } from './features/user/user.module';
 import { VehicleModule } from './features/vehicle/vehicle.module';
@@ -33,6 +34,7 @@ import { VehicleTypeModule } from './features/vehicle-type/vehicle-type.module';
     VehicleModule,
     TierConfigModule,
     LoyaltyModule,
+    StaffShiftModule,
     PaymentModule,
   ],
   controllers: [AppController],
