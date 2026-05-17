@@ -39,7 +39,7 @@ jobs:
         run: npm test -- --passWithNoTests --ci
 
   deploy:
-    name: Deploy to Railway
+    name: Deploy to Vercel
     needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -50,15 +50,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-
-      - name: Install Railway CLI
-        run: npm i -g @railway/cli
-
       - name: Deploy
-        run: railway up --service ${{ secrets.RAILWAY_SERVICE }} --detach
+        run: npx vercel --prod --token=${{ secrets.VERCEL_TOKEN }} --yes
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
