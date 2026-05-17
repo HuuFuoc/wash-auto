@@ -72,9 +72,7 @@ export class OtpService {
       throw new BadRequestException('Invalid or expired OTP');
     }
 
-    const maxAttempts = this.config.getOrThrow<number>(
-      'otp.maxVerifyAttempts',
-    );
+    const maxAttempts = this.config.getOrThrow<number>('otp.maxVerifyAttempts');
     if (stored.attempts >= maxAttempts) {
       await this.redis.del(key);
       throw new BadRequestException('Invalid or expired OTP');

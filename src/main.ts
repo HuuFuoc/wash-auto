@@ -47,7 +47,10 @@ async function bootstrap(): Promise<void> {
   const port = configService.getOrThrow<number>('app.port');
   await app.listen(port);
 
-  Logger.log(`Server running on http://localhost:${port}/${globalPrefix}`, 'Bootstrap');
+  Logger.log(
+    `Server running on http://localhost:${port}/${globalPrefix}`,
+    'Bootstrap',
+  );
   Logger.log(`Swagger docs at http://localhost:${port}/docs`, 'Bootstrap');
 }
 

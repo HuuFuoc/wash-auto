@@ -103,9 +103,7 @@ export class OrderRepository {
       .exec();
   }
 
-  async findByPayosOrderCode(
-    orderCode: number,
-  ): Promise<OrderDocument | null> {
+  async findByPayosOrderCode(orderCode: number): Promise<OrderDocument | null> {
     return this.model.findOne({ payos_order_code: orderCode }).exec();
   }
 

@@ -56,18 +56,12 @@ export const configValidationSchema = Joi.object({
   PAYOS_RETURN_URL: Joi.string().uri().required(),
   PAYOS_CANCEL_URL: Joi.string().uri().required(),
 
-  MAX_ACTIVE_BOOKINGS_PER_CUSTOMER: Joi.number()
-    .integer()
-    .min(1)
-    .default(3),
+  MAX_ACTIVE_BOOKINGS_PER_CUSTOMER: Joi.number().integer().min(1).default(3),
   MAX_RESCHEDULES: Joi.number().integer().min(0).default(2),
   BOOKING_PAYMENT_TIMEOUT_MINUTES: Joi.number()
     .integer()
     .min(5)
     .max(60)
     .default(15),
-  IDEMPOTENCY_TTL_SECONDS: Joi.number()
-    .integer()
-    .min(3600)
-    .default(86400),
+  IDEMPOTENCY_TTL_SECONDS: Joi.number().integer().min(3600).default(86400),
 });

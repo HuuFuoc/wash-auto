@@ -77,9 +77,7 @@ export class StaffShiftRepository {
     scheduledAt: Date,
     durationMinutes: number,
   ): Promise<StaffShiftDocument[]> {
-    const finishAt = new Date(
-      scheduledAt.getTime() + durationMinutes * 60_000,
-    );
+    const finishAt = new Date(scheduledAt.getTime() + durationMinutes * 60_000);
     return this.model
       .find({
         status: ShiftStatusEnum.SCHEDULED,

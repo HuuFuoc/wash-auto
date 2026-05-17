@@ -1,4 +1,7 @@
-import { ACTIVE_ORDER_STATUSES, OrderStatusEnum } from './types/order-status.enum';
+import {
+  ACTIVE_ORDER_STATUSES,
+  OrderStatusEnum,
+} from './types/order-status.enum';
 
 const TRANSITIONS: Record<OrderStatusEnum, OrderStatusEnum[]> = {
   [OrderStatusEnum.PENDING_PAYMENT]: [

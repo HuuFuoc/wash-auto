@@ -114,8 +114,7 @@ export class OrderService {
     const maxActive = this.config.getOrThrow<number>(
       'booking.maxActivePerCustomer',
     );
-    const active =
-      await this.orderRepository.countActiveByCustomer(customerId);
+    const active = await this.orderRepository.countActiveByCustomer(customerId);
     if (active >= maxActive) {
       throw new BadRequestException(
         `You already have ${active} active orders (limit ${maxActive})`,
@@ -160,7 +159,9 @@ export class OrderService {
     // 8) Create order; rollback shift slot on failure
     let order: OrderDocument;
     try {
-      const payosOrderCode = isOnline ? await this.generateOrderCode() : undefined;
+      const payosOrderCode = isOnline
+        ? await this.generateOrderCode()
+        : undefined;
       order = await this.orderRepository.create({
         customerId: new Types.ObjectId(customerId),
         vehicleId: new Types.ObjectId(dto.vehicleId),
@@ -176,9 +177,7 @@ export class OrderService {
         payosOrderCode,
       });
     } catch (err) {
-      await this.staffShiftRepository.decrementCurrentBookings(
-        reservedShiftId,
-      );
+      await this.staffShiftRepository.decrementCurrentBookings(reservedShiftId);
       throw err;
     }
 
@@ -673,9 +672,7 @@ export class OrderService {
    * because by the time this is called (post-webhook) payment is settled
    * and the link is no longer actionable.
    */
-  private async sendConfirmationEmailSafe(
-    order: OrderDocument,
-  ): Promise<void> {
+  private async sendConfirmationEmailSafe(order: OrderDocument): Promise<void> {
     try {
       const [user, service] = await Promise.all([
         this.userRepository.findById(order.customer_id),

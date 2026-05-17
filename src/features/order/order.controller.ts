@@ -48,7 +48,10 @@ export class OrderController {
       '8-128 chars [A-Za-z0-9_-:.]. Retries return cached response + header Idempotent-Replayed=true.',
   })
   @ApiResponse({ status: 201, type: OrderResponseDto })
-  @ApiResponse({ status: 400, description: 'Validation / business rule failed' })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation / business rule failed',
+  })
   @ApiResponse({ status: 401, description: 'Missing or invalid access token' })
   @ApiResponse({ status: 404, description: 'Vehicle not found' })
   @ApiResponse({ status: 409, description: 'Shift is full' })

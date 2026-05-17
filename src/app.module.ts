@@ -60,9 +60,6 @@ import { VehicleTypeModule } from './features/vehicle-type/vehicle-type.module';
     OrderModule,
   ],
   controllers: [AppController],
-  providers: [
-    AppService,
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
-  ],
+  providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}
