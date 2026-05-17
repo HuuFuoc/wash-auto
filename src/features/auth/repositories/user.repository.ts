@@ -84,6 +84,18 @@ export class UserRepository {
     return found !== null;
   }
 
+  /** Returns user _ids whose phone contains the given substring (case-insensitive). */
+  async findIdsByPhoneLike(phoneLike: string): Promise<Types.ObjectId[]> {
+    const term = phoneLike.trim();
+    if (term.length === 0) return [];
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const docs = await this.userModel
+      .find({ phone: { $regex: escaped, $options: 'i' } })
+      .select({ _id: 1 })
+      .exec();
+    return docs.map((d) => d._id);
+  }
+
   async createUser(input: ICreateUserInput): Promise<UserDocument> {
     return this.userModel.create({
       role_id: input.roleId,

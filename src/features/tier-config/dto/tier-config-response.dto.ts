@@ -12,14 +12,23 @@ export class TierConfigResponseDto {
   @ApiProperty({ example: 0 })
   minVisitsPerMonth: number;
 
-  @ApiProperty({ example: 3 })
+  @ApiProperty({ example: 7 })
   bookingWindowDays: number;
 
   @ApiProperty({ example: 0 })
   priorityLevel: number;
 
-  @ApiProperty({ example: 10 })
-  pointsPerWash: number;
+  @ApiProperty({
+    example: 1,
+    description: 'Points awarded per 1,000 VND spent (can be fractional).',
+  })
+  pointsPer1000Vnd: number;
+
+  @ApiProperty({
+    example: 0,
+    description: 'Discount percent applied per wash for this tier (0–100).',
+  })
+  discountPercent: number;
 
   @ApiProperty({ example: true })
   isActive: boolean;
@@ -31,7 +40,8 @@ export class TierConfigResponseDto {
     dto.minVisitsPerMonth = doc.min_visits_per_month;
     dto.bookingWindowDays = doc.booking_window_days;
     dto.priorityLevel = doc.priority_level;
-    dto.pointsPerWash = doc.points_per_wash;
+    dto.pointsPer1000Vnd = doc.points_per_1000_vnd;
+    dto.discountPercent = doc.discount_percent;
     dto.isActive = doc.is_active;
     return dto;
   }

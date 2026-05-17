@@ -152,6 +152,20 @@ export class VehicleRepository {
     return found !== null;
   }
 
+  /** Returns vehicle _ids whose license_plate contains the given substring (case-insensitive). */
+  async findIdsByLicensePlateLike(
+    plateLike: string,
+  ): Promise<Types.ObjectId[]> {
+    const term = plateLike.trim();
+    if (term.length === 0) return [];
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const docs = await this.model
+      .find({ license_plate: { $regex: escaped, $options: 'i' } })
+      .select({ _id: 1 })
+      .exec();
+    return docs.map((d) => d._id);
+  }
+
   async countMatching(filter: IVehicleListFilter): Promise<number> {
     return this.model.countDocuments(this.buildQuery(filter)).exec();
   }
