@@ -11,6 +11,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       tls: { rejectUnauthorized: false },
       lazyConnect: false,
       maxRetriesPerRequest: 3,
+      enableAutoPipelining: true,
+      keepAlive: 10_000,
+      connectTimeout: 10_000,
+      commandTimeout: 5_000,
+      retryStrategy: (times) => Math.min(times * 200, 2_000),
     });
 
     this.client.on('connect', () => this.logger.log('Connected to Redis'));
