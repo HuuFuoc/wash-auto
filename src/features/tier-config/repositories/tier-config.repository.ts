@@ -9,14 +9,16 @@ export interface IUpsertTierInput {
   minVisitsPerMonth: number;
   bookingWindowDays: number;
   priorityLevel: number;
-  pointsPerWash: number;
+  pointsPer1000Vnd: number;
+  discountPercent: number;
 }
 
 export interface IUpdateTierInput {
   minVisitsPerMonth?: number;
   bookingWindowDays?: number;
   priorityLevel?: number;
-  pointsPerWash?: number;
+  pointsPer1000Vnd?: number;
+  discountPercent?: number;
 }
 
 @Injectable()
@@ -58,7 +60,8 @@ export class TierConfigRepository {
             min_visits_per_month: input.minVisitsPerMonth,
             booking_window_days: input.bookingWindowDays,
             priority_level: input.priorityLevel,
-            points_per_wash: input.pointsPerWash,
+            points_per_1000_vnd: input.pointsPer1000Vnd,
+            discount_percent: input.discountPercent,
             is_active: true,
           },
         },
@@ -82,8 +85,10 @@ export class TierConfigRepository {
       update.booking_window_days = input.bookingWindowDays;
     if (input.priorityLevel !== undefined)
       update.priority_level = input.priorityLevel;
-    if (input.pointsPerWash !== undefined)
-      update.points_per_wash = input.pointsPerWash;
+    if (input.pointsPer1000Vnd !== undefined)
+      update.points_per_1000_vnd = input.pointsPer1000Vnd;
+    if (input.discountPercent !== undefined)
+      update.discount_percent = input.discountPercent;
 
     return this.model
       .findByIdAndUpdate(id, { $set: update }, { returnDocument: 'after' })

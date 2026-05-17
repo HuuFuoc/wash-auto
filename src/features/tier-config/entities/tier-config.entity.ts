@@ -27,8 +27,15 @@ export class TierConfig {
   @Prop({ required: true, unique: true, min: 0 })
   priority_level: number;
 
+  // Points earned per 1,000 VND spent (deviation from spec §3.14 which had
+  // `points_per_wash` flat-per-wash). Aligned with FE landing-page copy.
   @Prop({ required: true, min: 0 })
-  points_per_wash: number;
+  points_per_1000_vnd: number;
+
+  // Discount percent applied per wash for this tier (e.g. Silver=5, Gold=10).
+  // New field, not in spec §3.14 — added to match FE pricing card.
+  @Prop({ required: true, default: 0, min: 0, max: 100 })
+  discount_percent: number;
 
   @Prop({ default: true, index: true })
   is_active: boolean;

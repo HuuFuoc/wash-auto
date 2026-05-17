@@ -17,37 +17,47 @@ interface IDefaultTier {
   minVisitsPerMonth: number;
   bookingWindowDays: number;
   priorityLevel: number;
-  pointsPerWash: number;
+  pointsPer1000Vnd: number;
+  discountPercent: number;
 }
 
+// Values aligned with FE landing page (wave-wash.vercel.app):
+//   Member   — đặt trước 7 ngày,  1   điểm/1000đ, 0% giảm
+//   Silver   — đặt trước 10 ngày, 1.5 điểm/1000đ, 5% giảm
+//   Gold     — đặt trước 12 ngày, 2   điểm/1000đ, 10% giảm
+//   Platinum — đặt trước 14 ngày, 3   điểm/1000đ, 15% giảm
 const DEFAULT_TIERS: IDefaultTier[] = [
   {
     tierName: TierNameEnum.MEMBER,
     minVisitsPerMonth: 0,
-    bookingWindowDays: 3,
+    bookingWindowDays: 7,
     priorityLevel: 0,
-    pointsPerWash: 10,
+    pointsPer1000Vnd: 1,
+    discountPercent: 0,
   },
   {
     tierName: TierNameEnum.SILVER,
     minVisitsPerMonth: 2,
-    bookingWindowDays: 7,
+    bookingWindowDays: 10,
     priorityLevel: 1,
-    pointsPerWash: 15,
+    pointsPer1000Vnd: 1.5,
+    discountPercent: 5,
   },
   {
     tierName: TierNameEnum.GOLD,
     minVisitsPerMonth: 5,
-    bookingWindowDays: 14,
+    bookingWindowDays: 12,
     priorityLevel: 2,
-    pointsPerWash: 20,
+    pointsPer1000Vnd: 2,
+    discountPercent: 10,
   },
   {
     tierName: TierNameEnum.PLATINUM,
     minVisitsPerMonth: 10,
-    bookingWindowDays: 30,
+    bookingWindowDays: 14,
     priorityLevel: 3,
-    pointsPerWash: 30,
+    pointsPer1000Vnd: 3,
+    discountPercent: 15,
   },
 ];
 
