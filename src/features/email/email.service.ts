@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { setDefaultResultOrder } from 'dns';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 
@@ -23,6 +24,7 @@ export class EmailService implements OnModuleInit {
   constructor(private readonly config: ConfigService) {}
 
   onModuleInit(): void {
+    setDefaultResultOrder('ipv4first');
     this.transporter = nodemailer.createTransport({
       host: this.config.getOrThrow<string>('email.host'),
       port: this.config.getOrThrow<number>('email.port'),
