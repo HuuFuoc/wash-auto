@@ -220,8 +220,10 @@ export class OrderService {
     //   - CASH → send now, the order is already CONFIRMED.
     //   - ONLINE → defer until the PayOS webhook flips us to CONFIRMED+PAID,
     //     so the customer never gets a "confirmation" for an unpaid booking.
+    // Awaited (not fire-and-forget) so serverless platforms like Vercel
+    // don't freeze the function before SMTP finishes sending.
     if (dto.paymentMethod === PaymentMethodEnum.CASH) {
-      void this.sendConfirmationEmailSafe(order);
+      await this.sendConfirmationEmailSafe(order);
     }
 
     this.logger.log(
@@ -432,8 +434,9 @@ export class OrderService {
             paymentStatus: PaymentStatusEnum.PAID,
           });
           // Payment settled — now safe to send the confirmation email.
+          // Awaited so the serverless function doesn't freeze before SMTP completes.
           if (updated) {
-            void this.sendConfirmationEmailSafe(updated);
+            await this.sendConfirmationEmailSafe(updated);
           }
         } else {
           if (consumesShiftCapacity(order.status)) {
