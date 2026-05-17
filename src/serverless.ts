@@ -47,7 +47,8 @@ async function bootstrap(): Promise<void> {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   // Vercel serverless can't serve swagger-ui-dist static files reliably,
   // so load Swagger UI assets from a public CDN instead.
-  const swaggerCdn = 'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14';
+  const swaggerCdn =
+    'https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14';
   SwaggerModule.setup('docs', app, document, {
     customCssUrl: `${swaggerCdn}/swagger-ui.min.css`,
     customJs: [
