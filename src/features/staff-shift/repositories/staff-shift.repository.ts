@@ -67,6 +67,30 @@ export class StaffShiftRepository {
       .exec();
   }
 
+  /**
+   * Returns SCHEDULED shifts that fully contain the wash window
+   * [scheduledAt, scheduledAt + durationMinutes] AND still have capacity.
+   * Sorted by current_bookings ASC then start_at ASC so the caller
+   * load-balances across bays and prefers the earliest-starting shift on ties.
+   */
+  async findShiftsContaining(
+    scheduledAt: Date,
+    durationMinutes: number,
+  ): Promise<StaffShiftDocument[]> {
+    const finishAt = new Date(
+      scheduledAt.getTime() + durationMinutes * 60_000,
+    );
+    return this.model
+      .find({
+        status: ShiftStatusEnum.SCHEDULED,
+        start_at: { $lte: scheduledAt },
+        end_at: { $gte: finishAt },
+        $expr: { $lt: ['$current_bookings', '$max_bookings'] },
+      })
+      .sort({ current_bookings: 1, start_at: 1 })
+      .exec();
+  }
+
   async findById(
     id: Types.ObjectId | string,
   ): Promise<StaffShiftDocument | null> {

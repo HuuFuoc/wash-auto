@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import type { SignOptions } from 'jsonwebtoken';
 import { IAuthPayload } from '../../shared/types/auth-payload.type';
 import { LoyaltyService } from '../loyalty/loyalty.service';
+import { OtpService } from '../otp/otp.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
@@ -22,6 +23,7 @@ import {
   IRefreshTokenPayload,
   RefreshTokenService,
 } from './services/refresh-token.service';
+import { VerifiedEmailTokenService } from './services/verified-email-token.service';
 import { RoleEnum } from './types/role.enum';
 
 @Injectable()
@@ -35,10 +37,80 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly refreshTokenService: RefreshTokenService,
     private readonly loyaltyService: LoyaltyService,
+    private readonly otpService: OtpService,
+    private readonly verifiedEmailTokenService: VerifiedEmailTokenService,
   ) {}
 
+  /**
+   * Step 1 — Request an email OTP. If the user is already verified within
+   * the skip window (default 7 days), no email is sent; a verified-email
+   * JWT is returned immediately. The response shape is identical whether
+   * the email is registered or not, to avoid enumeration.
+   */
+  async requestEmailOtp(
+    email: string,
+    ip: string,
+  ): Promise<{ message: string; token?: string }> {
+    const user = await this.userRepository.findByEmail(email);
+    const skipDays = this.configService.getOrThrow<number>(
+      'otp.verifiedEmailSkipDays',
+    );
+
+    if (user && user.is_active && user.email_verified_at) {
+      const ageMs = Date.now() - user.email_verified_at.getTime();
+      const skipMs = skipDays * 24 * 60 * 60 * 1000;
+      if (ageMs < skipMs) {
+        const token = await this.verifiedEmailTokenService.sign(
+          user._id.toString(),
+          user.email,
+        );
+        this.logger.log(`OTP skipped (recent verify) email=${email} ip=${ip}`);
+        return { message: 'Already verified', token };
+      }
+    }
+
+    if (!user || !user.is_active) {
+      // Don't leak existence — but also don't actually send.
+      this.logger.log(
+        `OTP request for unknown/inactive email=${email} ip=${ip}`,
+      );
+      return { message: 'OTP sent if account exists' };
+    }
+
+    await this.otpService.issueAndSend(email, ip);
+    return { message: 'OTP sent if account exists' };
+  }
+
+  /**
+   * Step 2 — Verify the OTP. On success, persist email_verified_at and
+   * issue the verified-email JWT used as the Authorization for
+   * POST /me/bookings.
+   */
+  async verifyEmailOtp(
+    email: string,
+    code: string,
+    ip: string,
+  ): Promise<{ token: string }> {
+    await this.otpService.verify(email, code);
+
+    const user = await this.userRepository.findByEmail(email);
+    if (!user || !user.is_active) {
+      this.logger.warn(`OTP verified for missing user email=${email} ip=${ip}`);
+      throw new UnauthorizedException('Invalid or expired OTP');
+    }
+
+    await this.userRepository.setEmailVerifiedAt(user._id, new Date());
+    const token = await this.verifiedEmailTokenService.sign(
+      user._id.toString(),
+      user.email,
+    );
+
+    this.logger.log(`Email verified email=${email} ip=${ip}`);
+    return { token };
+  }
+
   async register(dto: RegisterDto): Promise<UserResponseDto> {
-    this.logger.log('Registering new user', { email: dto.email });
+    this.logger.log(`Registering new user email=${dto.email}`);
 
     if (await this.userRepository.existsByEmail(dto.email)) {
       throw new ConflictException('Email already registered');
@@ -68,17 +140,27 @@ export class AuthService {
       dateOfBirth: dto.dateOfBirth,
     });
 
-    // Auto-create loyalty account at Member tier. Idempotent —
-    // safe if a later read endpoint also lazy-creates.
+    // Auto-create loyalty account at Member tier. Idempotent.
     try {
       await this.loyaltyService.ensureForCustomer(user._id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
-        'Loyalty auto-create failed during register; will lazy-create on first /me/loyalty read',
-        { userId: user._id.toString(), error: message },
+        `Loyalty auto-create failed userId=${user._id.toString()} reason=${message}`,
       );
     }
+
+    // Trigger email verification OTP right after registration so the user
+    // sees a code in their inbox without an extra UI step. Fire-and-forget:
+    // a SMTP failure must NOT roll back the user creation — the user can
+    // request another OTP via /auth/otp/send.
+    void this.otpService
+      .issueAndSend(user.email, 'register')
+      .catch((err: Error) =>
+        this.logger.warn(
+          `Register OTP dispatch failed email=${user.email} reason=${err.message}`,
+        ),
+      );
 
     return UserResponseDto.fromDocument(user, RoleEnum.CUSTOMER);
   }

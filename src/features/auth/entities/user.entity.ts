@@ -45,6 +45,15 @@ export class User {
 
   @Prop()
   delete_requested_at?: Date;
+
+  /**
+   * Timestamp of the most recent successful email OTP verification.
+   * Missing/null means the user has never verified. Within the
+   * configured skip window (default 7 days) we re-issue a verified-email
+   * token without sending a new OTP.
+   */
+  @Prop({ type: Date })
+  email_verified_at?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

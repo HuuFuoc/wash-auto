@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Ip,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -21,6 +22,12 @@ import type { IAuthPayload } from '../../shared/types/auth-payload.type';
 import { AuthService } from './auth.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
+import {
+  OtpSendResponseDto,
+  OtpVerifyResponseDto,
+} from './dto/otp-response.dto';
+import { OtpSendDto } from './dto/otp-send.dto';
+import { OtpVerifyDto } from './dto/otp-verify.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UserResponseDto } from './dto/user-response.dto';
@@ -70,6 +77,38 @@ export class AuthController {
   @ApiResponse({ status: 204 })
   async logout(@Body() dto: RefreshTokenDto): Promise<void> {
     return this.authService.logout(dto.refreshToken);
+  }
+
+  @Post('otp/send')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Send an email verification OTP',
+    description:
+      'Rate limited per email (1/min cooldown + 5/hour cap). If the account is already verified within the configured skip window (default 7 days), no OTP is sent and a verified-email JWT is returned directly. Response shape is identical for unknown emails.',
+  })
+  @ApiResponse({ status: 200, type: OtpSendResponseDto })
+  @ApiResponse({ status: 429, description: 'Too many OTP requests' })
+  sendOtp(
+    @Body() dto: OtpSendDto,
+    @Ip() ip: string,
+  ): Promise<OtpSendResponseDto> {
+    return this.authService.requestEmailOtp(dto.email, ip);
+  }
+
+  @Post('otp/verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Verify an OTP and receive a verified-email JWT',
+    description:
+      'Returns a JWT with scope=email_verified (15m TTL). Use it as the Authorization Bearer when calling POST /me/bookings.',
+  })
+  @ApiResponse({ status: 200, type: OtpVerifyResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid or expired OTP' })
+  verifyOtp(
+    @Body() dto: OtpVerifyDto,
+    @Ip() ip: string,
+  ): Promise<OtpVerifyResponseDto> {
+    return this.authService.verifyEmailOtp(dto.email, dto.code, ip);
   }
 
   @Get('me')

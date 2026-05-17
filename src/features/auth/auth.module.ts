@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import { PassportModule } from '@nestjs/passport';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
+import { OtpModule } from '../otp/otp.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { Role, RoleSchema } from './entities/role.entity';
@@ -10,6 +11,7 @@ import { User, UserSchema } from './entities/user.entity';
 import { RoleRepository } from './repositories/role.repository';
 import { UserRepository } from './repositories/user.repository';
 import { RefreshTokenService } from './services/refresh-token.service';
+import { VerifiedEmailTokenService } from './services/verified-email-token.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { RoleEnum } from './types/role.enum';
 
@@ -56,6 +58,7 @@ const DEFAULT_ROLES: IDefaultRole[] = [
     PassportModule,
     JwtModule.register({}),
     LoyaltyModule,
+    OtpModule,
   ],
   controllers: [AuthController],
   providers: [
@@ -63,9 +66,15 @@ const DEFAULT_ROLES: IDefaultRole[] = [
     UserRepository,
     RoleRepository,
     RefreshTokenService,
+    VerifiedEmailTokenService,
     JwtStrategy,
   ],
-  exports: [AuthService, UserRepository, RoleRepository],
+  exports: [
+    AuthService,
+    UserRepository,
+    RoleRepository,
+    VerifiedEmailTokenService,
+  ],
 })
 export class AuthModule implements OnModuleInit {
   private readonly logger = new Logger(AuthModule.name);

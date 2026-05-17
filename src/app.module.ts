@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import appConfig from './config/app.config';
@@ -7,14 +10,16 @@ import authConfig from './config/auth.config';
 import bookingConfig from './config/booking.config';
 import cacheConfig from './config/cache.config';
 import databaseConfig from './config/database.config';
+import emailConfig from './config/email.config';
+import otpConfig from './config/otp.config';
 import payosConfig from './config/payos.config';
+import { configValidationSchema } from './config/validation.schema';
 import { CacheModule } from './core/cache/cache.module';
 import { DatabaseModule } from './core/database/database.module';
 import { AuthModule } from './features/auth/auth.module';
 import { LoyaltyModule } from './features/loyalty/loyalty.module';
-import { BookingModule } from './features/booking/booking.module';
+import { OrderModule } from './features/order/order.module';
 import { ServiceTypeModule } from './features/service-type/service-type.module';
-import { PaymentModule } from './features/payment/payment.module';
 import { StaffShiftModule } from './features/staff-shift/staff-shift.module';
 import { TierConfigModule } from './features/tier-config/tier-config.module';
 import { UserModule } from './features/user/user.module';
@@ -25,6 +30,8 @@ import { VehicleTypeModule } from './features/vehicle-type/vehicle-type.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      validationSchema: configValidationSchema,
+      validationOptions: { abortEarly: true },
       load: [
         appConfig,
         databaseConfig,
@@ -32,8 +39,14 @@ import { VehicleTypeModule } from './features/vehicle-type/vehicle-type.module';
         cacheConfig,
         payosConfig,
         bookingConfig,
+        otpConfig,
+        emailConfig,
       ],
     }),
+    // Global rate-limit: 60 requests / 60s / IP. OTP service enforces an
+    // additional per-email cap inside the service layer.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 60 }]),
+    ScheduleModule.forRoot(),
     DatabaseModule,
     CacheModule,
     AuthModule,
@@ -44,10 +57,12 @@ import { VehicleTypeModule } from './features/vehicle-type/vehicle-type.module';
     TierConfigModule,
     LoyaltyModule,
     StaffShiftModule,
-    BookingModule,
-    PaymentModule,
+    OrderModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}

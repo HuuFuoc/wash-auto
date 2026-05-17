@@ -96,6 +96,16 @@ export class UserRepository {
     return docs.map((d) => d._id);
   }
 
+  /** Stamps email_verified_at after a successful OTP verification. */
+  async setEmailVerifiedAt(
+    id: Types.ObjectId | string,
+    at: Date,
+  ): Promise<void> {
+    await this.userModel
+      .updateOne({ _id: id }, { $set: { email_verified_at: at } })
+      .exec();
+  }
+
   async createUser(input: ICreateUserInput): Promise<UserDocument> {
     return this.userModel.create({
       role_id: input.roleId,

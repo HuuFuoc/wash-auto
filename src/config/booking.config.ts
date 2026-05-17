@@ -6,4 +6,12 @@ export default registerAs('booking', () => ({
     10,
   ),
   maxReschedules: parseInt(process.env.MAX_RESCHEDULES ?? '2', 10),
+  paymentTimeoutMinutes: parseInt(
+    process.env.BOOKING_PAYMENT_TIMEOUT_MINUTES ?? '15',
+    10,
+  ),
+  idempotencyTtlSeconds: parseInt(
+    process.env.IDEMPOTENCY_TTL_SECONDS ?? '86400',
+    10,
+  ),
 }));
