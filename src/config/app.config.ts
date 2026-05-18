@@ -1,7 +1,9 @@
 import { registerAs } from '@nestjs/config';
 
-const defaultCorsOrigins = [
-  'https://wash-auto.vercel.app',
+const defaultCorsOrigins = ['https://wash-auto.vercel.app'];
+const localDevCorsOrigins = [
+  /^http:\/\/localhost:\d+$/,
+  /^http:\/\/127\.0\.0\.1:\d+$/,
 ];
 
 const parseCorsOrigins = (origins: string): string[] =>
@@ -17,6 +19,7 @@ export default registerAs('app', () => ({
   corsOrigins: Array.from(
     new Set([
       ...defaultCorsOrigins,
+      ...localDevCorsOrigins,
       ...parseCorsOrigins(process.env.CORS_ORIGINS ?? ''),
     ]),
   ),
