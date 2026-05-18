@@ -1,6 +1,9 @@
 import { registerAs } from '@nestjs/config';
 
-const defaultCorsOrigins = ['https://wash-auto.vercel.app'];
+const defaultCorsOrigins = [
+  'https://wash-auto.vercel.app',
+  'https://wave-wash.vercel.app',
+];
 const localDevCorsOrigins = [
   /^http:\/\/localhost:\d+$/,
   /^http:\/\/127\.0\.0\.1:\d+$/,
