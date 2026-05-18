@@ -13,6 +13,7 @@ import { DatabaseModule } from './core/database/database.module';
 import { AuthModule } from './features/auth/auth.module';
 import { LoyaltyModule } from './features/loyalty/loyalty.module';
 import { BookingModule } from './features/booking/booking.module';
+import { WashSessionModule } from './features/wash-session/wash-session.module';
 import { ServiceTypeModule } from './features/service-type/service-type.module';
 import { PaymentModule } from './features/payment/payment.module';
 import { StaffShiftModule } from './features/staff-shift/staff-shift.module';
@@ -45,6 +46,7 @@ import { VehicleTypeModule } from './features/vehicle-type/vehicle-type.module';
     LoyaltyModule,
     StaffShiftModule,
     BookingModule,
+    WashSessionModule,
     PaymentModule,
   ],
   controllers: [AppController],

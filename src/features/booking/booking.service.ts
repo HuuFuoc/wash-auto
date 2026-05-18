@@ -396,6 +396,69 @@ export class BookingService {
     return BookingResponseDto.fromDocument(updated);
   }
 
+  // ---------- system-triggered (called by other modules, NOT customer-initiated) ----------
+
+  /**
+   * Used by WashSessionService when a washer starts a session. Moves the
+   * linked booking to in_progress without going through the normal cashier
+   * state machine endpoint. Idempotent — silently no-ops if booking is
+   * already in_progress/done.
+   */
+  async markInProgressFromSession(
+    bookingId: Types.ObjectId | string,
+  ): Promise<void> {
+    if (!Types.ObjectId.isValid(bookingId)) return;
+    const booking = await this.bookingRepository.findById(bookingId);
+    if (!booking) return;
+    if (booking.status === BookingStatusEnum.IN_PROGRESS) return;
+    // Terminal states stay as-is.
+    if (
+      booking.status === BookingStatusEnum.DONE ||
+      booking.status === BookingStatusEnum.CANCELLED ||
+      booking.status === BookingStatusEnum.NO_SHOW
+    ) {
+      this.logger.warn('Cannot auto-sync terminal booking to in_progress', {
+        bookingId: booking._id.toString(),
+        currentStatus: booking.status,
+      });
+      return;
+    }
+    // System-triggered: skip the cashier confirm step when wash session was
+    // already opened at the counter. Bypass strict state-machine.
+    await this.bookingRepository.setStatus(
+      bookingId,
+      BookingStatusEnum.IN_PROGRESS,
+    );
+  }
+
+  /**
+   * Used by WashSessionService when a washer completes a session. Moves the
+   * linked booking to done. Idempotent.
+   */
+  async markDoneFromSession(bookingId: Types.ObjectId | string): Promise<void> {
+    if (!Types.ObjectId.isValid(bookingId)) return;
+    const booking = await this.bookingRepository.findById(bookingId);
+    if (!booking) return;
+    if (booking.status === BookingStatusEnum.DONE) return;
+    if (
+      booking.status === BookingStatusEnum.CANCELLED ||
+      booking.status === BookingStatusEnum.NO_SHOW
+    ) {
+      this.logger.warn('Cannot auto-sync terminal booking to done', {
+        bookingId: booking._id.toString(),
+        currentStatus: booking.status,
+      });
+      return;
+    }
+    // Release shift slot if transitioning out of an active state
+    if (consumesShiftCapacity(booking.status)) {
+      await this.staffShiftRepository.decrementCurrentBookings(
+        booking.staff_shift_id,
+      );
+    }
+    await this.bookingRepository.setStatus(bookingId, BookingStatusEnum.DONE);
+  }
+
   // ---------- helpers ----------
 
   private async requireOwned(
