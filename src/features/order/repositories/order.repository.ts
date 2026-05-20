@@ -166,6 +166,22 @@ export class OrderRepository {
       .exec();
   }
 
+  /**
+   * Returns up to 100 CONFIRMED cash orders whose scheduled time has passed
+   * the grace window without payment. These will be flipped to NO_SHOW.
+   */
+  async findUnconfirmedCashPastDue(cutoff: Date): Promise<OrderDocument[]> {
+    return this.model
+      .find({
+        status: OrderStatusEnum.CONFIRMED,
+        payment_method: PaymentMethodEnum.CASH,
+        payment_status: PaymentStatusEnum.UNPAID,
+        scheduled_at: { $lt: cutoff },
+      })
+      .limit(100)
+      .exec();
+  }
+
   async findPaginated(
     filter: IOrderListFilter,
     page: number,

@@ -614,6 +614,37 @@ export class OrderService {
   // ---------- CRON ENTRYPOINT ----------
 
   /**
+   * Auto-marks cash orders as NO_SHOW when the customer never showed up
+   * past the configured grace window after `scheduled_at`. Releases shift
+   * slot. Only touches `confirmed` + `cash` + `unpaid` — paid cash means
+   * the customer arrived and the cashier already collected. Returns the
+   * affected order ids.
+   */
+  async expireUnconfirmedCash(cutoff: Date): Promise<string[]> {
+    const docs = await this.orderRepository.findUnconfirmedCashPastDue(cutoff);
+    const expired: string[] = [];
+    for (const doc of docs) {
+      const id = doc._id.toString();
+      try {
+        if (consumesShiftCapacity(doc.status)) {
+          await this.staffShiftRepository.decrementCurrentBookings(
+            doc.staff_shift_id,
+          );
+        }
+        await this.orderRepository.updateById(id, {
+          status: OrderStatusEnum.NO_SHOW,
+          cancelReason: 'No arrival within grace window',
+        });
+        expired.push(id);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.error(`No-show sweep failed orderId=${id} reason=${msg}`);
+      }
+    }
+    return expired;
+  }
+
+  /**
    * Auto-cancels PENDING_PAYMENT orders created before `cutoff`. Releases
    * their shift slots. Returns expired order ids.
    */
