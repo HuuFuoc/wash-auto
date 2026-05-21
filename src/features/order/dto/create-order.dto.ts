@@ -4,16 +4,38 @@ import {
   IsDate,
   IsEnum,
   IsMongoId,
+  IsObject,
   IsOptional,
   IsString,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
+import { CreateVehicleDto } from '../../vehicle/dto/create-vehicle.dto';
 import { PaymentMethodEnum } from '../types/payment-method.enum';
 
 export class CreateOrderDto {
-  @ApiProperty({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
+  @ApiPropertyOptional({
+    example: '6601e3b3f1a2c3a4b5d6e7f8',
+    description:
+      'Id of a vehicle already saved in the customer garage. ' +
+      'Provide this OR `vehicle` — exactly one, never both.',
+  })
+  @IsOptional()
   @IsMongoId()
-  vehicleId: string;
+  vehicleId?: string;
+
+  @ApiPropertyOptional({
+    type: CreateVehicleDto,
+    description:
+      'Details of a new vehicle to register on the fly. The server creates ' +
+      'and saves it to the customer garage, then books it — one call. ' +
+      'Provide this OR `vehicleId` — exactly one, never both.',
+  })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => CreateVehicleDto)
+  vehicle?: CreateVehicleDto;
 
   @ApiProperty({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
   @IsMongoId()

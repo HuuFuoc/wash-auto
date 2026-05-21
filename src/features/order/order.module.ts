@@ -16,6 +16,7 @@ import {
   PaymentTransaction,
   PaymentTransactionSchema,
 } from './entities/payment-transaction.entity';
+import { CashNoShowCron } from './jobs/cash-no-show.cron';
 import { OrderExpiryCron } from './jobs/order-expiry.cron';
 import { OrderController, PaymentWebhookController } from './order.controller';
 import { OrderRepository } from './repositories/order.repository';
@@ -49,6 +50,7 @@ import { PayosService } from './services/payos.service';
     OrderRepository,
     PaymentTransactionRepository,
     OrderExpiryCron,
+    CashNoShowCron,
     VerifiedEmailGuard,
     IdempotencyInterceptor,
   ],

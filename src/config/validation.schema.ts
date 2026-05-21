@@ -63,5 +63,10 @@ export const configValidationSchema = Joi.object({
     .min(5)
     .max(60)
     .default(15),
+  CASH_ARRIVAL_GRACE_MINUTES: Joi.number()
+    .integer()
+    .min(5)
+    .max(240)
+    .default(30),
   IDEMPOTENCY_TTL_SECONDS: Joi.number().integer().min(3600).default(86400),
 });

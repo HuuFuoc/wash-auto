@@ -37,8 +37,13 @@ async function bootstrap(): Promise<void> {
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Car-wash Booking API')
-    .setDescription('Backend API documentation')
-    .setVersion('0.2.0')
+    .setDescription(
+      'Backend API documentation. Covers the full flow: booking ' +
+        '(available slots, order creation with saved or inline vehicle), ' +
+        'payment, and the work-order operational layer (check-in, washer ' +
+        'assignment, checklist, quality check).',
+    )
+    .setVersion('0.3.0')
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);

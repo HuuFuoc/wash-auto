@@ -10,8 +10,16 @@ export default registerAs('booking', () => ({
     process.env.BOOKING_PAYMENT_TIMEOUT_MINUTES ?? '15',
     10,
   ),
+  cashArrivalGraceMinutes: parseInt(
+    process.env.CASH_ARRIVAL_GRACE_MINUTES ?? '30',
+    10,
+  ),
   idempotencyTtlSeconds: parseInt(
     process.env.IDEMPOTENCY_TTL_SECONDS ?? '86400',
+    10,
+  ),
+  slotIntervalMinutes: parseInt(
+    process.env.BOOKING_SLOT_INTERVAL_MINUTES ?? '30',
     10,
   ),
 }));
