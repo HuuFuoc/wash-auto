@@ -12,6 +12,7 @@ export interface ICreateServiceTypeInput {
   basePrice: Types.Decimal128;
   estimatedMinutes: number;
   pointsMultiplier: number;
+  checklistTemplate?: string[];
 }
 
 export interface IUpdateServiceTypeInput {
@@ -20,6 +21,7 @@ export interface IUpdateServiceTypeInput {
   basePrice?: Types.Decimal128;
   estimatedMinutes?: number;
   pointsMultiplier?: number;
+  checklistTemplate?: string[];
 }
 
 @Injectable()
@@ -55,6 +57,7 @@ export class ServiceTypeRepository {
       base_price: input.basePrice,
       estimated_minutes: input.estimatedMinutes,
       points_multiplier: input.pointsMultiplier,
+      checklist_template: input.checklistTemplate ?? [],
     });
   }
 
@@ -70,6 +73,8 @@ export class ServiceTypeRepository {
       update.estimated_minutes = input.estimatedMinutes;
     if (input.pointsMultiplier !== undefined)
       update.points_multiplier = input.pointsMultiplier;
+    if (input.checklistTemplate !== undefined)
+      update.checklist_template = input.checklistTemplate;
 
     return this.model
       .findByIdAndUpdate(id, { $set: update }, { returnDocument: 'after' })

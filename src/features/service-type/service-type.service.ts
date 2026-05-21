@@ -44,6 +44,7 @@ export class ServiceTypeService {
       basePrice: Types.Decimal128.fromString(dto.basePrice.toString()),
       estimatedMinutes: dto.estimatedMinutes,
       pointsMultiplier: dto.pointsMultiplier,
+      checklistTemplate: dto.checklistTemplate,
     });
     this.logger.log('Service type created', { id: doc._id.toString() });
     return ServiceTypeResponseDto.fromDocument(doc);
@@ -71,6 +72,7 @@ export class ServiceTypeService {
           : undefined,
       estimatedMinutes: dto.estimatedMinutes,
       pointsMultiplier: dto.pointsMultiplier,
+      checklistTemplate: dto.checklistTemplate,
     });
     if (!doc) {
       throw new NotFoundException('Service type not found');

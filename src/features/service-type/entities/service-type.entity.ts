@@ -23,6 +23,10 @@ export class ServiceType {
   @Prop({ required: true, min: 0 })
   points_multiplier: number;
 
+  /** Wash steps copied into a work order's checklist at check-in. */
+  @Prop({ type: [String], default: [] })
+  checklist_template: string[];
+
   @Prop({ default: true, index: true })
   is_active: boolean;
 }

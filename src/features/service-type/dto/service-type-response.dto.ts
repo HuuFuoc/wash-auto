@@ -20,6 +20,12 @@ export class ServiceTypeResponseDto {
   @ApiProperty({ example: 1.5 })
   pointsMultiplier: number;
 
+  @ApiProperty({
+    type: [String],
+    example: ['Rửa thân xe', 'Hút bụi nội thất', 'Lau khô'],
+  })
+  checklistTemplate: string[];
+
   @ApiProperty({ example: true })
   isActive: boolean;
 
@@ -31,6 +37,7 @@ export class ServiceTypeResponseDto {
     dto.basePrice = doc.base_price.toString();
     dto.estimatedMinutes = doc.estimated_minutes;
     dto.pointsMultiplier = doc.points_multiplier;
+    dto.checklistTemplate = doc.checklist_template ?? [];
     dto.isActive = doc.is_active;
     return dto;
   }

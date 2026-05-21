@@ -25,6 +25,7 @@ import { TierConfigModule } from './features/tier-config/tier-config.module';
 import { UserModule } from './features/user/user.module';
 import { VehicleModule } from './features/vehicle/vehicle.module';
 import { VehicleTypeModule } from './features/vehicle-type/vehicle-type.module';
+import { WorkOrderModule } from './features/work-order/work-order.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { VehicleTypeModule } from './features/vehicle-type/vehicle-type.module';
     LoyaltyModule,
     StaffShiftModule,
     OrderModule,
+    WorkOrderModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

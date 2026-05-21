@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -40,4 +41,16 @@ export class CreateServiceTypeDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   pointsMultiplier: number;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['Rửa thân xe', 'Hút bụi nội thất', 'Lau khô', 'Đánh bóng lốp'],
+    description:
+      'Wash steps a washer ticks off. Copied into each work order checklist at check-in.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(120, { each: true })
+  checklistTemplate?: string[];
 }

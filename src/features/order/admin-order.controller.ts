@@ -57,9 +57,13 @@ export class AdminOrderController {
 
   @Patch(':id/status')
   @ApiOperation({
-    summary: 'Change order status',
+    summary: 'Change order status (cancel / no-show only)',
     description:
-      'State machine: pending_payment→confirmed/cancelled, confirmed→checked_in/cancelled/no_show, checked_in→in_progress/cancelled/no_show, in_progress→completed.',
+      'Manual status changes are limited to non-operational outcomes: ' +
+      'pending_payment→confirmed/cancelled, confirmed→cancelled/no_show, ' +
+      'checked_in→cancelled/no_show. The operational transitions ' +
+      '(checked_in, in_progress, completed) are driven by the Work Order ' +
+      'flow — see POST /admin/work-orders and the /me/work-orders endpoints.',
   })
   @ApiResponse({ status: 200, type: OrderResponseDto })
   @ApiResponse({ status: 400, description: 'Invalid status transition' })
