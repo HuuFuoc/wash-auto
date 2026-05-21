@@ -18,12 +18,15 @@ import { StaffShiftRepository } from '../../staff-shift/repositories/staff-shift
 import { ShiftStatusEnum } from '../../staff-shift/types/shift-status.enum';
 import { TierConfigRepository } from '../../tier-config/repositories/tier-config.repository';
 import { VehicleRepository } from '../../vehicle/repositories/vehicle.repository';
+import { VehicleService } from '../../vehicle/vehicle.service';
+import { AvailableSlotDto } from '../dto/available-slot.dto';
 import { CancelOrderDto } from '../dto/cancel-order.dto';
 import { CreateOrderDto } from '../dto/create-order.dto';
 import {
   OrderListResponseDto,
   OrderResponseDto,
 } from '../dto/order-response.dto';
+import { QueryAvailableSlotsDto } from '../dto/query-available-slots.dto';
 import { QueryOrderDto } from '../dto/query-order.dto';
 import { RescheduleOrderDto } from '../dto/reschedule-order.dto';
 import { UpdateOrderStatusDto } from '../dto/update-order-status.dto';
@@ -44,6 +47,7 @@ import { PaymentStatusEnum } from '../types/payment-status.enum';
 import { PayosService } from './payos.service';
 
 const TXN_DEDUP_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+const MAX_SLOT_RANGE_MS = 31 * 24 * 60 * 60 * 1000; // slot query cap
 
 @Injectable()
 export class OrderService {
@@ -53,6 +57,7 @@ export class OrderService {
     private readonly orderRepository: OrderRepository,
     private readonly transactionRepository: PaymentTransactionRepository,
     private readonly vehicleRepository: VehicleRepository,
+    private readonly vehicleService: VehicleService,
     private readonly serviceTypeRepository: ServiceTypeRepository,
     private readonly staffShiftRepository: StaffShiftRepository,
     private readonly userRepository: UserRepository,
@@ -70,13 +75,16 @@ export class OrderService {
     customerId: string,
     dto: CreateOrderDto,
   ): Promise<OrderResponseDto> {
-    // 1) Vehicle ownership
-    const vehicle = await this.vehicleRepository.findByIdForOwner(
-      dto.vehicleId,
-      customerId,
-    );
-    if (!vehicle || !vehicle.is_active) {
-      throw new NotFoundException('Vehicle not found');
+    // 1) Vehicle source — exactly one of: a saved vehicle id, or inline
+    //    details for a new vehicle. The vehicle itself is resolved later
+    //    (step 7) so a failed booking never leaves a half-created vehicle.
+    const hasSavedVehicle = !!dto.vehicleId;
+    const hasInlineVehicle = !!dto.vehicle;
+    if (hasSavedVehicle === hasInlineVehicle) {
+      throw new BadRequestException(
+        'Provide exactly one of `vehicleId` (saved vehicle) or ' +
+          '`vehicle` (new vehicle details)',
+      );
     }
 
     // 2) Service type
@@ -148,7 +156,36 @@ export class OrderService {
       throw new ConflictException('All shifts at this time are full');
     }
 
-    // 7) Compute amount + initial states
+    // 7) Resolve the vehicle now that the slot is held. Doing it here means
+    //    the common "no shift" rejection above never registers a stray
+    //    vehicle. `createdVehicleId` is set only when we saved a new vehicle
+    //    inline — it is rolled back if the order then fails to persist.
+    let vehicleObjId: Types.ObjectId;
+    let createdVehicleId: Types.ObjectId | undefined;
+    try {
+      if (dto.vehicleId) {
+        const vehicle = await this.vehicleRepository.findByIdForOwner(
+          dto.vehicleId,
+          customerId,
+        );
+        if (!vehicle || !vehicle.is_active) {
+          throw new NotFoundException('Vehicle not found');
+        }
+        vehicleObjId = vehicle._id;
+      } else {
+        const created = await this.vehicleService.createOwn(
+          customerId,
+          dto.vehicle!,
+        );
+        vehicleObjId = new Types.ObjectId(created.id);
+        createdVehicleId = vehicleObjId;
+      }
+    } catch (err) {
+      await this.staffShiftRepository.decrementCurrentBookings(reservedShiftId);
+      throw err;
+    }
+
+    // 8) Compute amount + initial states
     const amount = Math.round(parseFloat(service.base_price.toString()));
     const isOnline = dto.paymentMethod === PaymentMethodEnum.ONLINE;
     const initialStatus = isOnline
@@ -156,7 +193,8 @@ export class OrderService {
       : OrderStatusEnum.CONFIRMED;
     const initialPaymentStatus = PaymentStatusEnum.UNPAID;
 
-    // 8) Create order; rollback shift slot on failure
+    // 9) Create order; on failure release the shift slot and roll back a
+    //    vehicle created inline so a failed POST leaves nothing behind.
     let order: OrderDocument;
     try {
       const payosOrderCode = isOnline
@@ -164,7 +202,7 @@ export class OrderService {
         : undefined;
       order = await this.orderRepository.create({
         customerId: new Types.ObjectId(customerId),
-        vehicleId: new Types.ObjectId(dto.vehicleId),
+        vehicleId: vehicleObjId,
         serviceTypeId: new Types.ObjectId(dto.serviceTypeId),
         staffShiftId: reservedShiftId,
         scheduledAt: dto.scheduledAt,
@@ -178,10 +216,13 @@ export class OrderService {
       });
     } catch (err) {
       await this.staffShiftRepository.decrementCurrentBookings(reservedShiftId);
+      if (createdVehicleId) {
+        await this.rollbackInlineVehicle(createdVehicleId);
+      }
       throw err;
     }
 
-    // 9) If online → create PayOS link (rollback on failure)
+    // 10) If online → create PayOS link (rollback on failure)
     if (isOnline && order.payos_order_code) {
       const returnUrl = this.config.getOrThrow<string>('payos.returnUrl');
       const cancelUrl = this.config.getOrThrow<string>('payos.cancelUrl');
@@ -216,7 +257,7 @@ export class OrderService {
       }
     }
 
-    // 10) Confirmation email:
+    // 11) Confirmation email:
     //   - CASH → send now, the order is already CONFIRMED.
     //   - ONLINE → defer until the PayOS webhook flips us to CONFIRMED+PAID,
     //     so the customer never gets a "confirmation" for an unpaid booking.
@@ -240,6 +281,90 @@ export class OrderService {
   async getOwn(customerId: string, id: string): Promise<OrderResponseDto> {
     const doc = await this.requireOwned(id, customerId);
     return OrderResponseDto.fromDocument(doc);
+  }
+
+  /**
+   * Enumerates the discrete start times a customer may book for a given
+   * service inside [from, to]. A slot is bookable when some SCHEDULED shift
+   * fully contains [slot, slot + service duration] and still has capacity —
+   * exactly the rule `createOrder` applies — so every slot returned here is
+   * one `POST /me/orders` will accept (barring a concurrent fill).
+   *
+   * Slots sit on a fixed global grid (`booking.slotIntervalMinutes`), so a
+   * slot covered by two overlapping shifts is reported once with the
+   * combined free capacity.
+   */
+  async listAvailableSlots(
+    customerId: string,
+    dto: QueryAvailableSlotsDto,
+  ): Promise<AvailableSlotDto[]> {
+    if (dto.from.getTime() > dto.to.getTime()) {
+      throw new BadRequestException('`from` must be ≤ `to`');
+    }
+    if (dto.to.getTime() - dto.from.getTime() > MAX_SLOT_RANGE_MS) {
+      throw new BadRequestException('Date range too wide (max 31 days)');
+    }
+
+    const service = await this.serviceTypeRepository.findById(
+      dto.serviceTypeId,
+    );
+    if (!service || !service.is_active) {
+      throw new BadRequestException('Service type not found or inactive');
+    }
+    const durationMs = service.estimated_minutes * 60_000;
+
+    // Clip the window: no slot earlier than now, none past the customer's
+    // tier booking horizon — mirrors the checks in createOrder so the FE
+    // never shows a slot the POST would reject.
+    const nowMs = Date.now();
+    const loyaltyAccount =
+      await this.loyaltyService.ensureForCustomer(customerId);
+    const tier = await this.tierConfigRepository.findById(
+      loyaltyAccount.tier_config_id,
+    );
+    if (!tier) {
+      throw new BadRequestException('Tier config missing for this customer');
+    }
+    const tierMaxMs = nowMs + tier.booking_window_days * 24 * 60 * 60 * 1000;
+
+    const windowStartMs = Math.max(dto.from.getTime(), nowMs);
+    const windowEndMs = Math.min(dto.to.getTime(), tierMaxMs);
+    if (windowStartMs > windowEndMs) return [];
+
+    const shifts = await this.staffShiftRepository.findOverlapping(
+      new Date(windowStartMs),
+      new Date(windowEndMs),
+    );
+
+    const intervalMs =
+      this.config.getOrThrow<number>('booking.slotIntervalMinutes') * 60_000;
+
+    // slot start (ms) → summed free capacity of every shift covering it.
+    const capacityBySlot = new Map<number, number>();
+    for (const shift of shifts) {
+      const remaining = shift.max_bookings - shift.current_bookings;
+      if (remaining <= 0) continue;
+      const shiftEndMs = shift.end_at.getTime();
+      // First grid point at or after the shift start.
+      let slotMs =
+        Math.ceil(shift.start_at.getTime() / intervalMs) * intervalMs;
+      for (; slotMs + durationMs <= shiftEndMs; slotMs += intervalMs) {
+        if (slotMs < windowStartMs || slotMs > windowEndMs) continue;
+        capacityBySlot.set(
+          slotMs,
+          (capacityBySlot.get(slotMs) ?? 0) + remaining,
+        );
+      }
+    }
+
+    return [...capacityBySlot.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([ms, capacity]) => {
+        const slot = new AvailableSlotDto();
+        slot.scheduledAt = new Date(ms);
+        slot.remainingCapacity = capacity;
+        return slot;
+      });
   }
 
   async rescheduleOwn(
@@ -694,6 +819,25 @@ export class OrderService {
     const doc = await this.orderRepository.findByIdForOwner(id, customerId);
     if (!doc) throw new NotFoundException('Order not found');
     return doc;
+  }
+
+  /**
+   * Best-effort hard delete of a vehicle registered inline during a booking
+   * that then failed. Swallows its own errors — the booking failure is what
+   * the caller must surface; a leftover vehicle would only block the
+   * customer from retrying with the same plate.
+   */
+  private async rollbackInlineVehicle(
+    vehicleId: Types.ObjectId,
+  ): Promise<void> {
+    try {
+      await this.vehicleRepository.deleteById(vehicleId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Failed to roll back inline vehicle ${vehicleId.toString()}: ${msg}`,
+      );
+    }
   }
 
   /**

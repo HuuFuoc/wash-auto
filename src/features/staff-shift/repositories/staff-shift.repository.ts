@@ -89,6 +89,24 @@ export class StaffShiftRepository {
       .exec();
   }
 
+  /**
+   * Returns SCHEDULED shifts with spare capacity whose window overlaps
+   * [from, to] at all — including shifts that start before `from` but
+   * extend into it. Used to enumerate bookable slots; the caller still
+   * checks that the full wash window fits inside each shift.
+   */
+  async findOverlapping(from: Date, to: Date): Promise<StaffShiftDocument[]> {
+    return this.model
+      .find({
+        status: ShiftStatusEnum.SCHEDULED,
+        start_at: { $lte: to },
+        end_at: { $gte: from },
+        $expr: { $lt: ['$current_bookings', '$max_bookings'] },
+      })
+      .sort({ start_at: 1 })
+      .exec();
+  }
+
   async findById(
     id: Types.ObjectId | string,
   ): Promise<StaffShiftDocument | null> {

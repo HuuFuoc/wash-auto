@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -21,9 +22,11 @@ import { CurrentUser } from '../../shared/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard';
 import { IdempotencyInterceptor } from '../../shared/interceptors/idempotency.interceptor';
 import type { IAuthPayload } from '../../shared/types/auth-payload.type';
+import { AvailableSlotDto } from './dto/available-slot.dto';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderResponseDto } from './dto/order-response.dto';
+import { QueryAvailableSlotsDto } from './dto/query-available-slots.dto';
 import { RescheduleOrderDto } from './dto/reschedule-order.dto';
 import { OrderService } from './services/order.service';
 
@@ -39,7 +42,14 @@ export class OrderController {
   @ApiOperation({
     summary: 'Create an order (booking + optional online payment)',
     description:
-      'Authorization is the regular access token from /auth/login. paymentMethod=online returns a PayOS checkoutUrl (confirmation email sent only after webhook PAID); cash skips PayOS and the order starts CONFIRMED+UNPAID (confirmation email sent immediately). Optional Idempotency-Key header caches the response 24h.',
+      'Authorization is the regular access token from /auth/login. ' +
+      'Vehicle: send either `vehicleId` (a vehicle already in the garage) ' +
+      'or `vehicle` (new vehicle details — saved to the garage, then booked, ' +
+      'in one call) — exactly one. paymentMethod=online returns a PayOS ' +
+      'checkoutUrl (confirmation email sent only after webhook PAID); cash ' +
+      'skips PayOS and the order starts CONFIRMED+UNPAID (confirmation email ' +
+      'sent immediately). Optional Idempotency-Key header caches the ' +
+      'response 24h.',
   })
   @ApiHeader({
     name: 'Idempotency-Key',
@@ -53,8 +63,11 @@ export class OrderController {
     description: 'Validation / business rule failed',
   })
   @ApiResponse({ status: 401, description: 'Missing or invalid access token' })
-  @ApiResponse({ status: 404, description: 'Vehicle not found' })
-  @ApiResponse({ status: 409, description: 'Shift is full' })
+  @ApiResponse({ status: 404, description: 'Saved vehicle not found' })
+  @ApiResponse({
+    status: 409,
+    description: 'Shift is full, or license plate already registered',
+  })
   create(
     @CurrentUser() user: IAuthPayload,
     @Body() dto: CreateOrderDto,
@@ -67,6 +80,27 @@ export class OrderController {
   @ApiResponse({ status: 200, type: OrderResponseDto, isArray: true })
   list(@CurrentUser() user: IAuthPayload): Promise<OrderResponseDto[]> {
     return this.service.listOwn(user.sub);
+  }
+
+  @Get('available-slots')
+  @ApiOperation({
+    summary: 'List bookable start times for a service in a date range',
+    description:
+      'Returns the discrete start times (on a fixed grid, default 30 min) ' +
+      'that a SCHEDULED shift can fully cover for this service and still ' +
+      'has room for. Feed a slot `scheduledAt` straight into POST /me/orders. ' +
+      'Window is clipped to now and to your tier booking horizon.',
+  })
+  @ApiResponse({ status: 200, type: AvailableSlotDto, isArray: true })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid range or service not found / inactive',
+  })
+  availableSlots(
+    @CurrentUser() user: IAuthPayload,
+    @Query() query: QueryAvailableSlotsDto,
+  ): Promise<AvailableSlotDto[]> {
+    return this.service.listAvailableSlots(user.sub, query);
   }
 
   @Get(':id')

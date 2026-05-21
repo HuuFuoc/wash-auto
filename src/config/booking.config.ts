@@ -18,4 +18,8 @@ export default registerAs('booking', () => ({
     process.env.IDEMPOTENCY_TTL_SECONDS ?? '86400',
     10,
   ),
+  slotIntervalMinutes: parseInt(
+    process.env.BOOKING_SLOT_INTERVAL_MINUTES ?? '30',
+    10,
+  ),
 }));
