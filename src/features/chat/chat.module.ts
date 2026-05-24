@@ -12,10 +12,7 @@ import {
   ChatKnowledge,
   ChatKnowledgeSchema,
 } from './entities/chat-knowledge.entity';
-import {
-  ChatSession,
-  ChatSessionSchema,
-} from './entities/chat-session.entity';
+import { ChatSession, ChatSessionSchema } from './entities/chat-session.entity';
 import { ChatKnowledgeRepository } from './repositories/chat-knowledge.repository';
 import { ChatSessionRepository } from './repositories/chat-session.repository';
 import { ChatKnowledgeService } from './services/chat-knowledge.service';

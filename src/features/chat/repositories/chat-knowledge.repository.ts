@@ -32,9 +32,7 @@ export class ChatKnowledgeRepository {
     return this.model.find().sort({ category: 1, question: 1 }).exec();
   }
 
-  findById(
-    id: Types.ObjectId | string,
-  ): Promise<ChatKnowledgeDocument | null> {
+  findById(id: Types.ObjectId | string): Promise<ChatKnowledgeDocument | null> {
     if (!Types.ObjectId.isValid(id)) return Promise.resolve(null);
     return this.model.findById(id).exec();
   }
@@ -46,9 +44,7 @@ export class ChatKnowledgeRepository {
       .then((r) => r !== null);
   }
 
-  create(
-    input: ICreateChatKnowledgeInput,
-  ): Promise<ChatKnowledgeDocument> {
+  create(input: ICreateChatKnowledgeInput): Promise<ChatKnowledgeDocument> {
     return this.model.create({
       question: input.question.trim(),
       answer: input.answer.trim(),
@@ -81,10 +77,7 @@ export class ChatKnowledgeRepository {
    * scan if Mongo returns no $text matches (helps with single-word queries
    * the text index doesn't tokenise well — eg. plate numbers, codes).
    */
-  async search(
-    query: string,
-    limit: number,
-  ): Promise<ChatKnowledgeDocument[]> {
+  async search(query: string, limit: number): Promise<ChatKnowledgeDocument[]> {
     const trimmed = query.trim();
     if (!trimmed) return [];
 
@@ -102,11 +95,7 @@ export class ChatKnowledgeRepository {
     return this.model
       .find({
         is_active: true,
-        $or: [
-          { question: regex },
-          { answer: regex },
-          { keywords: regex },
-        ],
+        $or: [{ question: regex }, { answer: regex }, { keywords: regex }],
       })
       .limit(limit)
       .exec();

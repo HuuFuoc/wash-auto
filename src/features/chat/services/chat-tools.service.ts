@@ -201,9 +201,7 @@ export class ChatToolsService {
     };
   }
 
-  private async getMyOrders(
-    ctx: IChatToolContext,
-  ): Promise<IChatToolResult> {
+  private async getMyOrders(ctx: IChatToolContext): Promise<IChatToolResult> {
     if (!ctx.customerId) {
       return {
         data: null,
@@ -334,5 +332,4 @@ export class ChatToolsService {
       },
     };
   }
-
 }

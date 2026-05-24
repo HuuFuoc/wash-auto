@@ -28,9 +28,7 @@ export class ChatKnowledgeService {
     return ChatKnowledgeResponseDto.fromDocument(doc);
   }
 
-  async create(
-    dto: CreateChatKnowledgeDto,
-  ): Promise<ChatKnowledgeResponseDto> {
+  async create(dto: CreateChatKnowledgeDto): Promise<ChatKnowledgeResponseDto> {
     if (await this.repository.existsByQuestion(dto.question)) {
       throw new ConflictException('Question already exists');
     }

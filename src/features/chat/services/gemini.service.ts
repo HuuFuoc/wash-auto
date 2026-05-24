@@ -13,10 +13,7 @@ import {
   GoogleGenAI,
   Part,
 } from '@google/genai';
-import {
-  ChatToolsService,
-  IChatToolContext,
-} from './chat-tools.service';
+import { ChatToolsService, IChatToolContext } from './chat-tools.service';
 
 const MAX_TOOL_LOOP_ITERATIONS = 5;
 
@@ -83,7 +80,7 @@ export class GeminiService implements OnModuleInit {
       for (const call of calls) {
         const name = call.name ?? 'unknown';
         toolsCalled.push(name);
-        const args = (call.args ?? {}) as Record<string, unknown>;
+        const args = call.args ?? {};
         const result = await this.tools.execute(name, args, ctx);
         toolResultParts.push({
           functionResponse: {
@@ -133,9 +130,7 @@ export class GeminiService implements OnModuleInit {
       if (status === 429) {
         const delayMs = this.extractRetryDelayMs(err);
         if (delayMs > 0 && delayMs <= 5_000) {
-          this.logger.warn(
-            `Gemini 429 — retrying once after ${delayMs}ms`,
-          );
+          this.logger.warn(`Gemini 429 — retrying once after ${delayMs}ms`);
           await new Promise((r) => setTimeout(r, delayMs));
           try {
             return await this.client.models.generateContent(params);
@@ -151,7 +146,7 @@ export class GeminiService implements OnModuleInit {
 
   private extractStatus(err: unknown): number | undefined {
     if (err && typeof err === 'object' && 'status' in err) {
-      const s = (err as { status: unknown }).status;
+      const s = err.status;
       return typeof s === 'number' ? s : undefined;
     }
     return undefined;

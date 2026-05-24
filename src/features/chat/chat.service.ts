@@ -29,11 +29,9 @@ export class ChatService {
     const session = await this.loadOrCreateSession(sessionId, customerId);
 
     const history = this.toGeminiHistory(session.messages);
-    const { text, toolsCalled } = await this.gemini.chat(
-      history,
-      dto.message,
-      { customerId },
-    );
+    const { text, toolsCalled } = await this.gemini.chat(history, dto.message, {
+      customerId,
+    });
 
     const now = new Date();
     const turns: IChatMessage[] = [
