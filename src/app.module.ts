@@ -11,12 +11,14 @@ import bookingConfig from './config/booking.config';
 import cacheConfig from './config/cache.config';
 import databaseConfig from './config/database.config';
 import emailConfig from './config/email.config';
+import geminiConfig from './config/gemini.config';
 import otpConfig from './config/otp.config';
 import payosConfig from './config/payos.config';
 import { configValidationSchema } from './config/validation.schema';
 import { CacheModule } from './core/cache/cache.module';
 import { DatabaseModule } from './core/database/database.module';
 import { AuthModule } from './features/auth/auth.module';
+import { ChatModule } from './features/chat/chat.module';
 import { LoyaltyModule } from './features/loyalty/loyalty.module';
 import { OrderModule } from './features/order/order.module';
 import { ServiceTypeModule } from './features/service-type/service-type.module';
@@ -42,6 +44,7 @@ import { WorkOrderModule } from './features/work-order/work-order.module';
         bookingConfig,
         otpConfig,
         emailConfig,
+        geminiConfig,
       ],
     }),
     // Global rate-limit: 60 requests / 60s / IP. OTP service enforces an
@@ -60,6 +63,7 @@ import { WorkOrderModule } from './features/work-order/work-order.module';
     StaffShiftModule,
     OrderModule,
     WorkOrderModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

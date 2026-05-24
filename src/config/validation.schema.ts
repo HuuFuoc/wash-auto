@@ -56,6 +56,9 @@ export const configValidationSchema = Joi.object({
   PAYOS_RETURN_URL: Joi.string().uri().required(),
   PAYOS_CANCEL_URL: Joi.string().uri().required(),
 
+  GEMINI_API_KEY: Joi.string().required(),
+  GEMINI_MODEL: Joi.string().default('gemini-2.0-flash'),
+
   MAX_ACTIVE_BOOKINGS_PER_CUSTOMER: Joi.number().integer().min(1).default(3),
   MAX_RESCHEDULES: Joi.number().integer().min(0).default(2),
   BOOKING_PAYMENT_TIMEOUT_MINUTES: Joi.number()
