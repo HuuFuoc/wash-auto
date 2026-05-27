@@ -26,6 +26,10 @@ import { AvailableSlotDto } from './dto/available-slot.dto';
 import { CancelOrderDto } from './dto/cancel-order.dto';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { OrderResponseDto } from './dto/order-response.dto';
+import {
+  PreviewOrderDto,
+  PreviewOrderResponseDto,
+} from './dto/preview-order.dto';
 import { QueryAvailableSlotsDto } from './dto/query-available-slots.dto';
 import { RescheduleOrderDto } from './dto/reschedule-order.dto';
 import { OrderService } from './services/order.service';
@@ -80,6 +84,29 @@ export class OrderController {
   @ApiResponse({ status: 200, type: OrderResponseDto, isArray: true })
   list(@CurrentUser() user: IAuthPayload): Promise<OrderResponseDto[]> {
     return this.service.listOwn(user.sub);
+  }
+
+  @Post('preview')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Preview the price the next booking would charge',
+    description:
+      'Returns the full pricing breakdown (tier discount, voucher cap, ' +
+      'golden-hour flag, final amount) the customer would pay if they ' +
+      'posted the same (service, scheduledAt, voucherId) tuple to ' +
+      'POST /me/orders. No side effects: voucher is NOT consumed, no shift ' +
+      'slot is held. Use to render a confirmation screen before booking.',
+  })
+  @ApiResponse({ status: 200, type: PreviewOrderResponseDto })
+  @ApiResponse({
+    status: 400,
+    description: 'Service not found or inactive / tier missing',
+  })
+  preview(
+    @CurrentUser() user: IAuthPayload,
+    @Body() dto: PreviewOrderDto,
+  ): Promise<PreviewOrderResponseDto> {
+    return this.service.previewOrder(user.sub, dto);
   }
 
   @Get('available-slots')

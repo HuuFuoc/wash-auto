@@ -22,8 +22,19 @@ export class VoucherResponseDto {
   })
   status: VoucherStatusEnum;
 
-  @ApiPropertyOptional({ example: '2027-05-27T00:00:00.000Z' })
-  expiresAt?: Date;
+  @ApiProperty({
+    example: 100000,
+    description:
+      'Maximum VND this voucher can knock off a single order. Final discount ' +
+      'is min(originalAmount, discountCapVnd).',
+  })
+  discountCapVnd: number;
+
+  @ApiProperty({
+    example: '2026-08-25T00:00:00.000Z',
+    description: 'Hard expiry deadline. After this the voucher is EXPIRED.',
+  })
+  expiresAt: Date;
 
   @ApiPropertyOptional({ example: 'Reward for 10 completed washes' })
   grantedReason?: string;
@@ -44,6 +55,7 @@ export class VoucherResponseDto {
     dto.code = doc.code;
     dto.type = doc.type;
     dto.status = doc.status;
+    dto.discountCapVnd = doc.discount_cap_vnd;
     dto.expiresAt = doc.expires_at;
     dto.grantedReason = doc.granted_reason;
     dto.usedAt = doc.used_at;
