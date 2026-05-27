@@ -83,7 +83,7 @@ export class PreviewOrderResponseDto {
   @ApiProperty({
     example: 5,
     description:
-      "Discount percent the tier earns INSIDE a golden hour window. 0 outside.",
+      'Discount percent the tier earns INSIDE a golden hour window. 0 outside.',
   })
   tierDiscountPercent: number;
 
