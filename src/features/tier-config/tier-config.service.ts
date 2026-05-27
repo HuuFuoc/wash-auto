@@ -70,15 +70,40 @@ export class TierConfigService {
   constructor(private readonly repository: TierConfigRepository) {}
 
   async seedDefaults(): Promise<void> {
-    // Drop legacy MEMBER/PLATINUM rows (or any other unknown name) left over
-    // from the previous tier model so the active ladder stays clean.
-    const keep = DEFAULT_TIERS.map((t) => t.tierName);
-    const removed = await this.repository.deleteByNamesNotIn(keep);
-    if (removed > 0) {
-      this.logger.log(`Removed ${removed} legacy tier_config rows`);
+    // Detect whether the live collection still holds the previous schema
+    // (Member/Platinum names, or any doc missing the new min_loyalty_points
+    // field, or priority_level values that collide with the new layout).
+    // When dirty we wipe the collection — partial deletes leave legacy
+    // priority_level values that then clash on E11000 with the unique index.
+    const existing = await this.repository.findAll();
+    const canonical = new Set<string>(DEFAULT_TIERS.map((t) => t.tierName));
+    const isLegacySchema = existing.some(
+      (doc) =>
+        !canonical.has(doc.tier_name) ||
+        doc.min_loyalty_points === undefined ||
+        doc.min_loyalty_points === null,
+    );
+
+    if (isLegacySchema) {
+      const dropped = await this.repository.deleteAll();
+      this.logger.warn(
+        `Legacy tier_configs schema detected — dropped ${dropped} rows for reseed`,
+      );
     }
+
     for (const tier of DEFAULT_TIERS) {
-      await this.repository.upsertByName(tier);
+      try {
+        await this.repository.upsertByName(tier);
+      } catch (err) {
+        // Tolerate E11000: another serverless instance is racing the same
+        // seed after a parallel cold start. The peer has already inserted
+        // the canonical doc, so we can safely move on.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/E11000|duplicate key/i.test(msg)) throw err;
+        this.logger.log(
+          `Race on upsert ${tier.tierName} — already inserted by peer`,
+        );
+      }
     }
     this.logger.log(`Seeded ${DEFAULT_TIERS.length} tier_configs`);
   }

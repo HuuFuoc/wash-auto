@@ -86,6 +86,12 @@ export class TierConfigRepository {
     return res.deletedCount ?? 0;
   }
 
+  /** Drops every tier_config doc. Used when migrating off legacy schema. */
+  async deleteAll(): Promise<number> {
+    const res = await this.model.deleteMany({}).exec();
+    return res.deletedCount ?? 0;
+  }
+
   async update(
     id: Types.ObjectId | string,
     input: IUpdateTierInput,

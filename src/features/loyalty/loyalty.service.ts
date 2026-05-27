@@ -46,7 +46,32 @@ export class LoyaltyService {
     customerId: Types.ObjectId | string,
   ): Promise<LoyaltyAccountDocument> {
     const existing = await this.loyaltyRepository.findByCustomerId(customerId);
-    if (existing) return existing;
+    if (existing) {
+      // Self-heal: accounts created under the previous 4-tier schema may
+      // still reference a tier_config_id that no longer exists (the seed
+      // reset wiped legacy Member/Platinum). Snap them back to the new
+      // None tier so reads do not throw a misleading 500.
+      const linked = await this.tierConfigRepository.findById(
+        existing.tier_config_id,
+      );
+      if (linked) return existing;
+
+      const fallback = await this.tierConfigRepository.findByName(
+        TierNameEnum.NONE,
+      );
+      if (!fallback) {
+        throw new InternalServerErrorException(
+          'None tier_config not seeded — restart app',
+        );
+      }
+      const repaired = await this.loyaltyRepository.updateById(existing._id, {
+        tierConfigId: fallback._id,
+      });
+      this.logger.warn(
+        `Loyalty account ${existing._id.toString()} pointed at missing tier — repaired to None`,
+      );
+      return repaired ?? existing;
+    }
 
     const baseTier = await this.tierConfigRepository.findByName(
       TierNameEnum.NONE,
