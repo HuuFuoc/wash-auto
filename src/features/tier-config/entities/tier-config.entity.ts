@@ -18,8 +18,10 @@ export class TierConfig {
   })
   tier_name: TierNameEnum;
 
+  // Minimum loyalty points required to qualify for this tier.
+  // Replaces the old visits-per-month criterion.
   @Prop({ required: true, min: 0 })
-  min_visits_per_month: number;
+  min_loyalty_points: number;
 
   @Prop({ required: true, min: 0 })
   booking_window_days: number;
@@ -27,13 +29,11 @@ export class TierConfig {
   @Prop({ required: true, unique: true, min: 0 })
   priority_level: number;
 
-  // Points earned per 1,000 VND spent (deviation from spec §3.14 which had
-  // `points_per_wash` flat-per-wash). Aligned with FE landing-page copy.
+  // Points earned per 1,000 VND spent on a completed order (tier-scaled bonus).
   @Prop({ required: true, min: 0 })
   points_per_1000_vnd: number;
 
-  // Discount percent applied per wash for this tier (e.g. Silver=5, Gold=10).
-  // New field, not in spec §3.14 — added to match FE pricing card.
+  // Discount percent applied per wash during golden hours for this tier.
   @Prop({ required: true, default: 0, min: 0, max: 100 })
   discount_percent: number;
 

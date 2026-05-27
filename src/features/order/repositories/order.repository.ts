@@ -20,6 +20,11 @@ export interface ICreateOrderInput {
   paymentStatus: PaymentStatusEnum;
   status: OrderStatusEnum;
   amount: number;
+  originalAmount: number;
+  discountAmount: number;
+  discountPercent: number;
+  discountReason?: string;
+  voucherId?: Types.ObjectId;
   note?: string;
   payosOrderCode?: number;
 }
@@ -74,6 +79,11 @@ export class OrderRepository {
       payment_status: input.paymentStatus,
       status: input.status,
       amount: input.amount,
+      original_amount: input.originalAmount,
+      discount_amount: input.discountAmount,
+      discount_percent: input.discountPercent,
+      discount_reason: input.discountReason,
+      voucher_id: input.voucherId,
       note: input.note,
       payos_order_code: input.payosOrderCode,
     });

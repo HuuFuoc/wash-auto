@@ -28,20 +28,18 @@ export class LoyaltyAccount {
   @Prop({ required: true, default: 0, min: 0 })
   points_balance: number;
 
+  // Number of COMPLETED orders since the last free-wash voucher was granted.
+  // Resets to 0 when the 10-wash threshold mints a voucher.
   @Prop({ required: true, default: 0, min: 0 })
-  visits_this_month: number;
+  successful_washes_toward_voucher: number;
 
+  // Lifetime COMPLETED-order counter, never reset by the voucher mint.
   @Prop({ required: true, default: 0, min: 0 })
-  visits_last_month: number;
+  total_successful_washes: number;
 
-  @Prop({ required: true, default: 0, min: 0 })
-  consecutive_low_months: number;
-
+  // Last time the annual reset cron zeroed this account. Null until first reset.
   @Prop()
-  tier_reviewed_at?: Date;
-
-  @Prop()
-  points_expire_at?: Date;
+  last_annual_reset_at?: Date;
 }
 
 export const LoyaltyAccountSchema =

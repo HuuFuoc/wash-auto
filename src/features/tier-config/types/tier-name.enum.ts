@@ -1,6 +1,6 @@
 export enum TierNameEnum {
-  MEMBER = 'Member',
+  NONE = 'None',
+  BRONZE = 'Bronze',
   SILVER = 'Silver',
   GOLD = 'Gold',
-  PLATINUM = 'Platinum',
 }

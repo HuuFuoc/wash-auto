@@ -6,27 +6,32 @@ export class TierConfigResponseDto {
   @ApiProperty({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
   id: string;
 
-  @ApiProperty({ enum: TierNameEnum, example: TierNameEnum.MEMBER })
+  @ApiProperty({ enum: TierNameEnum, example: TierNameEnum.NONE })
   tierName: TierNameEnum;
 
-  @ApiProperty({ example: 0 })
-  minVisitsPerMonth: number;
+  @ApiProperty({
+    example: 200,
+    description:
+      'Minimum accumulated loyalty points required to qualify for this tier.',
+  })
+  minLoyaltyPoints: number;
 
-  @ApiProperty({ example: 7 })
+  @ApiProperty({ example: 10 })
   bookingWindowDays: number;
 
-  @ApiProperty({ example: 0 })
+  @ApiProperty({ example: 1 })
   priorityLevel: number;
 
   @ApiProperty({
-    example: 1,
+    example: 1.5,
     description: 'Points awarded per 1,000 VND spent (can be fractional).',
   })
   pointsPer1000Vnd: number;
 
   @ApiProperty({
-    example: 0,
-    description: 'Discount percent applied per wash for this tier (0–100).',
+    example: 5,
+    description:
+      'Discount percent applied during golden hours for this tier (0–100).',
   })
   discountPercent: number;
 
@@ -37,7 +42,7 @@ export class TierConfigResponseDto {
     const dto = new TierConfigResponseDto();
     dto.id = doc._id.toString();
     dto.tierName = doc.tier_name;
-    dto.minVisitsPerMonth = doc.min_visits_per_month;
+    dto.minLoyaltyPoints = doc.min_loyalty_points;
     dto.bookingWindowDays = doc.booking_window_days;
     dto.priorityLevel = doc.priority_level;
     dto.pointsPer1000Vnd = doc.points_per_1000_vnd;

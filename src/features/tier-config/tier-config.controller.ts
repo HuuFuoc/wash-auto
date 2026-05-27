@@ -12,7 +12,7 @@ export class TierConfigController {
   @ApiOperation({
     summary: 'List active tiers (public)',
     description:
-      'Customer-facing endpoint to show loyalty tier ladder. Sorted ascending by priority_level (Member → Platinum).',
+      'Customer-facing endpoint to show loyalty tier ladder. Sorted ascending by priority_level (None → Gold).',
   })
   @ApiResponse({ status: 200, type: TierConfigResponseDto, isArray: true })
   list(): Promise<TierConfigResponseDto[]> {

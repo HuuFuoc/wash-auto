@@ -19,6 +19,7 @@ import { CacheModule } from './core/cache/cache.module';
 import { DatabaseModule } from './core/database/database.module';
 import { AuthModule } from './features/auth/auth.module';
 import { ChatModule } from './features/chat/chat.module';
+import { GoldenHourModule } from './features/golden-hour/golden-hour.module';
 import { LoyaltyModule } from './features/loyalty/loyalty.module';
 import { OrderModule } from './features/order/order.module';
 import { ServiceTypeModule } from './features/service-type/service-type.module';
@@ -27,6 +28,7 @@ import { TierConfigModule } from './features/tier-config/tier-config.module';
 import { UserModule } from './features/user/user.module';
 import { VehicleModule } from './features/vehicle/vehicle.module';
 import { VehicleTypeModule } from './features/vehicle-type/vehicle-type.module';
+import { VoucherModule } from './features/voucher/voucher.module';
 import { WorkOrderModule } from './features/work-order/work-order.module';
 
 @Module({
@@ -59,6 +61,8 @@ import { WorkOrderModule } from './features/work-order/work-order.module';
     VehicleTypeModule,
     VehicleModule,
     TierConfigModule,
+    VoucherModule,
+    GoldenHourModule,
     LoyaltyModule,
     StaffShiftModule,
     OrderModule,

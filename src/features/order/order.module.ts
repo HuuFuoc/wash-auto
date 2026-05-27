@@ -5,11 +5,13 @@ import { VerifiedEmailGuard } from '../../shared/guards/verified-email.guard';
 import { IdempotencyInterceptor } from '../../shared/interceptors/idempotency.interceptor';
 import { AuthModule } from '../auth/auth.module';
 import { EmailModule } from '../email/email.module';
+import { GoldenHourModule } from '../golden-hour/golden-hour.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { ServiceTypeModule } from '../service-type/service-type.module';
 import { StaffShiftModule } from '../staff-shift/staff-shift.module';
 import { TierConfigModule } from '../tier-config/tier-config.module';
 import { VehicleModule } from '../vehicle/vehicle.module';
+import { VoucherModule } from '../voucher/voucher.module';
 import { AdminOrderController } from './admin-order.controller';
 import { Order, OrderSchema } from './entities/order.entity';
 import {
@@ -38,6 +40,8 @@ import { PayosService } from './services/payos.service';
     StaffShiftModule,
     TierConfigModule,
     LoyaltyModule,
+    VoucherModule,
+    GoldenHourModule,
   ],
   controllers: [
     OrderController,

@@ -86,6 +86,26 @@ export class Order {
   @Prop({ required: true, min: 0 })
   amount: number;
 
+  /** Service base price before any discount or voucher was applied. */
+  @Prop({ required: true, min: 0 })
+  original_amount: number;
+
+  /** Total VND knocked off `original_amount` (golden hour + voucher). */
+  @Prop({ required: true, default: 0, min: 0 })
+  discount_amount: number;
+
+  /** Percent applied during golden hour for this customer's tier (0–100). */
+  @Prop({ required: true, default: 0, min: 0, max: 100 })
+  discount_percent: number;
+
+  /** Human-readable reason for the discount, eg `golden_hour:Bronze`. */
+  @Prop({ trim: true })
+  discount_reason?: string;
+
+  /** FREE_WASH voucher consumed on this order, if any. */
+  @Prop({ type: Types.ObjectId, ref: 'Voucher', index: true, sparse: true })
+  voucher_id?: Types.ObjectId;
+
   /** Unique numeric code sent to PayOS (online only). */
   @Prop({ unique: true, sparse: true, index: true })
   payos_order_code?: number;

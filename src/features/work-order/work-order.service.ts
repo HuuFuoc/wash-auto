@@ -12,8 +12,8 @@ import { REDIS_CLIENT } from '../../core/cache/cache.module';
 import { RoleRepository } from '../auth/repositories/role.repository';
 import { UserRepository } from '../auth/repositories/user.repository';
 import { RoleEnum } from '../auth/types/role.enum';
-import { consumesShiftCapacity } from '../order/order.state-machine';
 import { OrderRepository } from '../order/repositories/order.repository';
+import { OrderService } from '../order/services/order.service';
 import { OrderStatusEnum } from '../order/types/order-status.enum';
 import { ServiceTypeRepository } from '../service-type/repositories/service-type.repository';
 import { StaffShiftRepository } from '../staff-shift/repositories/staff-shift.repository';
@@ -42,6 +42,7 @@ export class WorkOrderService {
   constructor(
     private readonly repository: WorkOrderRepository,
     private readonly orderRepository: OrderRepository,
+    private readonly orderService: OrderService,
     private readonly serviceTypeRepository: ServiceTypeRepository,
     private readonly vehicleRepository: VehicleRepository,
     private readonly vehicleTypeRepository: VehicleTypeRepository,
@@ -339,21 +340,11 @@ export class WorkOrderService {
   }
 
   /**
-   * Moves the order to COMPLETED and releases its shift slot. Called when QC
-   * passes — WorkOrder owns the operational lifecycle, so it drives the order
-   * status directly (the manual PATCH /admin/orders/:id/status no longer can).
+   * Moves the order to COMPLETED via OrderService so the loyalty earn hook,
+   * shift-slot release, and audit transaction stay in one place.
    */
   private async completeOrder(orderId: Types.ObjectId): Promise<void> {
-    const order = await this.orderRepository.findById(orderId);
-    if (!order) return;
-    if (consumesShiftCapacity(order.status)) {
-      await this.staffShiftRepository.decrementCurrentBookings(
-        order.staff_shift_id,
-      );
-    }
-    await this.orderRepository.updateById(order._id, {
-      status: OrderStatusEnum.COMPLETED,
-    });
+    await this.orderService.markCompletedByWorkOrder(orderId);
   }
 
   /** Generates a daily-sequential ticket code like WO-20260522-001. */

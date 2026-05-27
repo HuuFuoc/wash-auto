@@ -11,6 +11,14 @@ export interface ICreateLoyaltyAccountInput {
   tierConfigId: Types.ObjectId;
 }
 
+export interface IUpdateLoyaltyAccountInput {
+  tierConfigId?: Types.ObjectId;
+  pointsBalance?: number;
+  successfulWashesTowardVoucher?: number;
+  totalSuccessfulWashes?: number;
+  lastAnnualResetAt?: Date;
+}
+
 @Injectable()
 export class LoyaltyAccountRepository {
   constructor(
@@ -42,9 +50,34 @@ export class LoyaltyAccountRepository {
       customer_id: input.customerId,
       tier_config_id: input.tierConfigId,
       points_balance: 0,
-      visits_this_month: 0,
-      visits_last_month: 0,
-      consecutive_low_months: 0,
+      successful_washes_toward_voucher: 0,
+      total_successful_washes: 0,
     });
+  }
+
+  async updateById(
+    id: Types.ObjectId | string,
+    input: IUpdateLoyaltyAccountInput,
+  ): Promise<LoyaltyAccountDocument | null> {
+    const update: Record<string, unknown> = {};
+    if (input.tierConfigId !== undefined)
+      update.tier_config_id = input.tierConfigId;
+    if (input.pointsBalance !== undefined)
+      update.points_balance = input.pointsBalance;
+    if (input.successfulWashesTowardVoucher !== undefined)
+      update.successful_washes_toward_voucher =
+        input.successfulWashesTowardVoucher;
+    if (input.totalSuccessfulWashes !== undefined)
+      update.total_successful_washes = input.totalSuccessfulWashes;
+    if (input.lastAnnualResetAt !== undefined)
+      update.last_annual_reset_at = input.lastAnnualResetAt;
+
+    return this.model
+      .findByIdAndUpdate(id, { $set: update }, { returnDocument: 'after' })
+      .exec();
+  }
+
+  async findAll(): Promise<LoyaltyAccountDocument[]> {
+    return this.model.find().exec();
   }
 }

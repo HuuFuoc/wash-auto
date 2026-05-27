@@ -3,12 +3,17 @@ import { Type } from 'class-transformer';
 import { IsInt, IsNumber, IsOptional, Max, Min } from 'class-validator';
 
 export class UpdateTierConfigDto {
-  @ApiPropertyOptional({ example: 2, minimum: 0 })
+  @ApiPropertyOptional({
+    example: 200,
+    minimum: 0,
+    description:
+      'Minimum accumulated loyalty points required to qualify for this tier.',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  minVisitsPerMonth?: number;
+  minLoyaltyPoints?: number;
 
   @ApiPropertyOptional({ example: 10, minimum: 0 })
   @IsOptional()
@@ -39,7 +44,8 @@ export class UpdateTierConfigDto {
     example: 5,
     minimum: 0,
     maximum: 100,
-    description: 'Discount percent applied per wash for this tier (0–100).',
+    description:
+      'Discount percent applied during golden hours for this tier (0–100).',
   })
   @IsOptional()
   @Type(() => Number)

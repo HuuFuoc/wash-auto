@@ -12,13 +12,16 @@ import { Types } from 'mongoose';
 import { REDIS_CLIENT } from '../../../core/cache/cache.module';
 import { UserRepository } from '../../auth/repositories/user.repository';
 import { EmailService } from '../../email/email.service';
+import { GoldenHourService } from '../../golden-hour/golden-hour.service';
 import { LoyaltyService } from '../../loyalty/loyalty.service';
 import { ServiceTypeRepository } from '../../service-type/repositories/service-type.repository';
 import { StaffShiftRepository } from '../../staff-shift/repositories/staff-shift.repository';
 import { ShiftStatusEnum } from '../../staff-shift/types/shift-status.enum';
+import { TierConfigDocument } from '../../tier-config/entities/tier-config.entity';
 import { TierConfigRepository } from '../../tier-config/repositories/tier-config.repository';
 import { VehicleRepository } from '../../vehicle/repositories/vehicle.repository';
 import { VehicleService } from '../../vehicle/vehicle.service';
+import { VoucherService } from '../../voucher/voucher.service';
 import { AvailableSlotDto } from '../dto/available-slot.dto';
 import { CancelOrderDto } from '../dto/cancel-order.dto';
 import { CreateOrderDto } from '../dto/create-order.dto';
@@ -63,6 +66,8 @@ export class OrderService {
     private readonly userRepository: UserRepository,
     private readonly tierConfigRepository: TierConfigRepository,
     private readonly loyaltyService: LoyaltyService,
+    private readonly voucherService: VoucherService,
+    private readonly goldenHourService: GoldenHourService,
     private readonly payosService: PayosService,
     private readonly emailService: EmailService,
     private readonly config: ConfigService,
@@ -185,8 +190,27 @@ export class OrderService {
       throw err;
     }
 
-    // 8) Compute amount + initial states
-    const amount = Math.round(parseFloat(service.base_price.toString()));
+    // 8) Compute amount: start from service base price, then apply
+    //    golden-hour tier discount (if scheduledAt falls inside an active
+    //    window AND tier has a discount), then redeem a FREE_WASH voucher if
+    //    the caller supplied one (voucher always wins → amount = 0).
+    const originalAmount = Math.round(
+      parseFloat(service.base_price.toString()),
+    );
+    const pricing = await this.computeOrderPricing(
+      dto.scheduledAt,
+      tier,
+      originalAmount,
+    );
+
+    let voucherDoc: Awaited<
+      ReturnType<VoucherService['consumeFreeWashForOrder']>
+    > | null = null;
+    let amount = pricing.amount;
+    let discountAmount = pricing.discountAmount;
+    let discountPercent = pricing.discountPercent;
+    let discountReason: string | undefined = pricing.discountReason;
+    let voucherIdObj: Types.ObjectId | undefined;
     const isOnline = dto.paymentMethod === PaymentMethodEnum.ONLINE;
     const initialStatus = isOnline
       ? OrderStatusEnum.PENDING_PAYMENT
@@ -197,6 +221,31 @@ export class OrderService {
     //    vehicle created inline so a failed POST leaves nothing behind.
     let order: OrderDocument;
     try {
+      // Voucher consume happens *before* persisting so a failure here aborts
+      // cleanly. If order persist later fails we refund the voucher in the
+      // catch block.
+      if (dto.voucherId) {
+        // Online payment + free voucher doesn't make sense — PayOS won't
+        // accept a 0-VND link. Require cash so a cashier confirms the
+        // redemption at the counter.
+        if (isOnline) {
+          throw new BadRequestException(
+            'Free-wash vouchers can only be redeemed with cash payment',
+          );
+        }
+        const tmpOrderId = new Types.ObjectId();
+        voucherDoc = await this.voucherService.consumeFreeWashForOrder(
+          dto.voucherId,
+          customerId,
+          tmpOrderId,
+        );
+        voucherIdObj = voucherDoc._id;
+        discountAmount = originalAmount;
+        discountPercent = 100;
+        discountReason = `voucher:${voucherDoc.code}`;
+        amount = 0;
+      }
+
       const payosOrderCode = isOnline
         ? await this.generateOrderCode()
         : undefined;
@@ -211,6 +260,11 @@ export class OrderService {
         paymentStatus: initialPaymentStatus,
         status: initialStatus,
         amount,
+        originalAmount,
+        discountAmount,
+        discountPercent,
+        discountReason,
+        voucherId: voucherIdObj,
         note: dto.note,
         payosOrderCode,
       });
@@ -218,6 +272,9 @@ export class OrderService {
       await this.staffShiftRepository.decrementCurrentBookings(reservedShiftId);
       if (createdVehicleId) {
         await this.rollbackInlineVehicle(createdVehicleId);
+      }
+      if (voucherDoc) {
+        await this.voucherService.refund(voucherDoc._id);
       }
       throw err;
     }
@@ -707,10 +764,54 @@ export class OrderService {
       cancelReason,
     });
     if (!updated) throw new NotFoundException('Order not found');
+
+    // Loyalty hook: a NO_SHOW transition penalises the customer's point
+    // balance and may demote their tier. Failures are logged but never
+    // bubble up — the order status update has already happened and an audit
+    // gap is preferable to surfacing a 500 here.
+    if (dto.status === OrderStatusEnum.NO_SHOW) {
+      await this.applyNoShowLoyaltyHookSafe(updated);
+    }
+
     this.logger.log(
       `Staff updated order status orderId=${id} from=${order.status} to=${dto.status}`,
     );
     return OrderResponseDto.fromDocument(updated);
+  }
+
+  /**
+   * Called by WorkOrderService when QC passes. Owns the COMPLETED transition
+   * end-to-end: persist the status, release the shift slot, and run the
+   * loyalty hook (points + wash counter + voucher mint). Centralising it
+   * here keeps every terminal-status side effect in one place so admin and
+   * work-order paths can never diverge.
+   */
+  async markCompletedByWorkOrder(orderId: Types.ObjectId): Promise<void> {
+    const order = await this.orderRepository.findById(orderId);
+    if (!order) return;
+    if (order.status === OrderStatusEnum.COMPLETED) return;
+    if (consumesShiftCapacity(order.status)) {
+      await this.staffShiftRepository.decrementCurrentBookings(
+        order.staff_shift_id,
+      );
+    }
+    const updated = await this.orderRepository.updateById(order._id, {
+      status: OrderStatusEnum.COMPLETED,
+    });
+    if (!updated) return;
+
+    try {
+      await this.loyaltyService.applyOrderCompleted(
+        updated.customer_id,
+        updated._id,
+        updated.amount,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Loyalty earn hook failed orderId=${updated._id.toString()} reason=${msg}`,
+      );
+    }
   }
 
   /** Cashier marks a CASH order as PAID after receiving money. */
@@ -756,10 +857,13 @@ export class OrderService {
             doc.staff_shift_id,
           );
         }
-        await this.orderRepository.updateById(id, {
+        const updated = await this.orderRepository.updateById(id, {
           status: OrderStatusEnum.NO_SHOW,
           cancelReason: 'No arrival within grace window',
         });
+        if (updated) {
+          await this.applyNoShowLoyaltyHookSafe(updated);
+        }
         expired.push(id);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -876,6 +980,60 @@ export class OrderService {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(
         `Confirmation email failed orderId=${order._id.toString()} reason=${msg}`,
+      );
+    }
+  }
+
+  /**
+   * Resolves the booking-time price: applies the customer's tier discount
+   * percent when scheduledAt lands inside an active golden-hour window.
+   * Outside golden hours OR when the tier carries no discount, the original
+   * price is returned untouched. The voucher path overrides this entirely
+   * (handled by the caller).
+   */
+  private async computeOrderPricing(
+    scheduledAt: Date,
+    tier: TierConfigDocument,
+    originalAmount: number,
+  ): Promise<{
+    amount: number;
+    discountAmount: number;
+    discountPercent: number;
+    discountReason?: string;
+  }> {
+    if (tier.discount_percent <= 0) {
+      return { amount: originalAmount, discountAmount: 0, discountPercent: 0 };
+    }
+    const window = await this.goldenHourService.findActiveAt(scheduledAt);
+    if (!window) {
+      return { amount: originalAmount, discountAmount: 0, discountPercent: 0 };
+    }
+    const discountAmount = Math.round(
+      (originalAmount * tier.discount_percent) / 100,
+    );
+    const amount = Math.max(0, originalAmount - discountAmount);
+    return {
+      amount,
+      discountAmount,
+      discountPercent: tier.discount_percent,
+      discountReason: `golden_hour:${tier.tier_name}`,
+    };
+  }
+
+  /**
+   * Wraps LoyaltyService.applyOrderNoShow with a logged catch — the order
+   * has already been moved to NO_SHOW, so a loyalty hiccup must not roll
+   * back the status transition or surface as a 500.
+   */
+  private async applyNoShowLoyaltyHookSafe(
+    order: OrderDocument,
+  ): Promise<void> {
+    try {
+      await this.loyaltyService.applyOrderNoShow(order.customer_id, order._id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Loyalty no-show hook failed orderId=${order._id.toString()} reason=${msg}`,
       );
     }
   }

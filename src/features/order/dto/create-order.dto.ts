@@ -67,4 +67,14 @@ export class CreateOrderDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+
+  @ApiPropertyOptional({
+    example: '6601e3b3f1a2c3a4b5d6e7f8',
+    description:
+      'Id of a FREE_WASH voucher to redeem on this order. When provided and ' +
+      'the voucher is valid, the order amount drops to 0 (cash-only).',
+  })
+  @IsOptional()
+  @IsMongoId()
+  voucherId?: string;
 }

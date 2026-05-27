@@ -14,46 +14,48 @@ import { TierNameEnum } from './types/tier-name.enum';
 
 interface IDefaultTier {
   tierName: TierNameEnum;
-  minVisitsPerMonth: number;
+  minLoyaltyPoints: number;
   bookingWindowDays: number;
   priorityLevel: number;
   pointsPer1000Vnd: number;
   discountPercent: number;
 }
 
-// Values aligned with FE landing page (wave-wash.vercel.app):
-//   Member   — đặt trước 7 ngày,  1   điểm/1000đ, 0% giảm
-//   Silver   — đặt trước 10 ngày, 1.5 điểm/1000đ, 5% giảm
-//   Gold     — đặt trước 12 ngày, 2   điểm/1000đ, 10% giảm
-//   Platinum — đặt trước 14 ngày, 3   điểm/1000đ, 15% giảm
+// 4-tier loyalty ladder driven by accumulated loyalty points.
+//   None   — <  200  điểm,  0% giảm
+//   Bronze —  >= 200  điểm,  5% giảm
+//   Silver —  >= 500  điểm, 10% giảm
+//   Gold   —  >= 1000 điểm, 15% giảm
+// Tier discount only applies when the booking falls inside a configured
+// golden hour (see GoldenHourConfigService).
 const DEFAULT_TIERS: IDefaultTier[] = [
   {
-    tierName: TierNameEnum.MEMBER,
-    minVisitsPerMonth: 0,
+    tierName: TierNameEnum.NONE,
+    minLoyaltyPoints: 0,
     bookingWindowDays: 7,
     priorityLevel: 0,
     pointsPer1000Vnd: 1,
     discountPercent: 0,
   },
   {
-    tierName: TierNameEnum.SILVER,
-    minVisitsPerMonth: 2,
+    tierName: TierNameEnum.BRONZE,
+    minLoyaltyPoints: 200,
     bookingWindowDays: 10,
     priorityLevel: 1,
     pointsPer1000Vnd: 1.5,
     discountPercent: 5,
   },
   {
-    tierName: TierNameEnum.GOLD,
-    minVisitsPerMonth: 5,
+    tierName: TierNameEnum.SILVER,
+    minLoyaltyPoints: 500,
     bookingWindowDays: 12,
     priorityLevel: 2,
     pointsPer1000Vnd: 2,
     discountPercent: 10,
   },
   {
-    tierName: TierNameEnum.PLATINUM,
-    minVisitsPerMonth: 10,
+    tierName: TierNameEnum.GOLD,
+    minLoyaltyPoints: 1000,
     bookingWindowDays: 14,
     priorityLevel: 3,
     pointsPer1000Vnd: 3,
@@ -68,6 +70,13 @@ export class TierConfigService {
   constructor(private readonly repository: TierConfigRepository) {}
 
   async seedDefaults(): Promise<void> {
+    // Drop legacy MEMBER/PLATINUM rows (or any other unknown name) left over
+    // from the previous tier model so the active ladder stays clean.
+    const keep = DEFAULT_TIERS.map((t) => t.tierName);
+    const removed = await this.repository.deleteByNamesNotIn(keep);
+    if (removed > 0) {
+      this.logger.log(`Removed ${removed} legacy tier_config rows`);
+    }
     for (const tier of DEFAULT_TIERS) {
       await this.repository.upsertByName(tier);
     }

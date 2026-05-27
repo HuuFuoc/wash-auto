@@ -38,8 +38,35 @@ export class OrderResponseDto {
   })
   paymentStatus: PaymentStatusEnum;
 
-  @ApiProperty({ example: 150000 })
+  @ApiProperty({
+    example: 150000,
+    description: 'Final amount the customer pays (after discount/voucher).',
+  })
   amount: number;
+
+  @ApiProperty({
+    example: 150000,
+    description: 'Service base price before discounts.',
+  })
+  originalAmount: number;
+
+  @ApiProperty({
+    example: 15000,
+    description: 'VND knocked off original_amount.',
+  })
+  discountAmount: number;
+
+  @ApiProperty({
+    example: 10,
+    description: 'Percent discount applied (golden hour + tier).',
+  })
+  discountPercent: number;
+
+  @ApiPropertyOptional({ example: 'golden_hour:Bronze' })
+  discountReason?: string;
+
+  @ApiPropertyOptional({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
+  voucherId?: string;
 
   @ApiProperty({ example: 0 })
   priorityLevel: number;
@@ -80,6 +107,11 @@ export class OrderResponseDto {
     dto.paymentMethod = doc.payment_method;
     dto.paymentStatus = doc.payment_status;
     dto.amount = doc.amount;
+    dto.originalAmount = doc.original_amount;
+    dto.discountAmount = doc.discount_amount;
+    dto.discountPercent = doc.discount_percent;
+    dto.discountReason = doc.discount_reason;
+    dto.voucherId = doc.voucher_id?.toString();
     dto.priorityLevel = doc.priority_level;
     dto.rescheduleCount = doc.reschedule_count;
     dto.cancelReason = doc.cancel_reason;

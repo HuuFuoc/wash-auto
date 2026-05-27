@@ -6,7 +6,7 @@ import { TierNameEnum } from '../types/tier-name.enum';
 
 export interface IUpsertTierInput {
   tierName: TierNameEnum;
-  minVisitsPerMonth: number;
+  minLoyaltyPoints: number;
   bookingWindowDays: number;
   priorityLevel: number;
   pointsPer1000Vnd: number;
@@ -14,7 +14,7 @@ export interface IUpsertTierInput {
 }
 
 export interface IUpdateTierInput {
-  minVisitsPerMonth?: number;
+  minLoyaltyPoints?: number;
   bookingWindowDays?: number;
   priorityLevel?: number;
   pointsPer1000Vnd?: number;
@@ -57,7 +57,7 @@ export class TierConfigRepository {
         {
           $setOnInsert: {
             tier_name: input.tierName,
-            min_visits_per_month: input.minVisitsPerMonth,
+            min_loyalty_points: input.minLoyaltyPoints,
             booking_window_days: input.bookingWindowDays,
             priority_level: input.priorityLevel,
             points_per_1000_vnd: input.pointsPer1000Vnd,
@@ -74,13 +74,25 @@ export class TierConfigRepository {
     return doc;
   }
 
+  /**
+   * Removes legacy tier rows whose name is not in the supplied list of
+   * canonical names. Used during seed to drop pre-existing MEMBER/PLATINUM
+   * documents that no longer belong to the new 4-tier model.
+   */
+  async deleteByNamesNotIn(keepNames: TierNameEnum[]): Promise<number> {
+    const res = await this.model
+      .deleteMany({ tier_name: { $nin: keepNames } })
+      .exec();
+    return res.deletedCount ?? 0;
+  }
+
   async update(
     id: Types.ObjectId | string,
     input: IUpdateTierInput,
   ): Promise<TierConfigDocument | null> {
     const update: Record<string, unknown> = {};
-    if (input.minVisitsPerMonth !== undefined)
-      update.min_visits_per_month = input.minVisitsPerMonth;
+    if (input.minLoyaltyPoints !== undefined)
+      update.min_loyalty_points = input.minLoyaltyPoints;
     if (input.bookingWindowDays !== undefined)
       update.booking_window_days = input.bookingWindowDays;
     if (input.priorityLevel !== undefined)

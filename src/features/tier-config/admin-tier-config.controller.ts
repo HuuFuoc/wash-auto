@@ -26,7 +26,7 @@ export class AdminTierConfigController {
   @ApiOperation({
     summary: 'List all tiers incl. inactive (admin)',
     description:
-      'Returns 4 default tiers (Member/Silver/Gold/Platinum) sorted by priority_level.',
+      'Returns 4 default tiers (None/Bronze/Silver/Gold) sorted by priority_level.',
   })
   @ApiResponse({ status: 200, type: TierConfigResponseDto, isArray: true })
   listAll(): Promise<TierConfigResponseDto[]> {
@@ -37,7 +37,7 @@ export class AdminTierConfigController {
   @ApiOperation({
     summary: 'Update tier config (admin)',
     description:
-      'Tune booking_window_days, points_per_wash, min_visits_per_month, or priority_level. Tier names are immutable (set at seed time).',
+      'Tune booking_window_days, points_per_1000_vnd, min_loyalty_points, discount_percent, or priority_level. Tier names are immutable (set at seed time).',
   })
   @ApiResponse({ status: 200, type: TierConfigResponseDto })
   @ApiResponse({ status: 404, description: 'Tier not found' })

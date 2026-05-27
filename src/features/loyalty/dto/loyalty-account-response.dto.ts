@@ -12,26 +12,27 @@ export class LoyaltyAccountResponseDto {
   @ApiProperty({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
   tierConfigId: string;
 
-  @ApiProperty({ enum: TierNameEnum, example: TierNameEnum.MEMBER })
+  @ApiProperty({ enum: TierNameEnum, example: TierNameEnum.NONE })
   tierName: TierNameEnum;
 
   @ApiProperty({ example: 0 })
   pointsBalance: number;
 
-  @ApiProperty({ example: 0 })
-  visitsThisMonth: number;
+  @ApiProperty({
+    example: 3,
+    description:
+      'Number of completed washes since the last free-wash voucher was minted. Resets to 0 at the 10-wash threshold.',
+  })
+  successfulWashesTowardVoucher: number;
 
-  @ApiProperty({ example: 0 })
-  visitsLastMonth: number;
+  @ApiProperty({
+    example: 13,
+    description: 'Lifetime count of completed orders for this customer.',
+  })
+  totalSuccessfulWashes: number;
 
-  @ApiProperty({ example: 0 })
-  consecutiveLowMonths: number;
-
-  @ApiPropertyOptional({ example: '2026-05-01T00:00:00.000Z' })
-  tierReviewedAt?: Date;
-
-  @ApiPropertyOptional({ example: '2027-05-15T00:00:00.000Z' })
-  pointsExpireAt?: Date;
+  @ApiPropertyOptional({ example: '2026-01-01T00:00:00.000Z' })
+  lastAnnualResetAt?: Date;
 
   static fromDocument(
     doc: LoyaltyAccountDocument,
@@ -43,11 +44,9 @@ export class LoyaltyAccountResponseDto {
     dto.tierConfigId = doc.tier_config_id.toString();
     dto.tierName = tierName;
     dto.pointsBalance = doc.points_balance;
-    dto.visitsThisMonth = doc.visits_this_month;
-    dto.visitsLastMonth = doc.visits_last_month;
-    dto.consecutiveLowMonths = doc.consecutive_low_months;
-    dto.tierReviewedAt = doc.tier_reviewed_at;
-    dto.pointsExpireAt = doc.points_expire_at;
+    dto.successfulWashesTowardVoucher = doc.successful_washes_toward_voucher;
+    dto.totalSuccessfulWashes = doc.total_successful_washes;
+    dto.lastAnnualResetAt = doc.last_annual_reset_at;
     return dto;
   }
 }
