@@ -9,7 +9,8 @@ export interface ICreateVoucherInput {
   customerId: Types.ObjectId;
   code: string;
   type: VoucherTypeEnum;
-  expiresAt?: Date;
+  discountCapVnd: number;
+  expiresAt: Date;
   grantedReason?: string;
 }
 
@@ -26,6 +27,7 @@ export class VoucherRepository {
       code: input.code,
       type: input.type,
       status: VoucherStatusEnum.UNUSED,
+      discount_cap_vnd: input.discountCapVnd,
       expires_at: input.expiresAt,
       granted_reason: input.grantedReason,
     });
@@ -59,9 +61,13 @@ export class VoucherRepository {
 
   /**
    * Atomically marks an UNUSED voucher as USED. Returns null if the voucher
-   * does not exist, is not owned by the customer, or has already been
-   * consumed — callers MUST treat null as "voucher unavailable" and refuse
-   * the booking, otherwise a race could double-apply the free wash.
+   * does not exist, is not owned by the customer, has already been consumed,
+   * or has already expired — callers MUST treat null as "voucher unavailable"
+   * and refuse the booking, otherwise a race could double-apply the free wash.
+   *
+   * The `expires_at > now` filter guards against the corner case where the
+   * daily expire cron has not yet flipped a voucher to EXPIRED but its
+   * deadline has passed.
    */
   async consume(
     id: Types.ObjectId | string,
@@ -75,6 +81,7 @@ export class VoucherRepository {
           _id: id,
           customer_id: new Types.ObjectId(customerId),
           status: VoucherStatusEnum.UNUSED,
+          expires_at: { $gt: new Date() },
         },
         {
           $set: {
@@ -101,5 +108,23 @@ export class VoucherRepository {
         { returnDocument: 'after' },
       )
       .exec();
+  }
+
+  /**
+   * Bulk-flips every UNUSED voucher whose deadline has passed to EXPIRED.
+   * Idempotent — re-running the cron only touches the new arrivals.
+   * Returns the number of affected docs so the cron can log it.
+   */
+  async expireDueVouchers(now: Date): Promise<number> {
+    const result = await this.model
+      .updateMany(
+        {
+          status: VoucherStatusEnum.UNUSED,
+          expires_at: { $lte: now },
+        },
+        { $set: { status: VoucherStatusEnum.EXPIRED } },
+      )
+      .exec();
+    return result.modifiedCount ?? 0;
   }
 }

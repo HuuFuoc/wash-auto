@@ -11,8 +11,20 @@ import { VoucherTypeEnum } from './types/voucher-type.enum';
 export interface IGrantFreeWashInput {
   customerId: Types.ObjectId;
   reason?: string;
+  /** Override the default 90-day expiry. */
   expiresAt?: Date;
+  /** Override the default 100k VND cap. Mostly used by admin-issued grants. */
+  discountCapVnd?: number;
 }
+
+// Hard ceiling on what a free-wash voucher can knock off a single order.
+// Picked from the economics model (§5.1): a 100k cap keeps the program at
+// ~5% revenue cost even when the voucher is redeemed on Detailing.
+const DEFAULT_FREE_WASH_CAP_VND = 100_000;
+
+// Customers have 90 days from mint to redeem. Past this the daily expire
+// cron flips the voucher to EXPIRED.
+const DEFAULT_VOUCHER_TTL_DAYS = 90;
 
 @Injectable()
 export class VoucherService {
@@ -26,18 +38,26 @@ export class VoucherService {
   /**
    * Mints a single FREE_WASH voucher with a fresh daily-sequential code.
    * Called by LoyaltyService when the 10-wash threshold trips.
+   *
+   * The cap and expiry default to program-wide constants — overriding them
+   * is only intended for admin-issued grants (e.g. service-recovery comps).
    */
   async grantFreeWash(input: IGrantFreeWashInput): Promise<VoucherDocument> {
     const code = await this.generateCode();
+    const expiresAt =
+      input.expiresAt ??
+      new Date(Date.now() + DEFAULT_VOUCHER_TTL_DAYS * 24 * 60 * 60 * 1000);
+    const discountCapVnd = input.discountCapVnd ?? DEFAULT_FREE_WASH_CAP_VND;
     const voucher = await this.repository.create({
       customerId: input.customerId,
       code,
       type: VoucherTypeEnum.FREE_WASH,
+      discountCapVnd,
+      expiresAt,
       grantedReason: input.reason ?? 'Reward for 10 completed washes',
-      expiresAt: input.expiresAt,
     });
     this.logger.log(
-      `Granted FREE_WASH voucher ${voucher.code} to customer ${input.customerId.toString()}`,
+      `Granted FREE_WASH voucher ${voucher.code} cap=${discountCapVnd} expires=${expiresAt.toISOString()} customer=${input.customerId.toString()}`,
     );
     return voucher;
   }
@@ -57,6 +77,22 @@ export class VoucherService {
     const doc = await this.repository.findByIdForOwner(id, customerId);
     if (!doc) throw new NotFoundException('Voucher not found');
     return VoucherResponseDto.fromDocument(doc);
+  }
+
+  /**
+   * Returns the voucher if it is owned by `customerId`, UNUSED, and not yet
+   * expired. Returns null otherwise. Used by the pricing preview path which
+   * needs to know the cap without consuming the voucher.
+   */
+  async findRedeemableForCustomer(
+    voucherId: string,
+    customerId: string,
+  ): Promise<VoucherDocument | null> {
+    const doc = await this.repository.findByIdForOwner(voucherId, customerId);
+    if (!doc) return null;
+    if (doc.status !== VoucherStatusEnum.UNUSED) return null;
+    if (doc.expires_at.getTime() <= Date.now()) return null;
+    return doc;
   }
 
   /**
@@ -90,6 +126,19 @@ export class VoucherService {
 
   async refund(voucherId: Types.ObjectId): Promise<void> {
     await this.repository.refund(voucherId);
+  }
+
+  /**
+   * Flips every UNUSED voucher past its expires_at to EXPIRED. Idempotent;
+   * the daily cron calls this. Returns the number of vouchers flipped so
+   * the caller can log it.
+   */
+  async expireDue(): Promise<number> {
+    const flipped = await this.repository.expireDueVouchers(new Date());
+    if (flipped > 0) {
+      this.logger.log(`Expired ${flipped} due vouchers`);
+    }
+    return flipped;
   }
 
   /** Generates a daily-sequential voucher code like FREEWASH-20260527-001. */

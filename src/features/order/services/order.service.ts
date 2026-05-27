@@ -29,6 +29,10 @@ import {
   OrderListResponseDto,
   OrderResponseDto,
 } from '../dto/order-response.dto';
+import {
+  PreviewOrderDto,
+  PreviewOrderResponseDto,
+} from '../dto/preview-order.dto';
 import { QueryAvailableSlotsDto } from '../dto/query-available-slots.dto';
 import { QueryOrderDto } from '../dto/query-order.dto';
 import { RescheduleOrderDto } from '../dto/reschedule-order.dto';
@@ -192,8 +196,11 @@ export class OrderService {
 
     // 8) Compute amount: start from service base price, then apply
     //    golden-hour tier discount (if scheduledAt falls inside an active
-    //    window AND tier has a discount), then redeem a FREE_WASH voucher if
-    //    the caller supplied one (voucher always wins → amount = 0).
+    //    window AND tier has a discount), then optionally stack a FREE_WASH
+    //    voucher capped at `voucher.discount_cap_vnd`. The voucher used to
+    //    zero the order out (100% off); it now stacks with golden hour and
+    //    is capped so a voucher minted off Basic washes cannot be redeemed
+    //    against a Detailing service for more than its configured ceiling.
     const originalAmount = Math.round(
       parseFloat(service.base_price.toString()),
     );
@@ -225,14 +232,6 @@ export class OrderService {
       // cleanly. If order persist later fails we refund the voucher in the
       // catch block.
       if (dto.voucherId) {
-        // Online payment + free voucher doesn't make sense — PayOS won't
-        // accept a 0-VND link. Require cash so a cashier confirms the
-        // redemption at the counter.
-        if (isOnline) {
-          throw new BadRequestException(
-            'Free-wash vouchers can only be redeemed with cash payment',
-          );
-        }
         const tmpOrderId = new Types.ObjectId();
         voucherDoc = await this.voucherService.consumeFreeWashForOrder(
           dto.voucherId,
@@ -240,10 +239,33 @@ export class OrderService {
           tmpOrderId,
         );
         voucherIdObj = voucherDoc._id;
-        discountAmount = originalAmount;
-        discountPercent = 100;
-        discountReason = `voucher:${voucherDoc.code}`;
-        amount = 0;
+
+        // Voucher discount is capped at min(voucherCap, remaining amount).
+        // `remaining` is the post-tier-discount amount so the voucher only
+        // shaves off what is still chargeable.
+        const remaining = Math.max(0, originalAmount - discountAmount);
+        const voucherDiscount = Math.min(
+          remaining,
+          voucherDoc.discount_cap_vnd,
+        );
+        discountAmount = discountAmount + voucherDiscount;
+        amount = Math.max(0, originalAmount - discountAmount);
+        discountPercent =
+          originalAmount > 0
+            ? Math.round((discountAmount / originalAmount) * 100)
+            : 0;
+        discountReason = discountReason
+          ? `${discountReason}+voucher:${voucherDoc.code}`
+          : `voucher:${voucherDoc.code}`;
+
+        // PayOS will not accept a 0-VND payment link. If discounts wipe the
+        // total clean, fall back to cash so a cashier closes the order at
+        // the counter.
+        if (isOnline && amount === 0) {
+          throw new BadRequestException(
+            'Order total is 0 VND after discounts — please pay in cash at the counter',
+          );
+        }
       }
 
       const payosOrderCode = isOnline
@@ -341,6 +363,90 @@ export class OrderService {
   }
 
   /**
+   * Returns the pricing breakdown a customer would see if they posted the
+   * exact same (service, time, voucher) tuple to `POST /me/orders` right now.
+   * No side effects — the voucher is NOT consumed, no shift slot is held.
+   *
+   * The math intentionally mirrors `createOrder` so the figures the FE shows
+   * and the figures persisted on the order match to the dong. If the voucher
+   * is missing, expired, or already used we return a `voucherError` and treat
+   * the request as if no voucher was supplied — the customer still sees the
+   * tier-discount price and can decide whether to proceed.
+   */
+  async previewOrder(
+    customerId: string,
+    dto: PreviewOrderDto,
+  ): Promise<PreviewOrderResponseDto> {
+    const service = await this.serviceTypeRepository.findById(
+      dto.serviceTypeId,
+    );
+    if (!service || !service.is_active) {
+      throw new BadRequestException('Service type not found or inactive');
+    }
+
+    const loyaltyAccount =
+      await this.loyaltyService.ensureForCustomer(customerId);
+    const tier = await this.tierConfigRepository.findById(
+      loyaltyAccount.tier_config_id,
+    );
+    if (!tier) {
+      throw new BadRequestException('Tier config missing for this customer');
+    }
+
+    const originalAmount = Math.round(
+      parseFloat(service.base_price.toString()),
+    );
+    const pricing = await this.computeOrderPricing(
+      dto.scheduledAt,
+      tier,
+      originalAmount,
+    );
+
+    let discountAmount = pricing.discountAmount;
+    let discountReason = pricing.discountReason;
+    let voucherDiscountCapVnd: number | undefined;
+    let voucherError: string | undefined;
+
+    if (dto.voucherId) {
+      const voucher = await this.voucherService.findRedeemableForCustomer(
+        dto.voucherId,
+        customerId,
+      );
+      if (!voucher) {
+        voucherError = 'Voucher not found, not owned, expired, or already used';
+      } else {
+        voucherDiscountCapVnd = voucher.discount_cap_vnd;
+        const remaining = Math.max(0, originalAmount - discountAmount);
+        const voucherDiscount = Math.min(remaining, voucher.discount_cap_vnd);
+        discountAmount += voucherDiscount;
+        discountReason = discountReason
+          ? `${discountReason}+voucher:${voucher.code}`
+          : `voucher:${voucher.code}`;
+      }
+    }
+
+    const amount = Math.max(0, originalAmount - discountAmount);
+    const discountPercent =
+      originalAmount > 0
+        ? Math.round((discountAmount / originalAmount) * 100)
+        : 0;
+    const isGoldenHour = !!pricing.discountReason;
+
+    return {
+      originalAmount,
+      discountAmount,
+      discountPercent,
+      discountReason,
+      amount,
+      isGoldenHour,
+      tierName: tier.tier_name,
+      tierDiscountPercent: tier.discount_percent,
+      voucherDiscountCapVnd,
+      voucherError,
+    };
+  }
+
+  /**
    * Enumerates the discrete start times a customer may book for a given
    * service inside [from, to]. A slot is bookable when some SCHEDULED shift
    * fully contains [slot, slot + service duration] and still has capacity —
@@ -414,14 +520,29 @@ export class OrderService {
       }
     }
 
-    return [...capacityBySlot.entries()]
-      .sort(([a], [b]) => a - b)
-      .map(([ms, capacity]) => {
+    // Annotate every slot with the golden-hour flag and the tier discount
+    // percent the caller would earn if they booked it. `isGoldenHour` is the
+    // literal "scheduled_at falls inside an active window" — true even for
+    // None-tier customers (FE can use it to suggest upgrading) — while
+    // `discountPercent` is what the caller would actually save. Looking up
+    // the golden-hour window directly (instead of computeOrderPricing) avoids
+    // the early-return in computeOrderPricing that masks None-tier slots.
+    const sortedEntries = [...capacityBySlot.entries()].sort(
+      ([a], [b]) => a - b,
+    );
+    const annotated = await Promise.all(
+      sortedEntries.map(async ([ms, capacity]) => {
+        const scheduledAt = new Date(ms);
+        const window = await this.goldenHourService.findActiveAt(scheduledAt);
         const slot = new AvailableSlotDto();
-        slot.scheduledAt = new Date(ms);
+        slot.scheduledAt = scheduledAt;
         slot.remainingCapacity = capacity;
+        slot.isGoldenHour = !!window;
+        slot.discountPercent = window ? tier.discount_percent : 0;
         return slot;
-      });
+      }),
+    );
+    return annotated;
   }
 
   async rescheduleOwn(
