@@ -1,4 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { VoucherTypeEnum } from '../../voucher/types/voucher-type.enum';
 import { TierConfigDocument } from '../entities/tier-config.entity';
 import { TierNameEnum } from '../types/tier-name.enum';
 
@@ -35,6 +36,23 @@ export class TierConfigResponseDto {
   })
   discountPercent: number;
 
+  @ApiPropertyOptional({
+    enum: VoucherTypeEnum,
+    example: VoucherTypeEnum.BRONZE_FREE_BASIC,
+    description:
+      'Voucher type minted when a customer at this tier completes the wash ' +
+      'milestone. Omitted when the tier produces no milestone voucher.',
+  })
+  voucherTypeOnMilestone?: VoucherTypeEnum;
+
+  @ApiProperty({
+    example: 40000,
+    description:
+      'Discount cap (VND) baked into the voucher minted at the milestone. ' +
+      '0 means the tier does not mint a voucher.',
+  })
+  voucherCapVnd: number;
+
   @ApiProperty({ example: true })
   isActive: boolean;
 
@@ -47,6 +65,8 @@ export class TierConfigResponseDto {
     dto.priorityLevel = doc.priority_level;
     dto.pointsPer1000Vnd = doc.points_per_1000_vnd;
     dto.discountPercent = doc.discount_percent;
+    dto.voucherTypeOnMilestone = doc.voucher_type_on_milestone;
+    dto.voucherCapVnd = doc.voucher_cap_vnd;
     dto.isActive = doc.is_active;
     return dto;
   }

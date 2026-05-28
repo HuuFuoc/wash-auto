@@ -10,6 +10,11 @@ export interface ICreateVoucherInput {
   code: string;
   type: VoucherTypeEnum;
   discountCapVnd: number;
+  /**
+   * Service types the voucher is restricted to. Omit or pass an empty array
+   * for "any service" — only BRONZE_FREE_BASIC needs a non-empty list.
+   */
+  applicableServiceTypeIds?: Types.ObjectId[];
   expiresAt: Date;
   grantedReason?: string;
 }
@@ -28,6 +33,7 @@ export class VoucherRepository {
       type: input.type,
       status: VoucherStatusEnum.UNUSED,
       discount_cap_vnd: input.discountCapVnd,
+      applicable_service_type_ids: input.applicableServiceTypeIds ?? [],
       expires_at: input.expiresAt,
       granted_reason: input.grantedReason,
     });

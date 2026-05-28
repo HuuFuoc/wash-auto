@@ -170,12 +170,28 @@ export class LoyaltyService {
     let washesAfterReward = newTowardVoucher;
     let mintedVoucherId: Types.ObjectId | undefined;
     if (newTowardVoucher >= WASHES_PER_FREE_VOUCHER) {
-      const voucher = await this.voucherService.grantFreeWash({
-        customerId: new Types.ObjectId(customerId),
-        reason: `Reward for ${WASHES_PER_FREE_VOUCHER} completed washes`,
-      });
-      mintedVoucherId = voucher._id;
+      // Counter is reset regardless of mint outcome so a customer who hit
+      // the milestone at NONE tier does not stay pinned at the threshold
+      // forever — they get a fresh 10-wash counter once they climb.
       washesAfterReward = newTowardVoucher - WASHES_PER_FREE_VOUCHER;
+
+      const voucherType = tier.voucher_type_on_milestone;
+      if (voucherType && tier.voucher_cap_vnd > 0) {
+        const voucher = await this.voucherService.grantByType({
+          customerId: new Types.ObjectId(customerId),
+          type: voucherType,
+          discountCapVnd: tier.voucher_cap_vnd,
+          reason: `Reward for ${WASHES_PER_FREE_VOUCHER} washes (${tier.tier_name})`,
+        });
+        mintedVoucherId = voucher._id;
+      } else {
+        // NONE tier (or any tier admin disabled the perk on) hits the
+        // milestone but produces no voucher. Logged so support can explain
+        // "you hit 10 washes but had not climbed to Bronze yet".
+        this.logger.warn(
+          `Wash milestone reached at ${tier.tier_name} with no voucher_type_on_milestone — no voucher minted for customer ${customerId.toString()}`,
+        );
+      }
     }
 
     await this.loyaltyRepository.updateById(account._id, {

@@ -35,6 +35,20 @@ export class ServiceTypeRepository {
     return this.model.find({ is_active: true }).sort({ name: 1 }).exec();
   }
 
+  /**
+   * Returns the active service flagged as the default Basic Wash. Used by
+   * voucher mint to discover which service a BRONZE_FREE_BASIC voucher
+   * should be locked to. If admin has not flagged any service yet this
+   * returns null and the voucher is minted with no service restriction —
+   * the alternative is failing the customer's reward silently, which is
+   * worse than a slightly broader voucher.
+   */
+  async findDefaultBasic(): Promise<ServiceTypeDocument | null> {
+    return this.model
+      .findOne({ is_default_basic: true, is_active: true })
+      .exec();
+  }
+
   async findAll(): Promise<ServiceTypeDocument[]> {
     return this.model.find().sort({ name: 1 }).exec();
   }

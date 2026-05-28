@@ -39,6 +39,13 @@ export class Voucher {
   @Prop({ required: true, min: 0 })
   discount_cap_vnd: number;
 
+  // Service types the voucher may be redeemed against. Empty array means
+  // "any active service". A BRONZE_FREE_BASIC voucher carries exactly one
+  // entry — the id of the service flagged `is_default_basic` at mint time.
+  // Other tier-aware vouchers leave this empty so they apply broadly.
+  @Prop({ type: [Types.ObjectId], ref: 'ServiceType', default: [] })
+  applicable_service_type_ids: Types.ObjectId[];
+
   // Hard deadline. After this instant the daily expire cron flips the voucher
   // to EXPIRED and the consume path also refuses it as a safety net.
   @Prop({ required: true, index: true })

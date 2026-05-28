@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { VoucherTypeEnum } from '../../voucher/types/voucher-type.enum';
 import { TierConfig, TierConfigDocument } from '../entities/tier-config.entity';
 import { TierNameEnum } from '../types/tier-name.enum';
 
@@ -11,6 +12,8 @@ export interface IUpsertTierInput {
   priorityLevel: number;
   pointsPer1000Vnd: number;
   discountPercent: number;
+  voucherTypeOnMilestone?: VoucherTypeEnum;
+  voucherCapVnd: number;
 }
 
 export interface IUpdateTierInput {
@@ -19,6 +22,8 @@ export interface IUpdateTierInput {
   priorityLevel?: number;
   pointsPer1000Vnd?: number;
   discountPercent?: number;
+  voucherTypeOnMilestone?: VoucherTypeEnum | null;
+  voucherCapVnd?: number;
 }
 
 @Injectable()
@@ -62,6 +67,8 @@ export class TierConfigRepository {
             priority_level: input.priorityLevel,
             points_per_1000_vnd: input.pointsPer1000Vnd,
             discount_percent: input.discountPercent,
+            voucher_type_on_milestone: input.voucherTypeOnMilestone,
+            voucher_cap_vnd: input.voucherCapVnd,
             is_active: true,
           },
         },
@@ -107,6 +114,10 @@ export class TierConfigRepository {
       update.points_per_1000_vnd = input.pointsPer1000Vnd;
     if (input.discountPercent !== undefined)
       update.discount_percent = input.discountPercent;
+    if (input.voucherTypeOnMilestone !== undefined)
+      update.voucher_type_on_milestone = input.voucherTypeOnMilestone;
+    if (input.voucherCapVnd !== undefined)
+      update.voucher_cap_vnd = input.voucherCapVnd;
 
     return this.model
       .findByIdAndUpdate(id, { $set: update }, { returnDocument: 'after' })

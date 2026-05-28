@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Types } from 'mongoose';
+import { VoucherTypeEnum } from '../voucher/types/voucher-type.enum';
 import { SetTierConfigStatusDto } from './dto/set-tier-config-status.dto';
 import { TierConfigResponseDto } from './dto/tier-config-response.dto';
 import { UpdateTierConfigDto } from './dto/update-tier-config.dto';
@@ -19,15 +20,18 @@ interface IDefaultTier {
   priorityLevel: number;
   pointsPer1000Vnd: number;
   discountPercent: number;
+  voucherTypeOnMilestone?: VoucherTypeEnum;
+  voucherCapVnd: number;
 }
 
 // 4-tier loyalty ladder driven by accumulated loyalty points.
-//   None   — <  200  điểm,  0% giảm
-//   Bronze —  >= 200  điểm,  5% giảm
-//   Silver —  >= 500  điểm, 10% giảm
-//   Gold   —  >= 1000 điểm, 15% giảm
+//   None   — <  200  điểm,  0% giảm, không mint voucher milestone
+//   Bronze —  >= 200  điểm,  5% giảm,  free 1 lần Basic (cap 40k)
+//   Silver —  >= 500  điểm, 10% giảm,  voucher giảm cố định 80k
+//   Gold   —  >= 1000 điểm, 15% giảm,  voucher giảm cố định 120k
 // Tier discount only applies when the booking falls inside a configured
-// golden hour (see GoldenHourConfigService).
+// golden hour (see GoldenHourConfigService). The voucher cap is independent
+// from the golden-hour percent so admins can tune the two perks separately.
 const DEFAULT_TIERS: IDefaultTier[] = [
   {
     tierName: TierNameEnum.NONE,
@@ -36,6 +40,8 @@ const DEFAULT_TIERS: IDefaultTier[] = [
     priorityLevel: 0,
     pointsPer1000Vnd: 1,
     discountPercent: 0,
+    voucherTypeOnMilestone: undefined,
+    voucherCapVnd: 0,
   },
   {
     tierName: TierNameEnum.BRONZE,
@@ -44,6 +50,8 @@ const DEFAULT_TIERS: IDefaultTier[] = [
     priorityLevel: 1,
     pointsPer1000Vnd: 1.5,
     discountPercent: 5,
+    voucherTypeOnMilestone: VoucherTypeEnum.BRONZE_FREE_BASIC,
+    voucherCapVnd: 40_000,
   },
   {
     tierName: TierNameEnum.SILVER,
@@ -52,6 +60,8 @@ const DEFAULT_TIERS: IDefaultTier[] = [
     priorityLevel: 2,
     pointsPer1000Vnd: 2,
     discountPercent: 10,
+    voucherTypeOnMilestone: VoucherTypeEnum.SILVER_DISCOUNT,
+    voucherCapVnd: 80_000,
   },
   {
     tierName: TierNameEnum.GOLD,
@@ -60,6 +70,8 @@ const DEFAULT_TIERS: IDefaultTier[] = [
     priorityLevel: 3,
     pointsPer1000Vnd: 3,
     discountPercent: 15,
+    voucherTypeOnMilestone: VoucherTypeEnum.GOLD_DISCOUNT,
+    voucherCapVnd: 120_000,
   },
 ];
 
@@ -81,7 +93,12 @@ export class TierConfigService {
       (doc) =>
         !canonical.has(doc.tier_name) ||
         doc.min_loyalty_points === undefined ||
-        doc.min_loyalty_points === null,
+        doc.min_loyalty_points === null ||
+        // The voucher-by-tier refactor added voucher_cap_vnd. Detect docs
+        // seeded before that field existed so the next boot wipes and
+        // reseeds with the tier→voucher mapping populated.
+        doc.voucher_cap_vnd === undefined ||
+        doc.voucher_cap_vnd === null,
     );
 
     if (isLegacySchema) {

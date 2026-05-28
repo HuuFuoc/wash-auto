@@ -27,6 +27,14 @@ export class ServiceType {
   @Prop({ type: [String], default: [] })
   checklist_template: string[];
 
+  /**
+   * Marks the service that BRONZE_FREE_BASIC vouchers may be redeemed
+   * against. Exactly one active service should carry this flag; voucher
+   * mint code defensively picks the first match if more than one is set.
+   */
+  @Prop({ default: false, index: true })
+  is_default_basic: boolean;
+
   @Prop({ default: true, index: true })
   is_active: boolean;
 }

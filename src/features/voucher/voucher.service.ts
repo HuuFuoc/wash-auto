@@ -2,29 +2,39 @@ import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import type Redis from 'ioredis';
 import { Types } from 'mongoose';
 import { REDIS_CLIENT } from '../../core/cache/cache.module';
+import { ServiceTypeRepository } from '../service-type/repositories/service-type.repository';
 import { VoucherResponseDto } from './dto/voucher-response.dto';
 import { VoucherDocument } from './entities/voucher.entity';
 import { VoucherRepository } from './repositories/voucher.repository';
 import { VoucherStatusEnum } from './types/voucher-status.enum';
 import { VoucherTypeEnum } from './types/voucher-type.enum';
 
-export interface IGrantFreeWashInput {
+export interface IGrantByTypeInput {
   customerId: Types.ObjectId;
+  type: VoucherTypeEnum;
+  /**
+   * Caller-supplied cap (in VND). Comes from tier_config.voucher_cap_vnd so
+   * admins can re-tune perks without redeploying. Required — the service
+   * never invents a number behind admin's back.
+   */
+  discountCapVnd: number;
   reason?: string;
   /** Override the default 90-day expiry. */
   expiresAt?: Date;
-  /** Override the default 100k VND cap. Mostly used by admin-issued grants. */
-  discountCapVnd?: number;
 }
-
-// Hard ceiling on what a free-wash voucher can knock off a single order.
-// Picked from the economics model (§5.1): a 100k cap keeps the program at
-// ~5% revenue cost even when the voucher is redeemed on Detailing.
-const DEFAULT_FREE_WASH_CAP_VND = 100_000;
 
 // Customers have 90 days from mint to redeem. Past this the daily expire
 // cron flips the voucher to EXPIRED.
 const DEFAULT_VOUCHER_TTL_DAYS = 90;
+
+// Code prefix per voucher type — visible to the customer in lists and the
+// granted email, so they can tell at a glance "what perk did I just earn".
+const CODE_PREFIX_BY_TYPE: Record<VoucherTypeEnum, string> = {
+  [VoucherTypeEnum.FREE_WASH]: 'FREEWASH',
+  [VoucherTypeEnum.BRONZE_FREE_BASIC]: 'BRONZE',
+  [VoucherTypeEnum.SILVER_DISCOUNT]: 'SILVER',
+  [VoucherTypeEnum.GOLD_DISCOUNT]: 'GOLD',
+};
 
 @Injectable()
 export class VoucherService {
@@ -32,32 +42,59 @@ export class VoucherService {
 
   constructor(
     private readonly repository: VoucherRepository,
+    private readonly serviceTypeRepository: ServiceTypeRepository,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   /**
-   * Mints a single FREE_WASH voucher with a fresh daily-sequential code.
-   * Called by LoyaltyService when the 10-wash threshold trips.
+   * Mints a voucher whose semantics are driven by `type`:
    *
-   * The cap and expiry default to program-wide constants — overriding them
-   * is only intended for admin-issued grants (e.g. service-recovery comps).
+   *   BRONZE_FREE_BASIC — locked to the service flagged `is_default_basic`.
+   *                       Cap typically equals Basic base price so it acts
+   *                       as a "free 1 lần Basic" reward.
+   *   SILVER_DISCOUNT   — fixed VND off any active service.
+   *   GOLD_DISCOUNT     — fixed VND off any active service (higher cap).
+   *   FREE_WASH         — legacy single-type voucher; mint still supported
+   *                       for admin-issued grants but no new milestones
+   *                       produce it.
+   *
+   * Called by LoyaltyService when a customer hits the wash milestone, and
+   * by future admin endpoints that hand out comp vouchers.
    */
-  async grantFreeWash(input: IGrantFreeWashInput): Promise<VoucherDocument> {
-    const code = await this.generateCode();
+  async grantByType(input: IGrantByTypeInput): Promise<VoucherDocument> {
+    const code = await this.generateCode(input.type);
     const expiresAt =
       input.expiresAt ??
       new Date(Date.now() + DEFAULT_VOUCHER_TTL_DAYS * 24 * 60 * 60 * 1000);
-    const discountCapVnd = input.discountCapVnd ?? DEFAULT_FREE_WASH_CAP_VND;
+
+    // BRONZE_FREE_BASIC is restricted to the service admin flagged as the
+    // default Basic Wash. Snapshot the id at mint time so renaming the
+    // service later does not orphan in-flight vouchers. If admin has not
+    // flagged any service we mint with an empty list so the reward is not
+    // lost — the customer will simply be able to use it on any service.
+    let applicableServiceTypeIds: Types.ObjectId[] | undefined;
+    if (input.type === VoucherTypeEnum.BRONZE_FREE_BASIC) {
+      const basic = await this.serviceTypeRepository.findDefaultBasic();
+      if (basic) {
+        applicableServiceTypeIds = [basic._id];
+      } else {
+        this.logger.warn(
+          'No service flagged is_default_basic — minting BRONZE_FREE_BASIC without service restriction',
+        );
+      }
+    }
+
     const voucher = await this.repository.create({
       customerId: input.customerId,
       code,
-      type: VoucherTypeEnum.FREE_WASH,
-      discountCapVnd,
+      type: input.type,
+      discountCapVnd: input.discountCapVnd,
+      applicableServiceTypeIds,
       expiresAt,
-      grantedReason: input.reason ?? 'Reward for 10 completed washes',
+      grantedReason: input.reason ?? `Reward (${input.type})`,
     });
     this.logger.log(
-      `Granted FREE_WASH voucher ${voucher.code} cap=${discountCapVnd} expires=${expiresAt.toISOString()} customer=${input.customerId.toString()}`,
+      `Granted ${input.type} voucher ${voucher.code} cap=${input.discountCapVnd} expires=${expiresAt.toISOString()} customer=${input.customerId.toString()}`,
     );
     return voucher;
   }
@@ -96,9 +133,11 @@ export class VoucherService {
   }
 
   /**
-   * Atomically reserves a FREE_WASH voucher for `orderId`. Returns the
-   * voucher if the reservation succeeded; throws NotFoundException with a
-   * descriptive message otherwise so OrderService can surface it as 400.
+   * Atomically reserves a wash voucher (any redeemable type) for `orderId`.
+   * Returns the voucher if the reservation succeeded; throws NotFoundException
+   * with a descriptive message otherwise so OrderService can surface it as
+   * 400. Service-applicability validation is performed by the CALLER — this
+   * method only handles ownership / status / expiry.
    */
   async consumeFreeWashForOrder(
     voucherId: string,
@@ -112,14 +151,8 @@ export class VoucherService {
     );
     if (!consumed) {
       throw new NotFoundException(
-        'Voucher not found, not owned by you, or already used',
+        'Voucher not found, not owned by you, expired, or already used',
       );
-    }
-    if (consumed.type !== VoucherTypeEnum.FREE_WASH) {
-      // Roll back the consume — this voucher type is not redeemable on
-      // orders. Should not happen unless future voucher types are added.
-      await this.repository.refund(consumed._id);
-      throw new NotFoundException('Voucher is not redeemable for a wash');
     }
     return consumed;
   }
@@ -141,17 +174,23 @@ export class VoucherService {
     return flipped;
   }
 
-  /** Generates a daily-sequential voucher code like FREEWASH-20260527-001. */
-  private async generateCode(): Promise<string> {
+  /**
+   * Generates a per-type daily-sequential voucher code. The prefix lets
+   * customers tell the perk apart at a glance:
+   *   BRONZE-20260527-001, SILVER-20260527-001, GOLD-20260527-001,
+   *   FREEWASH-20260527-001 (legacy).
+   */
+  private async generateCode(type: VoucherTypeEnum): Promise<string> {
     const now = new Date();
     const day =
       `${now.getUTCFullYear()}` +
       `${String(now.getUTCMonth() + 1).padStart(2, '0')}` +
       `${String(now.getUTCDate()).padStart(2, '0')}`;
-    const seq = await this.redis.incr(`seq:voucher:${day}`);
+    const prefix = CODE_PREFIX_BY_TYPE[type];
+    const seq = await this.redis.incr(`seq:voucher:${prefix}:${day}`);
     if (seq === 1) {
-      await this.redis.expire(`seq:voucher:${day}`, 60 * 60 * 24 * 2);
+      await this.redis.expire(`seq:voucher:${prefix}:${day}`, 60 * 60 * 24 * 2);
     }
-    return `FREEWASH-${day}-${String(seq).padStart(3, '0')}`;
+    return `${prefix}-${day}-${String(seq).padStart(3, '0')}`;
   }
 }

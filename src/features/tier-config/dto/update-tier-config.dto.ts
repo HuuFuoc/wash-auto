@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsNumber, IsOptional, Max, Min } from 'class-validator';
+import { IsEnum, IsInt, IsNumber, IsOptional, Max, Min } from 'class-validator';
+import { VoucherTypeEnum } from '../../voucher/types/voucher-type.enum';
 
 export class UpdateTierConfigDto {
   @ApiPropertyOptional({
@@ -53,4 +54,30 @@ export class UpdateTierConfigDto {
   @Min(0)
   @Max(100)
   discountPercent?: number;
+
+  @ApiPropertyOptional({
+    enum: VoucherTypeEnum,
+    description:
+      'Voucher type minted at the wash milestone for this tier. Omit to ' +
+      'keep current; pass null is not supported — disable by leaving the ' +
+      'value off (admin endpoint treats undefined as no change).',
+  })
+  @IsOptional()
+  @IsEnum(VoucherTypeEnum)
+  voucherTypeOnMilestone?: VoucherTypeEnum;
+
+  @ApiPropertyOptional({
+    example: 40000,
+    minimum: 0,
+    description:
+      'Discount cap (VND) baked into the milestone voucher for this tier. ' +
+      'Hard upper bound enforced (≤ 200000) so a misconfigured admin grant ' +
+      'cannot eat the program economics.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(200_000)
+  voucherCapVnd?: number;
 }

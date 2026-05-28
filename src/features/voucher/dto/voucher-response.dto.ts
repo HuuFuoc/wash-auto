@@ -31,6 +31,17 @@ export class VoucherResponseDto {
   discountCapVnd: number;
 
   @ApiProperty({
+    example: [],
+    description:
+      'Service type ids the voucher may be redeemed against. Empty array ' +
+      'means any active service. BRONZE_FREE_BASIC carries exactly one id ' +
+      '(the default Basic Wash); other tier-aware vouchers leave this empty.',
+    isArray: true,
+    type: String,
+  })
+  applicableServiceTypeIds: string[];
+
+  @ApiProperty({
     example: '2026-08-25T00:00:00.000Z',
     description: 'Hard expiry deadline. After this the voucher is EXPIRED.',
   })
@@ -56,6 +67,9 @@ export class VoucherResponseDto {
     dto.type = doc.type;
     dto.status = doc.status;
     dto.discountCapVnd = doc.discount_cap_vnd;
+    dto.applicableServiceTypeIds = (doc.applicable_service_type_ids ?? []).map(
+      (id) => id.toString(),
+    );
     dto.expiresAt = doc.expires_at;
     dto.grantedReason = doc.granted_reason;
     dto.usedAt = doc.used_at;

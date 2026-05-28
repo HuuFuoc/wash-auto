@@ -240,6 +240,21 @@ export class OrderService {
         );
         voucherIdObj = voucherDoc._id;
 
+        // Service-type restriction (BRONZE_FREE_BASIC carries one entry).
+        // Refund the voucher and refuse the order so the customer keeps the
+        // perk for a service it actually applies to.
+        const allowedIds = voucherDoc.applicable_service_type_ids ?? [];
+        if (
+          allowedIds.length > 0 &&
+          !allowedIds.some((id) => id.equals(service._id))
+        ) {
+          await this.voucherService.refund(voucherDoc._id);
+          voucherDoc = null;
+          throw new BadRequestException(
+            `Voucher ${dto.voucherId} chỉ áp dụng được cho dịch vụ đã chỉ định, không phải "${service.name}"`,
+          );
+        }
+
         // Voucher discount is capped at min(voucherCap, remaining amount).
         // `remaining` is the post-tier-discount amount so the voucher only
         // shaves off what is still chargeable.
@@ -415,13 +430,26 @@ export class OrderService {
       if (!voucher) {
         voucherError = 'Voucher not found, not owned, expired, or already used';
       } else {
-        voucherDiscountCapVnd = voucher.discount_cap_vnd;
-        const remaining = Math.max(0, originalAmount - discountAmount);
-        const voucherDiscount = Math.min(remaining, voucher.discount_cap_vnd);
-        discountAmount += voucherDiscount;
-        discountReason = discountReason
-          ? `${discountReason}+voucher:${voucher.code}`
-          : `voucher:${voucher.code}`;
+        // Service-type restriction must match the previewed service. We
+        // surface the reason in `voucherError` (rather than throwing) so the
+        // FE can disable the apply button without an alert popup — the
+        // customer can pick a different service and re-preview.
+        const allowedIds = voucher.applicable_service_type_ids ?? [];
+        const matchesService =
+          allowedIds.length === 0 ||
+          allowedIds.some((id) => id.equals(service._id));
+        if (!matchesService) {
+          voucherError = `Voucher chỉ áp dụng được cho dịch vụ đã chỉ định, không phải "${service.name}"`;
+          voucherDiscountCapVnd = voucher.discount_cap_vnd;
+        } else {
+          voucherDiscountCapVnd = voucher.discount_cap_vnd;
+          const remaining = Math.max(0, originalAmount - discountAmount);
+          const voucherDiscount = Math.min(remaining, voucher.discount_cap_vnd);
+          discountAmount += voucherDiscount;
+          discountReason = discountReason
+            ? `${discountReason}+voucher:${voucher.code}`
+            : `voucher:${voucher.code}`;
+        }
       }
     }
 
