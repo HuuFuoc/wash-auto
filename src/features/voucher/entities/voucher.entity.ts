@@ -33,8 +33,16 @@ export class Voucher {
   })
   status: VoucherStatusEnum;
 
-  @Prop()
-  expires_at?: Date;
+  // Max VND knocked off the order when this voucher is redeemed. Caps the
+  // free-wash so a customer cannot redeem one minted off Basic washes against
+  // a Detailing service and capture more value than the program tolerates.
+  @Prop({ required: true, min: 0 })
+  discount_cap_vnd: number;
+
+  // Hard deadline. After this instant the daily expire cron flips the voucher
+  // to EXPIRED and the consume path also refuses it as a safety net.
+  @Prop({ required: true, index: true })
+  expires_at: Date;
 
   @Prop({ trim: true })
   granted_reason?: string;
