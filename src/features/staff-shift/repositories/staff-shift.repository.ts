@@ -18,7 +18,6 @@ export interface ICreateShiftInput {
   stationName?: string;
   startAt: Date;
   endAt: Date;
-  maxBookings: number;
   note?: string;
 }
 
@@ -28,7 +27,6 @@ export interface IUpdateShiftInput {
   stationName?: string;
   startAt?: Date;
   endAt?: Date;
-  maxBookings?: number;
   note?: string;
 }
 
@@ -47,6 +45,12 @@ export class StaffShiftRepository {
     private readonly model: Model<StaffShiftDocument>,
   ) {}
 
+  /**
+   * SCHEDULED shifts whose `start_at` falls in [from, to]. The previous
+   * per-shift capacity counter has been removed — the booking flow now
+   * resolves capacity by checking time overlap against orders already
+   * sitting in the shift (`OrderRepository.findOverlappingInShift`).
+   */
   async findAvailableForBooking(
     from: Date,
     to: Date,
@@ -57,21 +61,17 @@ export class StaffShiftRepository {
       start_at: { $gte: from, $lte: to },
     };
     if (shiftType) query.shift_type = shiftType;
-
-    return this.model
-      .find({
-        ...query,
-        $expr: { $lt: ['$current_bookings', '$max_bookings'] },
-      })
-      .sort({ start_at: 1 })
-      .exec();
+    return this.model.find(query).sort({ start_at: 1 }).exec();
   }
 
   /**
    * Returns SCHEDULED shifts that fully contain the wash window
-   * [scheduledAt, scheduledAt + durationMinutes] AND still have capacity.
-   * Sorted by current_bookings ASC then start_at ASC so the caller
-   * load-balances across bays and prefers the earliest-starting shift on ties.
+   * [scheduledAt, scheduledAt + durationMinutes]. The caller MUST still
+   * check that no existing order in the shift overlaps that window —
+   * see OrderRepository.findOverlappingInShift.
+   *
+   * Sorted by start_at ascending so the load-balancer prefers the
+   * earliest-starting shift when several candidates fit the window.
    */
   async findShiftsContaining(
     scheduledAt: Date,
@@ -83,17 +83,16 @@ export class StaffShiftRepository {
         status: ShiftStatusEnum.SCHEDULED,
         start_at: { $lte: scheduledAt },
         end_at: { $gte: finishAt },
-        $expr: { $lt: ['$current_bookings', '$max_bookings'] },
       })
-      .sort({ current_bookings: 1, start_at: 1 })
+      .sort({ start_at: 1 })
       .exec();
   }
 
   /**
-   * Returns SCHEDULED shifts with spare capacity whose window overlaps
-   * [from, to] at all — including shifts that start before `from` but
-   * extend into it. Used to enumerate bookable slots; the caller still
-   * checks that the full wash window fits inside each shift.
+   * Returns SCHEDULED shifts whose window overlaps [from, to] at all —
+   * including shifts that start before `from` but extend into it. Used to
+   * enumerate bookable slots; the caller still checks that the full wash
+   * window fits inside each shift AND that no existing order overlaps.
    */
   async findOverlapping(from: Date, to: Date): Promise<StaffShiftDocument[]> {
     return this.model
@@ -101,7 +100,6 @@ export class StaffShiftRepository {
         status: ShiftStatusEnum.SCHEDULED,
         start_at: { $lte: to },
         end_at: { $gte: from },
-        $expr: { $lt: ['$current_bookings', '$max_bookings'] },
       })
       .sort({ start_at: 1 })
       .exec();
@@ -139,8 +137,6 @@ export class StaffShiftRepository {
       station_name: input.stationName,
       start_at: input.startAt,
       end_at: input.endAt,
-      max_bookings: input.maxBookings,
-      current_bookings: 0,
       status: ShiftStatusEnum.SCHEDULED,
       note: input.note,
     });
@@ -157,8 +153,6 @@ export class StaffShiftRepository {
       update.station_name = input.stationName;
     if (input.startAt !== undefined) update.start_at = input.startAt;
     if (input.endAt !== undefined) update.end_at = input.endAt;
-    if (input.maxBookings !== undefined)
-      update.max_bookings = input.maxBookings;
     if (input.note !== undefined) update.note = input.note;
 
     return this.model
@@ -172,42 +166,6 @@ export class StaffShiftRepository {
   ): Promise<StaffShiftDocument | null> {
     return this.model
       .findByIdAndUpdate(id, { $set: { status } }, { returnDocument: 'after' })
-      .exec();
-  }
-
-  /**
-   * Atomic capacity reservation. Returns the updated doc if the shift
-   * still had capacity (current_bookings < max_bookings AND
-   * status=scheduled), else null. Use this BEFORE creating the
-   * booking document — call decrementCurrentBookings on failure paths.
-   */
-  async incrementCurrentBookings(
-    id: Types.ObjectId | string,
-  ): Promise<StaffShiftDocument | null> {
-    if (!Types.ObjectId.isValid(id)) return null;
-    return this.model
-      .findOneAndUpdate(
-        {
-          _id: id,
-          status: ShiftStatusEnum.SCHEDULED,
-          $expr: { $lt: ['$current_bookings', '$max_bookings'] },
-        },
-        { $inc: { current_bookings: 1 } },
-        { returnDocument: 'after' },
-      )
-      .exec();
-  }
-
-  async decrementCurrentBookings(
-    id: Types.ObjectId | string,
-  ): Promise<StaffShiftDocument | null> {
-    if (!Types.ObjectId.isValid(id)) return null;
-    return this.model
-      .findOneAndUpdate(
-        { _id: id, current_bookings: { $gt: 0 } },
-        { $inc: { current_bookings: -1 } },
-        { returnDocument: 'after' },
-      )
       .exec();
   }
 

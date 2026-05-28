@@ -15,6 +15,7 @@ export interface ICreateOrderInput {
   serviceTypeId: Types.ObjectId;
   staffShiftId: Types.ObjectId;
   scheduledAt: Date;
+  scheduledFinishAt: Date;
   priorityLevel: number;
   paymentMethod: PaymentMethodEnum;
   paymentStatus: PaymentStatusEnum;
@@ -73,6 +74,7 @@ export class OrderRepository {
       service_type_id: input.serviceTypeId,
       staff_shift_id: input.staffShiftId,
       scheduled_at: input.scheduledAt,
+      scheduled_finish_at: input.scheduledFinishAt,
       priority_level: input.priorityLevel,
       reschedule_count: 0,
       payment_method: input.paymentMethod,
@@ -87,6 +89,82 @@ export class OrderRepository {
       note: input.note,
       payos_order_code: input.payosOrderCode,
     });
+  }
+
+  /**
+   * Returns every active order sitting in any of the given shifts whose own
+   * window intersects [windowStart, windowEnd]. Used by the slot enumerator
+   * to find conflicts in one round-trip instead of one query per slot.
+   */
+  async findActiveOrdersInShifts(
+    shiftIds: Types.ObjectId[],
+    windowStart: Date,
+    windowEnd: Date,
+  ): Promise<OrderDocument[]> {
+    if (shiftIds.length === 0) return [];
+    return this.model
+      .find({
+        staff_shift_id: { $in: shiftIds },
+        status: { $in: ACTIVE_ORDER_STATUSES },
+        scheduled_at: { $lt: windowEnd },
+        scheduled_finish_at: { $gt: windowStart },
+      })
+      .exec();
+  }
+
+  /**
+   * Atomically counts orders that already hold a slice of `[startAt, endAt)`
+   * inside the given shift. Used to enforce the "one wash at a time per
+   * shift" rule that replaced the per-shift max_bookings counter.
+   *
+   * Two orders overlap iff `orderA.scheduled_at < orderB.scheduled_finish_at`
+   * AND `orderB.scheduled_at < orderA.scheduled_finish_at`. Translated to a
+   * query against existing orders:
+   *
+   *   scheduled_at        <  endAt
+   *   scheduled_finish_at >  startAt
+   *
+   * `excludeOrderId` is for the reschedule path: an order being moved into a
+   * shift it already belongs to must not collide with itself.
+   */
+  async findOverlappingInShift(
+    staffShiftId: Types.ObjectId | string,
+    startAt: Date,
+    endAt: Date,
+    excludeOrderId?: Types.ObjectId | string,
+  ): Promise<OrderDocument[]> {
+    const query: Record<string, unknown> = {
+      staff_shift_id: new Types.ObjectId(staffShiftId),
+      status: { $in: ACTIVE_ORDER_STATUSES },
+      scheduled_at: { $lt: endAt },
+      scheduled_finish_at: { $gt: startAt },
+    };
+    if (excludeOrderId && Types.ObjectId.isValid(excludeOrderId)) {
+      query._id = { $ne: new Types.ObjectId(excludeOrderId) };
+    }
+    return this.model.find(query).exec();
+  }
+
+  async applyReschedule(
+    id: Types.ObjectId | string,
+    staffShiftId: Types.ObjectId,
+    scheduledAt: Date,
+    scheduledFinishAt: Date,
+  ): Promise<OrderDocument | null> {
+    return this.model
+      .findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            staff_shift_id: staffShiftId,
+            scheduled_at: scheduledAt,
+            scheduled_finish_at: scheduledFinishAt,
+          },
+          $inc: { reschedule_count: 1 },
+        },
+        { returnDocument: 'after' },
+      )
+      .exec();
   }
 
   async findById(id: Types.ObjectId | string): Promise<OrderDocument | null> {
@@ -145,23 +223,6 @@ export class OrderRepository {
 
     return this.model
       .findByIdAndUpdate(id, { $set: update }, { returnDocument: 'after' })
-      .exec();
-  }
-
-  async applyReschedule(
-    id: Types.ObjectId | string,
-    staffShiftId: Types.ObjectId,
-    scheduledAt: Date,
-  ): Promise<OrderDocument | null> {
-    return this.model
-      .findByIdAndUpdate(
-        id,
-        {
-          $set: { staff_shift_id: staffShiftId, scheduled_at: scheduledAt },
-          $inc: { reschedule_count: 1 },
-        },
-        { returnDocument: 'after' },
-      )
       .exec();
   }
 

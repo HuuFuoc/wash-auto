@@ -45,6 +45,12 @@ export class Order {
   @Prop({ required: true })
   scheduled_at: Date;
 
+  // scheduled_at + service.estimated_minutes — denormalized so the time-
+  // overlap check in OrderRepository.findOverlappingInShift can run as a
+  // single indexed query instead of joining with service_types.
+  @Prop({ required: true })
+  scheduled_finish_at: Date;
+
   @Prop({
     type: String,
     required: true,
@@ -121,3 +127,5 @@ export const OrderSchema = SchemaFactory.createForClass(Order);
 OrderSchema.index({ customer_id: 1, scheduled_at: -1 });
 OrderSchema.index({ scheduled_at: 1, status: 1 });
 OrderSchema.index({ customer_id: 1, status: 1 });
+// Backs OrderRepository.findOverlappingInShift — the hot path on every booking.
+OrderSchema.index({ staff_shift_id: 1, status: 1, scheduled_at: 1 });

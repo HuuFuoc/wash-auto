@@ -1,7 +1,4 @@
-import {
-  ACTIVE_ORDER_STATUSES,
-  OrderStatusEnum,
-} from './types/order-status.enum';
+import { OrderStatusEnum } from './types/order-status.enum';
 
 // Operational transitions (→ checked_in / in_progress / completed) are NOT
 // listed here on purpose. They are driven by the Work Order flow:
@@ -46,8 +43,4 @@ export function isCancellableByOwner(status: OrderStatusEnum): boolean {
     status === OrderStatusEnum.PENDING_PAYMENT ||
     status === OrderStatusEnum.CONFIRMED
   );
-}
-
-export function consumesShiftCapacity(status: OrderStatusEnum): boolean {
-  return ACTIVE_ORDER_STATUSES.includes(status);
 }

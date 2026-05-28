@@ -19,9 +19,9 @@ export class StaffShiftController {
 
   @Get('available')
   @ApiOperation({
-    summary: 'List shifts with remaining capacity in a time window',
+    summary: 'List scheduled shifts in a time window',
     description:
-      'Returns scheduled shifts where current_bookings < max_bookings, sorted by start_at ascending. Use during the booking flow so customers pick a slot. Filter by shiftType=washer or =cashier if needed.',
+      'Returns scheduled shifts whose start_at falls in [from, to], sorted by start_at ascending. Time-overlap (1 wash at a time per shift) is enforced at booking time — this endpoint does not pre-filter shifts by remaining capacity. Use during the booking flow to show the customer which shifts exist. Filter by shiftType=washer or =cashier if needed.',
   })
   @ApiResponse({
     status: 200,

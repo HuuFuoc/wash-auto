@@ -39,7 +39,6 @@ import { RescheduleOrderDto } from '../dto/reschedule-order.dto';
 import { UpdateOrderStatusDto } from '../dto/update-order-status.dto';
 import { OrderDocument } from '../entities/order.entity';
 import {
-  consumesShiftCapacity,
   isCancellableByOwner,
   isValidOrderTransition,
 } from '../order.state-machine';
@@ -138,35 +137,60 @@ export class OrderService {
       );
     }
 
-    // 6) Auto-pick a shift that contains scheduledAt and has capacity.
-    //    Loop because findShiftsContaining is a non-transactional read —
-    //    a concurrent booking may have filled the candidate between the
-    //    read and the atomic increment.
+    // 6) Auto-pick a shift that fully contains the wash window AND has no
+    //    existing active order whose own window overlaps it. The per-shift
+    //    `max_bookings` counter is gone — capacity is now 1 wash at a time
+    //    per shift (a washer cannot physically detail two cars at once).
+    //
+    //    Race control: take a short Redis lock per (shift, slot) so two
+    //    customers cannot win the same slot through concurrent calls. The
+    //    lock TTL covers the worst-case path from overlap check to
+    //    Order.create — short enough that a crashed request frees the slot
+    //    within seconds.
+    const scheduledFinishAt = new Date(
+      dto.scheduledAt.getTime() + service.estimated_minutes * 60_000,
+    );
     const candidates = await this.staffShiftRepository.findShiftsContaining(
       dto.scheduledAt,
       service.estimated_minutes,
     );
     if (candidates.length === 0) {
-      throw new ConflictException(
-        'No shift covers this time, or all shifts are full',
-      );
+      throw new ConflictException('No shift covers this time');
     }
     let reservedShiftId: Types.ObjectId | undefined;
+    let releaseSlotLock: (() => Promise<void>) | undefined;
     for (const candidate of candidates) {
-      const ok = await this.staffShiftRepository.incrementCurrentBookings(
-        candidate._id,
-      );
-      if (ok) {
-        reservedShiftId = candidate._id;
-        break;
+      const lockKey = `lock:shift:${candidate._id.toString()}:${dto.scheduledAt.getTime()}`;
+      const acquired = await this.redis.set(lockKey, '1', 'EX', 10, 'NX');
+      if (acquired === null) continue;
+      try {
+        const overlapping = await this.orderRepository.findOverlappingInShift(
+          candidate._id,
+          dto.scheduledAt,
+          scheduledFinishAt,
+        );
+        if (overlapping.length === 0) {
+          reservedShiftId = candidate._id;
+          releaseSlotLock = async () => {
+            await this.redis.del(lockKey);
+          };
+          break;
+        }
+      } catch (err) {
+        await this.redis.del(lockKey);
+        throw err;
       }
+      // No overlap match here — drop the lock and try the next candidate.
+      await this.redis.del(lockKey);
     }
-    if (!reservedShiftId) {
-      throw new ConflictException('All shifts at this time are full');
+    if (!reservedShiftId || !releaseSlotLock) {
+      throw new ConflictException(
+        'Every shift covering this time already has an overlapping booking',
+      );
     }
 
-    // 7) Resolve the vehicle now that the slot is held. Doing it here means
-    //    the common "no shift" rejection above never registers a stray
+    // 7) Resolve the vehicle now that the slot lock is held. Doing it here
+    //    means the common "no shift" rejection above never registers a stray
     //    vehicle. `createdVehicleId` is set only when we saved a new vehicle
     //    inline — it is rolled back if the order then fails to persist.
     let vehicleObjId: Types.ObjectId;
@@ -190,7 +214,7 @@ export class OrderService {
         createdVehicleId = vehicleObjId;
       }
     } catch (err) {
-      await this.staffShiftRepository.decrementCurrentBookings(reservedShiftId);
+      await releaseSlotLock();
       throw err;
     }
 
@@ -277,6 +301,7 @@ export class OrderService {
         serviceTypeId: new Types.ObjectId(dto.serviceTypeId),
         staffShiftId: reservedShiftId,
         scheduledAt: dto.scheduledAt,
+        scheduledFinishAt,
         priorityLevel: tier.priority_level,
         paymentMethod: dto.paymentMethod,
         paymentStatus: initialPaymentStatus,
@@ -291,7 +316,7 @@ export class OrderService {
         payosOrderCode,
       });
     } catch (err) {
-      await this.staffShiftRepository.decrementCurrentBookings(reservedShiftId);
+      await releaseSlotLock();
       if (createdVehicleId) {
         await this.rollbackInlineVehicle(createdVehicleId);
       }
@@ -300,6 +325,11 @@ export class OrderService {
       }
       throw err;
     }
+
+    // Order has been persisted; the slot lock is no longer needed because
+    // the order doc itself blocks overlapping bookings via
+    // findOverlappingInShift (active statuses count, terminal ones do not).
+    await releaseSlotLock();
 
     // 10) If online → create PayOS link (rollback on failure)
     if (isOnline && order.payos_order_code) {
@@ -321,9 +351,9 @@ export class OrderService {
         });
         if (updated) order = updated;
       } catch (err) {
-        await this.staffShiftRepository.decrementCurrentBookings(
-          reservedShiftId,
-        );
+        // Order is already persisted — moving it to CANCELLED is enough to
+        // release the slot, since terminal-status orders are excluded from
+        // the overlap check. No extra capacity bookkeeping needed.
         await this.orderRepository.updateById(order._id, {
           status: OrderStatusEnum.CANCELLED,
           cancelReason: 'PayOS link creation failed',
@@ -502,21 +532,44 @@ export class OrderService {
     const intervalMs =
       this.config.getOrThrow<number>('booking.slotIntervalMinutes') * 60_000;
 
-    // slot start (ms) → summed free capacity of every shift covering it.
+    // Fetch every active order in the candidate shifts up front so each grid
+    // point's overlap check is an in-memory scan rather than a per-slot
+    // round-trip to Mongo. Group by shift for O(slots × ordersPerShift)
+    // total instead of O(slots × shifts × ordersPerShift).
+    const shiftIds = shifts.map((s) => s._id);
+    const ordersInShifts = await this.orderRepository.findActiveOrdersInShifts(
+      shiftIds,
+      new Date(windowStartMs),
+      new Date(windowEndMs + durationMs),
+    );
+    const ordersByShift = new Map<string, OrderDocument[]>();
+    for (const o of ordersInShifts) {
+      const key = o.staff_shift_id.toString();
+      const bucket = ordersByShift.get(key) ?? [];
+      bucket.push(o);
+      ordersByShift.set(key, bucket);
+    }
+
+    // slot start (ms) → number of shifts that can host this slot without
+    // colliding with an existing active order. Replaces the old "remaining
+    // capacity = max_bookings - current_bookings" counter.
     const capacityBySlot = new Map<number, number>();
     for (const shift of shifts) {
-      const remaining = shift.max_bookings - shift.current_bookings;
-      if (remaining <= 0) continue;
       const shiftEndMs = shift.end_at.getTime();
+      const shiftOrders = ordersByShift.get(shift._id.toString()) ?? [];
       // First grid point at or after the shift start.
       let slotMs =
         Math.ceil(shift.start_at.getTime() / intervalMs) * intervalMs;
       for (; slotMs + durationMs <= shiftEndMs; slotMs += intervalMs) {
         if (slotMs < windowStartMs || slotMs > windowEndMs) continue;
-        capacityBySlot.set(
-          slotMs,
-          (capacityBySlot.get(slotMs) ?? 0) + remaining,
+        const slotEndMs = slotMs + durationMs;
+        const conflicts = shiftOrders.some(
+          (o) =>
+            o.scheduled_at.getTime() < slotEndMs &&
+            o.scheduled_finish_at.getTime() > slotMs,
         );
+        if (conflicts) continue;
+        capacityBySlot.set(slotMs, (capacityBySlot.get(slotMs) ?? 0) + 1);
       }
     }
 
@@ -597,32 +650,43 @@ export class OrderService {
       );
     }
 
-    const reserved = await this.staffShiftRepository.incrementCurrentBookings(
-      dto.staffShiftId,
-    );
-    if (!reserved) {
-      throw new ConflictException('New shift is full');
+    // Race protection: lock the (shift, slot) tuple while we check overlap
+    // and persist the new schedule, so a concurrent reschedule cannot win
+    // the same window. The order being moved excludes itself from the
+    // overlap query — moving inside the same shift is allowed.
+    const newFinishAt = new Date(finishMs);
+    const lockKey = `lock:shift:${dto.staffShiftId}:${dto.scheduledAt.getTime()}`;
+    const lockAcquired = await this.redis.set(lockKey, '1', 'EX', 10, 'NX');
+    if (lockAcquired === null) {
+      throw new ConflictException(
+        'Another booking is being processed for this slot. Try again.',
+      );
     }
-
     try {
+      const overlapping = await this.orderRepository.findOverlappingInShift(
+        dto.staffShiftId,
+        dto.scheduledAt,
+        newFinishAt,
+        id,
+      );
+      if (overlapping.length > 0) {
+        throw new ConflictException(
+          'The new slot already has an overlapping booking',
+        );
+      }
       const updated = await this.orderRepository.applyReschedule(
         id,
         new Types.ObjectId(dto.staffShiftId),
         dto.scheduledAt,
+        newFinishAt,
       );
       if (!updated) throw new NotFoundException('Order not found');
-      await this.staffShiftRepository.decrementCurrentBookings(
-        order.staff_shift_id,
-      );
       this.logger.log(
         `Order rescheduled orderId=${id} newShiftId=${dto.staffShiftId}`,
       );
       return OrderResponseDto.fromDocument(updated);
-    } catch (err) {
-      await this.staffShiftRepository.decrementCurrentBookings(
-        dto.staffShiftId,
-      );
-      throw err;
+    } finally {
+      await this.redis.del(lockKey);
     }
   }
 
@@ -654,11 +718,9 @@ export class OrderService {
       }
     }
 
-    if (consumesShiftCapacity(order.status)) {
-      await this.staffShiftRepository.decrementCurrentBookings(
-        order.staff_shift_id,
-      );
-    }
+    // No capacity counter to decrement — moving the order to CANCELLED
+    // automatically frees the slot because findOverlappingInShift filters
+    // by ACTIVE_ORDER_STATUSES.
     const updated = await this.orderRepository.updateById(id, {
       status: OrderStatusEnum.CANCELLED,
       cancelReason: dto.reason ?? 'Cancelled by customer',
@@ -742,11 +804,8 @@ export class OrderService {
             await this.sendConfirmationEmailSafe(updated);
           }
         } else {
-          if (consumesShiftCapacity(order.status)) {
-            await this.staffShiftRepository.decrementCurrentBookings(
-              order.staff_shift_id,
-            );
-          }
+          // Move to CANCELLED — the order leaving an active status is
+          // enough to free its slot under the time-overlap capacity model.
           await this.orderRepository.updateById(order._id, {
             status: OrderStatusEnum.CANCELLED,
             cancelReason: 'Payment failed',
@@ -865,14 +924,9 @@ export class OrderService {
       return OrderResponseDto.fromDocument(order);
     }
 
-    if (
-      consumesShiftCapacity(order.status) &&
-      !consumesShiftCapacity(dto.status)
-    ) {
-      await this.staffShiftRepository.decrementCurrentBookings(
-        order.staff_shift_id,
-      );
-    }
+    // Capacity bookkeeping moved to the time-overlap model — terminal
+    // statuses automatically vacate the slot via findOverlappingInShift,
+    // no explicit decrement step needed.
 
     const cancelReason =
       dto.status === OrderStatusEnum.CANCELLED ||
@@ -911,11 +965,9 @@ export class OrderService {
     const order = await this.orderRepository.findById(orderId);
     if (!order) return;
     if (order.status === OrderStatusEnum.COMPLETED) return;
-    if (consumesShiftCapacity(order.status)) {
-      await this.staffShiftRepository.decrementCurrentBookings(
-        order.staff_shift_id,
-      );
-    }
+    // Flipping to COMPLETED moves the order out of ACTIVE_ORDER_STATUSES,
+    // so the time-overlap check stops counting it without an explicit
+    // capacity bookkeeping step.
     const updated = await this.orderRepository.updateById(order._id, {
       status: OrderStatusEnum.COMPLETED,
     });
@@ -973,11 +1025,6 @@ export class OrderService {
     for (const doc of docs) {
       const id = doc._id.toString();
       try {
-        if (consumesShiftCapacity(doc.status)) {
-          await this.staffShiftRepository.decrementCurrentBookings(
-            doc.staff_shift_id,
-          );
-        }
         const updated = await this.orderRepository.updateById(id, {
           status: OrderStatusEnum.NO_SHOW,
           cancelReason: 'No arrival within grace window',
@@ -1004,11 +1051,6 @@ export class OrderService {
     for (const doc of docs) {
       const id = doc._id.toString();
       try {
-        if (consumesShiftCapacity(doc.status)) {
-          await this.staffShiftRepository.decrementCurrentBookings(
-            doc.staff_shift_id,
-          );
-        }
         await this.orderRepository.updateById(id, {
           status: OrderStatusEnum.CANCELLED,
           cancelReason: 'Payment timeout',

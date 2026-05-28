@@ -96,7 +96,6 @@ export class StaffShiftService {
       stationName: dto.stationName,
       startAt: dto.startAt,
       endAt: dto.endAt,
-      maxBookings: dto.maxBookings,
       note: dto.note,
     });
     this.logger.log('Manager created shift', {
@@ -125,14 +124,6 @@ export class StaffShiftService {
     if (dto.startAt && dto.endAt && dto.startAt >= dto.endAt) {
       throw new BadRequestException('startAt must be before endAt');
     }
-    if (
-      dto.maxBookings !== undefined &&
-      dto.maxBookings < existing.current_bookings
-    ) {
-      throw new BadRequestException(
-        `maxBookings cannot drop below current_bookings (${existing.current_bookings})`,
-      );
-    }
 
     const updated = await this.repository.updateById(id, {
       staffId: dto.staffId ? new Types.ObjectId(dto.staffId) : undefined,
@@ -140,7 +131,6 @@ export class StaffShiftService {
       stationName: dto.stationName,
       startAt: dto.startAt,
       endAt: dto.endAt,
-      maxBookings: dto.maxBookings,
       note: dto.note,
     });
     if (!updated) throw new NotFoundException('Shift not found');

@@ -44,12 +44,6 @@ export class StaffShift {
   })
   status: ShiftStatusEnum;
 
-  @Prop({ required: true, min: 1 })
-  max_bookings: number;
-
-  @Prop({ required: true, default: 0, min: 0 })
-  current_bookings: number;
-
   @Prop({ trim: true })
   note?: string;
 }

@@ -3,12 +3,10 @@ import { Type } from 'class-transformer';
 import {
   IsDate,
   IsEnum,
-  IsInt,
   IsMongoId,
   IsOptional,
   IsString,
   MaxLength,
-  Min,
 } from 'class-validator';
 import { ShiftTypeEnum } from '../types/shift-type.enum';
 
@@ -36,12 +34,6 @@ export class CreateStaffShiftDto {
   @Type(() => Date)
   @IsDate()
   endAt: Date;
-
-  @ApiProperty({ example: 10, minimum: 1 })
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  maxBookings: number;
 
   @ApiPropertyOptional({ example: 'Morning shift' })
   @IsOptional()
