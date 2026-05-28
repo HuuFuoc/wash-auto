@@ -664,6 +664,9 @@ export class OrderService {
       cancelReason: dto.reason ?? 'Cancelled by customer',
     });
     if (!updated) throw new NotFoundException('Order not found');
+    // The customer never received service — return the voucher (if any)
+    // to UNUSED so it can be redeemed on a future booking.
+    await this.refundVoucherIfPresent(updated);
     return OrderResponseDto.fromDocument(updated);
   }
 
@@ -747,10 +750,12 @@ export class OrderService {
               order.staff_shift_id,
             );
           }
-          await this.orderRepository.updateById(order._id, {
+          const cancelled = await this.orderRepository.updateById(order._id, {
             status: OrderStatusEnum.CANCELLED,
             cancelReason: 'Payment failed',
           });
+          // Payment failed → service was never rendered, return the voucher.
+          if (cancelled) await this.refundVoucherIfPresent(cancelled);
         }
       }
 
@@ -893,6 +898,12 @@ export class OrderService {
     if (dto.status === OrderStatusEnum.NO_SHOW) {
       await this.applyNoShowLoyaltyHookSafe(updated);
     }
+    // CANCELLED → no service rendered → return the voucher (if any).
+    // NO_SHOW intentionally burns the voucher as part of the penalty
+    // alongside the -50 loyalty points.
+    if (dto.status === OrderStatusEnum.CANCELLED) {
+      await this.refundVoucherIfPresent(updated);
+    }
 
     this.logger.log(
       `Staff updated order status orderId=${id} from=${order.status} to=${dto.status}`,
@@ -1009,10 +1020,14 @@ export class OrderService {
             doc.staff_shift_id,
           );
         }
-        await this.orderRepository.updateById(id, {
+        const updated = await this.orderRepository.updateById(id, {
           status: OrderStatusEnum.CANCELLED,
           cancelReason: 'Payment timeout',
         });
+        // Customer never paid → refund the voucher (if any) so they can
+        // try again on a later booking instead of losing it to a network
+        // hiccup on the payment page.
+        if (updated) await this.refundVoucherIfPresent(updated);
         if (doc.payos_order_code) {
           try {
             await this.payosService.cancelPaymentLink(
@@ -1155,6 +1170,33 @@ export class OrderService {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(
         `Loyalty no-show hook failed orderId=${order._id.toString()} reason=${msg}`,
+      );
+    }
+  }
+
+  /**
+   * Returns a voucher consumed on `order` to UNUSED so the customer can
+   * redeem it on a later booking. Called on every path that flips an order
+   * to CANCELLED (customer cancel, admin cancel, payment timeout, PayOS
+   * webhook failure) — never on NO_SHOW, which intentionally burns the
+   * voucher as a no-show penalty.
+   *
+   * Wrapped in try/catch + logger: the order status update has already
+   * happened, so a refund hiccup must not bubble up as a 500 to the caller.
+   * Worst case the customer support has to refund manually from the
+   * voucher admin tool.
+   */
+  private async refundVoucherIfPresent(order: OrderDocument): Promise<void> {
+    if (!order.voucher_id) return;
+    try {
+      await this.voucherService.refund(order.voucher_id);
+      this.logger.log(
+        `Refunded voucher voucherId=${order.voucher_id.toString()} orderId=${order._id.toString()}`,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Voucher refund failed orderId=${order._id.toString()} voucherId=${order.voucher_id.toString()} reason=${msg}`,
       );
     }
   }
