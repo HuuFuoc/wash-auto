@@ -10,7 +10,6 @@ export const configValidationSchema = Joi.object({
     .valid('development', 'test', 'production')
     .default('development'),
   PORT: Joi.number().port().default(3000),
-  CORS_ORIGINS: Joi.string().allow('').default(''),
   GLOBAL_API_PREFIX: Joi.string().default('api'),
 
   DB_USERNAME: Joi.string().required(),

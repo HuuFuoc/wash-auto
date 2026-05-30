@@ -27,6 +27,16 @@ export class ServiceType {
   @Prop({ type: [String], default: [] })
   checklist_template: string[];
 
+  /**
+   * Whether a FREE_WASH voucher may be redeemed on this service. Defaults
+   * to true so existing services keep working. Admin should flip this to
+   * false on premium-priced services (e.g. Detailing) where a 100k voucher
+   * cap stacked with Gold golden-hour discount would shrink margin to
+   * unsafe levels — see docs/ECONOMIC_GUARDRAILS.md §4.
+   */
+  @Prop({ required: true, default: true })
+  is_voucher_eligible: boolean;
+
   @Prop({ default: true, index: true })
   is_active: boolean;
 }

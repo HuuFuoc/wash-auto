@@ -232,6 +232,16 @@ export class OrderService {
       // cleanly. If order persist later fails we refund the voucher in the
       // catch block.
       if (dto.voucherId) {
+        // Economic guardrail: a service flagged `is_voucher_eligible=false`
+        // (typically Detailing) rejects voucher redemption up front so the
+        // voucher is NOT consumed on a service that would push margin
+        // below the safety threshold. See docs/ECONOMIC_GUARDRAILS.md §4.
+        if (!service.is_voucher_eligible) {
+          throw new BadRequestException(
+            `Service "${service.name}" does not accept vouchers`,
+          );
+        }
+
         const tmpOrderId = new Types.ObjectId();
         voucherDoc = await this.voucherService.consumeFreeWashForOrder(
           dto.voucherId,
@@ -414,6 +424,12 @@ export class OrderService {
       );
       if (!voucher) {
         voucherError = 'Voucher not found, not owned, expired, or already used';
+      } else if (!service.is_voucher_eligible) {
+        // Same guardrail as createOrder — surface the reason here so the
+        // FE can disable the "Áp voucher" button instead of letting the
+        // customer click then get a 400. See docs/ECONOMIC_GUARDRAILS.md §4.
+        voucherDiscountCapVnd = voucher.discount_cap_vnd;
+        voucherError = `Service "${service.name}" does not accept vouchers`;
       } else {
         voucherDiscountCapVnd = voucher.discount_cap_vnd;
         const remaining = Math.max(0, originalAmount - discountAmount);

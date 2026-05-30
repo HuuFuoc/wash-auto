@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
+  IsBoolean,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -53,4 +54,16 @@ export class CreateServiceTypeDto {
   @IsString({ each: true })
   @MaxLength(120, { each: true })
   checklistTemplate?: string[];
+
+  @ApiPropertyOptional({
+    example: true,
+    default: true,
+    description:
+      'Whether FREE_WASH vouchers may be redeemed on this service. Set ' +
+      'false for premium-priced services (Detailing) where a 100k voucher ' +
+      'cap + Gold golden-hour discount would push margin below 5%.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  isVoucherEligible?: boolean;
 }

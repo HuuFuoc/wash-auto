@@ -1,7 +1,20 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import type Redis from 'ioredis';
 import { Types } from 'mongoose';
 import { REDIS_CLIENT } from '../../core/cache/cache.module';
+import { UserRepository } from '../auth/repositories/user.repository';
+import { RoleEnum } from '../auth/types/role.enum';
+import { RoleRepository } from '../auth/repositories/role.repository';
+import { GrantVoucherAdminDto } from './dto/grant-voucher-admin.dto';
+import { QueryVoucherDto } from './dto/query-voucher.dto';
+import { VoucherListResponseDto } from './dto/voucher-list-response.dto';
 import { VoucherResponseDto } from './dto/voucher-response.dto';
 import { VoucherDocument } from './entities/voucher.entity';
 import { VoucherRepository } from './repositories/voucher.repository';
@@ -32,6 +45,8 @@ export class VoucherService {
 
   constructor(
     private readonly repository: VoucherRepository,
+    private readonly userRepository: UserRepository,
+    private readonly roleRepository: RoleRepository,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
@@ -126,6 +141,93 @@ export class VoucherService {
 
   async refund(voucherId: Types.ObjectId): Promise<void> {
     await this.repository.refund(voucherId);
+  }
+
+  // ---------- ADMIN ----------
+
+  /**
+   * Admin/manager-issued grant for a specific customer. Validates that:
+   *  - target customer exists and is an active customer (not staff/admin)
+   *  - cap is within program ceiling (DTO already enforces ≤200k)
+   *  - reason is recorded for the audit trail
+   *
+   * Returns the minted voucher so the admin UI can show its code/expiry.
+   */
+  async adminGrantForCustomer(
+    dto: GrantVoucherAdminDto,
+  ): Promise<VoucherResponseDto> {
+    const customer = await this.userRepository.findById(dto.customerId);
+    if (!customer || !customer.is_active) {
+      throw new BadRequestException('Target customer not found or inactive');
+    }
+    const role = await this.roleRepository.findById(customer.role_id);
+    if (!role || role.code !== RoleEnum.CUSTOMER) {
+      throw new BadRequestException(
+        'Vouchers can only be granted to customer accounts',
+      );
+    }
+    const voucher = await this.grantFreeWash({
+      customerId: customer._id,
+      reason: dto.reason,
+      expiresAt: dto.expiresAt,
+      discountCapVnd: dto.discountCapVnd,
+    });
+    this.logger.log(
+      `Admin grant voucher voucherId=${voucher._id.toString()} customerId=${customer._id.toString()}`,
+    );
+    return VoucherResponseDto.fromDocument(voucher);
+  }
+
+  async adminList(query: QueryVoucherDto): Promise<VoucherListResponseDto> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const filter = {
+      status: query.status,
+      customerId: query.customerId
+        ? new Types.ObjectId(query.customerId)
+        : undefined,
+    };
+    const [docs, total] = await Promise.all([
+      this.repository.findAllPaginated(filter, page, limit),
+      this.repository.countAll(filter),
+    ]);
+    return {
+      data: docs.map((d) => VoucherResponseDto.fromDocument(d)),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    };
+  }
+
+  async adminGetById(id: string): Promise<VoucherResponseDto> {
+    const doc = await this.repository.findById(id);
+    if (!doc) throw new NotFoundException('Voucher not found');
+    return VoucherResponseDto.fromDocument(doc);
+  }
+
+  /**
+   * Admin revoke: flips an UNUSED voucher to EXPIRED early. Refuses if the
+   * voucher has already been redeemed (USED) or is already EXPIRED — admin
+   * gets a 409 instead of a silent no-op so the UI shows the actual state.
+   */
+  async adminRevoke(id: string, reason: string): Promise<VoucherResponseDto> {
+    const existing = await this.repository.findById(id);
+    if (!existing) throw new NotFoundException('Voucher not found');
+    if (existing.status !== VoucherStatusEnum.UNUSED) {
+      throw new ConflictException(
+        `Voucher is ${existing.status}, only UNUSED vouchers can be revoked`,
+      );
+    }
+    const revoked = await this.repository.revoke(id, reason);
+    if (!revoked) {
+      // Race: someone consumed/expired between our check and the update.
+      throw new ConflictException('Voucher state changed, refresh and retry');
+    }
+    this.logger.log(`Admin revoked voucher voucherId=${id} reason="${reason}"`);
+    return VoucherResponseDto.fromDocument(revoked);
   }
 
   /**

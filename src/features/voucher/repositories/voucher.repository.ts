@@ -59,6 +59,59 @@ export class VoucherRepository {
     return this.model.find(filter).sort({ created_at: -1 }).exec();
   }
 
+  async findAllPaginated(
+    filter: { status?: VoucherStatusEnum; customerId?: Types.ObjectId },
+    page: number,
+    limit: number,
+  ): Promise<VoucherDocument[]> {
+    const query: Record<string, unknown> = {};
+    if (filter.status) query.status = filter.status;
+    if (filter.customerId) query.customer_id = filter.customerId;
+    const skip = (page - 1) * limit;
+    return this.model
+      .find(query)
+      .sort({ created_at: -1 })
+      .skip(skip)
+      .limit(limit)
+      .exec();
+  }
+
+  async countAll(filter: {
+    status?: VoucherStatusEnum;
+    customerId?: Types.ObjectId;
+  }): Promise<number> {
+    const query: Record<string, unknown> = {};
+    if (filter.status) query.status = filter.status;
+    if (filter.customerId) query.customer_id = filter.customerId;
+    return this.model.countDocuments(query).exec();
+  }
+
+  /**
+   * Atomically flips an UNUSED voucher to EXPIRED early (admin revoke).
+   * Returns null if the voucher does not exist or is already USED/EXPIRED
+   * — admin sees a 4xx instead of silently no-op-ing on a stale voucher.
+   * The `granted_reason` field is overwritten with the revocation note so
+   * the audit trail explains why the voucher was killed.
+   */
+  async revoke(
+    id: Types.ObjectId | string,
+    reason: string,
+  ): Promise<VoucherDocument | null> {
+    if (!Types.ObjectId.isValid(id)) return null;
+    return this.model
+      .findOneAndUpdate(
+        { _id: id, status: VoucherStatusEnum.UNUSED },
+        {
+          $set: {
+            status: VoucherStatusEnum.EXPIRED,
+            granted_reason: `[REVOKED] ${reason}`,
+          },
+        },
+        { returnDocument: 'after' },
+      )
+      .exec();
+  }
+
   /**
    * Atomically marks an UNUSED voucher as USED. Returns null if the voucher
    * does not exist, is not owned by the customer, has already been consumed,

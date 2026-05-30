@@ -1,8 +1,20 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Types } from 'mongoose';
 import { OrderDocument } from '../entities/order.entity';
 import { OrderStatusEnum } from '../types/order-status.enum';
 import { PaymentMethodEnum } from '../types/payment-method.enum';
 import { PaymentStatusEnum } from '../types/payment-status.enum';
+
+/**
+ * A ref field is "populated" when the query used `.populate()` (admin list) —
+ * it becomes the referenced sub-document instead of a raw ObjectId. Other
+ * callers leave it as an ObjectId, so the DTO handles both shapes.
+ */
+function isPopulated(
+  ref: unknown,
+): ref is { _id: Types.ObjectId; [key: string]: unknown } {
+  return typeof ref === 'object' && ref !== null && '_id' in ref;
+}
 
 export class OrderResponseDto {
   @ApiProperty({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
@@ -16,6 +28,21 @@ export class OrderResponseDto {
 
   @ApiProperty({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
   serviceTypeId: string;
+
+  @ApiPropertyOptional({
+    example: 'Nguyễn Văn A',
+    description: 'Customer name. Present only when the list is populated.',
+  })
+  customerName?: string;
+
+  @ApiPropertyOptional({ example: 'a@example.com' })
+  customerEmail?: string;
+
+  @ApiPropertyOptional({ example: '51T-56019' })
+  licensePlate?: string;
+
+  @ApiPropertyOptional({ example: 'Premium Wash' })
+  serviceName?: string;
 
   @ApiProperty({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
   staffShiftId: string;
@@ -98,10 +125,36 @@ export class OrderResponseDto {
   static fromDocument(doc: OrderDocument): OrderResponseDto {
     const dto = new OrderResponseDto();
     dto.id = doc._id.toString();
-    dto.customerId = doc.customer_id.toString();
-    dto.vehicleId = doc.vehicle_id.toString();
-    dto.serviceTypeId = doc.service_type_id.toString();
-    dto.staffShiftId = doc.staff_shift_id.toString();
+
+    // Refs are populated on the admin list, raw ObjectIds elsewhere. A
+    // populate() against an orphaned ref (target doc deleted) yields null,
+    // so every branch tolerates a missing/null ref instead of crashing.
+    const cust = doc.customer_id as unknown;
+    if (isPopulated(cust)) {
+      dto.customerId = cust._id.toString();
+      dto.customerName = cust.name as string | undefined;
+      dto.customerEmail = cust.email as string | undefined;
+    } else {
+      dto.customerId = cust ? (cust as Types.ObjectId).toString() : '';
+    }
+
+    const veh = doc.vehicle_id as unknown;
+    if (isPopulated(veh)) {
+      dto.vehicleId = veh._id.toString();
+      dto.licensePlate = veh.license_plate as string | undefined;
+    } else {
+      dto.vehicleId = veh ? (veh as Types.ObjectId).toString() : '';
+    }
+
+    const svc = doc.service_type_id as unknown;
+    if (isPopulated(svc)) {
+      dto.serviceTypeId = svc._id.toString();
+      dto.serviceName = svc.name as string | undefined;
+    } else {
+      dto.serviceTypeId = svc ? (svc as Types.ObjectId).toString() : '';
+    }
+
+    dto.staffShiftId = doc.staff_shift_id?.toString() ?? '';
     dto.scheduledAt = doc.scheduled_at;
     dto.status = doc.status;
     dto.paymentMethod = doc.payment_method;

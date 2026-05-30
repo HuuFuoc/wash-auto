@@ -22,12 +22,20 @@ interface IDefaultTier {
 }
 
 // 4-tier loyalty ladder driven by accumulated loyalty points.
-//   None   — <  200  điểm,  0% giảm
-//   Bronze —  >= 200  điểm,  5% giảm
-//   Silver —  >= 500  điểm, 10% giảm
-//   Gold   —  >= 1000 điểm, 15% giảm
+//   None   — <   200  điểm,  0% giảm
+//   Bronze — >=  200  điểm,  5% giảm
+//   Silver — >=  500  điểm, 10% giảm
+//   Gold   — >= 1500  điểm, 10% giảm (raised from 1000 + dropped from 15%)
+//
 // Tier discount only applies when the booking falls inside a configured
-// golden hour (see GoldenHourConfigService).
+// golden hour (see GoldenHourConfigService). Gold was tuned from
+// "1000 điểm / 15%" to "1500 điểm / 10%" after the economic audit
+// (docs/ECONOMIC_GUARDRAILS.md §3) — the previous combination
+// produced a worst-case margin of ~1% on a Detailing order in
+// golden hour with a voucher applied, which is too close to the
+// break-even line for any cost overrun (water price hike, washer
+// overtime). The new combination keeps gross margin ≥ 10% on the
+// same worst case while still rewarding loyal customers.
 const DEFAULT_TIERS: IDefaultTier[] = [
   {
     tierName: TierNameEnum.NONE,
@@ -55,11 +63,11 @@ const DEFAULT_TIERS: IDefaultTier[] = [
   },
   {
     tierName: TierNameEnum.GOLD,
-    minLoyaltyPoints: 1000,
+    minLoyaltyPoints: 1500,
     bookingWindowDays: 14,
     priorityLevel: 3,
     pointsPer1000Vnd: 3,
-    discountPercent: 15,
+    discountPercent: 10,
   },
 ];
 
@@ -77,12 +85,27 @@ export class TierConfigService {
     // priority_level values that then clash on E11000 with the unique index.
     const existing = await this.repository.findAll();
     const canonical = new Set<string>(DEFAULT_TIERS.map((t) => t.tierName));
-    const isLegacySchema = existing.some(
-      (doc) =>
-        !canonical.has(doc.tier_name) ||
-        doc.min_loyalty_points === undefined ||
-        doc.min_loyalty_points === null,
+    // Build a lookup so we can detect docs whose values drifted from the
+    // canonical seed (e.g. the 2026-05-28 economic tune of Gold from
+    // 1000 pts / 15% → 1500 pts / 10%). Without this, the upsert below
+    // is a no-op on existing rows and the DB keeps the old, risky
+    // numbers indefinitely.
+    const byName = new Map<string, IDefaultTier>(
+      DEFAULT_TIERS.map((t) => [t.tierName, t]),
     );
+    const isLegacySchema = existing.some((doc) => {
+      if (!canonical.has(doc.tier_name)) return true;
+      if (doc.min_loyalty_points === undefined) return true;
+      if (doc.min_loyalty_points === null) return true;
+      const seed = byName.get(doc.tier_name);
+      if (!seed) return true;
+      if (doc.min_loyalty_points !== seed.minLoyaltyPoints) return true;
+      if (doc.discount_percent !== seed.discountPercent) return true;
+      if (doc.points_per_1000_vnd !== seed.pointsPer1000Vnd) return true;
+      if (doc.booking_window_days !== seed.bookingWindowDays) return true;
+      if (doc.priority_level !== seed.priorityLevel) return true;
+      return false;
+    });
 
     if (isLegacySchema) {
       const dropped = await this.repository.deleteAll();

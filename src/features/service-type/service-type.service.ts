@@ -45,6 +45,7 @@ export class ServiceTypeService {
       estimatedMinutes: dto.estimatedMinutes,
       pointsMultiplier: dto.pointsMultiplier,
       checklistTemplate: dto.checklistTemplate,
+      isVoucherEligible: dto.isVoucherEligible,
     });
     this.logger.log('Service type created', { id: doc._id.toString() });
     return ServiceTypeResponseDto.fromDocument(doc);
@@ -73,6 +74,7 @@ export class ServiceTypeService {
       estimatedMinutes: dto.estimatedMinutes,
       pointsMultiplier: dto.pointsMultiplier,
       checklistTemplate: dto.checklistTemplate,
+      isVoucherEligible: dto.isVoucherEligible,
     });
     if (!doc) {
       throw new NotFoundException('Service type not found');
