@@ -38,6 +38,11 @@ export class VoucherRepository {
     return this.model.findById(id).exec();
   }
 
+  /** Lookup by unique voucher code (used to reject duplicate custom codes). */
+  async findByCode(code: string): Promise<VoucherDocument | null> {
+    return this.model.findOne({ code }).exec();
+  }
+
   async findByIdForOwner(
     id: Types.ObjectId | string,
     customerId: Types.ObjectId | string,

@@ -1,11 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsDate,
   IsInt,
   IsMongoId,
   IsOptional,
   IsString,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -24,6 +25,23 @@ export class GrantVoucherAdminDto {
   })
   @IsMongoId()
   customerId: string;
+
+  @ApiPropertyOptional({
+    example: 'FREEWASH-KHOI',
+    description:
+      'Optional human-readable code so staff can read it out to the ' +
+      'customer. Omit to auto-generate FREEWASH-YYYYMMDD-NNN. Must be ' +
+      'unique; 3-30 chars of A-Z, 0-9 or dash (lowercased input is upcased).',
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsString()
+  @Matches(/^[A-Z0-9-]{3,30}$/, {
+    message: 'Mã voucher chỉ gồm 3-30 ký tự A-Z, 0-9 hoặc dấu gạch ngang',
+  })
+  code?: string;
 
   @ApiPropertyOptional({
     example: 100000,
