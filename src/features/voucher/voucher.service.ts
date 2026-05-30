@@ -28,6 +28,8 @@ export interface IGrantFreeWashInput {
   expiresAt?: Date;
   /** Override the default 100k VND cap. Mostly used by admin-issued grants. */
   discountCapVnd?: number;
+  /** Custom readable code (admin grant). Omit to auto-generate. */
+  code?: string;
 }
 
 // Hard ceiling on what a free-wash voucher can knock off a single order.
@@ -58,7 +60,16 @@ export class VoucherService {
    * is only intended for admin-issued grants (e.g. service-recovery comps).
    */
   async grantFreeWash(input: IGrantFreeWashInput): Promise<VoucherDocument> {
-    const code = await this.generateCode();
+    let code: string;
+    if (input.code) {
+      code = input.code.trim().toUpperCase();
+      const existing = await this.repository.findByCode(code);
+      if (existing) {
+        throw new ConflictException(`Mã voucher "${code}" đã tồn tại`);
+      }
+    } else {
+      code = await this.generateCode();
+    }
     const expiresAt =
       input.expiresAt ??
       new Date(Date.now() + DEFAULT_VOUCHER_TTL_DAYS * 24 * 60 * 60 * 1000);
@@ -171,6 +182,7 @@ export class VoucherService {
       reason: dto.reason,
       expiresAt: dto.expiresAt,
       discountCapVnd: dto.discountCapVnd,
+      code: dto.code,
     });
     this.logger.log(
       `Admin grant voucher voucherId=${voucher._id.toString()} customerId=${customer._id.toString()}`,
