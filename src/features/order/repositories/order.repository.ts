@@ -200,9 +200,12 @@ export class OrderRepository {
     const skip = (page - 1) * limit;
     return this.model
       .find(this.buildQuery(filter))
-      .sort({ scheduled_at: 1 })
+      .sort({ created_at: -1 })
       .skip(skip)
       .limit(limit)
+      .populate('customer_id', 'name email')
+      .populate('vehicle_id', 'license_plate')
+      .populate('service_type_id', 'name')
       .exec();
   }
 

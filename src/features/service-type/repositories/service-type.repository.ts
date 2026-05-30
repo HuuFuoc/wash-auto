@@ -13,6 +13,7 @@ export interface ICreateServiceTypeInput {
   estimatedMinutes: number;
   pointsMultiplier: number;
   checklistTemplate?: string[];
+  isVoucherEligible?: boolean;
 }
 
 export interface IUpdateServiceTypeInput {
@@ -22,6 +23,7 @@ export interface IUpdateServiceTypeInput {
   estimatedMinutes?: number;
   pointsMultiplier?: number;
   checklistTemplate?: string[];
+  isVoucherEligible?: boolean;
 }
 
 @Injectable()
@@ -58,6 +60,7 @@ export class ServiceTypeRepository {
       estimated_minutes: input.estimatedMinutes,
       points_multiplier: input.pointsMultiplier,
       checklist_template: input.checklistTemplate ?? [],
+      is_voucher_eligible: input.isVoucherEligible ?? true,
     });
   }
 
@@ -75,6 +78,8 @@ export class ServiceTypeRepository {
       update.points_multiplier = input.pointsMultiplier;
     if (input.checklistTemplate !== undefined)
       update.checklist_template = input.checklistTemplate;
+    if (input.isVoucherEligible !== undefined)
+      update.is_voucher_eligible = input.isVoucherEligible;
 
     return this.model
       .findByIdAndUpdate(id, { $set: update }, { returnDocument: 'after' })

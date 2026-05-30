@@ -21,9 +21,8 @@ async function bootstrap(): Promise<void> {
   const globalPrefix = configService.getOrThrow<string>('app.globalPrefix');
   app.setGlobalPrefix(globalPrefix);
 
-  const corsOrigins = configService.get<string[]>('app.corsOrigins') ?? [];
   app.enableCors({
-    origin: corsOrigins.length > 0 ? corsOrigins : false,
+    origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key'],

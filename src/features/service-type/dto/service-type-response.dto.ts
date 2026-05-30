@@ -26,6 +26,14 @@ export class ServiceTypeResponseDto {
   })
   checklistTemplate: string[];
 
+  @ApiProperty({
+    example: true,
+    description:
+      'FE: hide the "Áp voucher" button when false. BE rejects voucher ' +
+      'redemption on this service with HTTP 400.',
+  })
+  isVoucherEligible: boolean;
+
   @ApiProperty({ example: true })
   isActive: boolean;
 
@@ -38,6 +46,7 @@ export class ServiceTypeResponseDto {
     dto.estimatedMinutes = doc.estimated_minutes;
     dto.pointsMultiplier = doc.points_multiplier;
     dto.checklistTemplate = doc.checklist_template ?? [];
+    dto.isVoucherEligible = doc.is_voucher_eligible ?? true;
     dto.isActive = doc.is_active;
     return dto;
   }
