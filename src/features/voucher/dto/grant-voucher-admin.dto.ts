@@ -34,7 +34,7 @@ export class GrantVoucherAdminDto {
       'unique; 3-30 chars of A-Z, 0-9 or dash (lowercased input is upcased).',
   })
   @IsOptional()
-  @Transform(({ value }) =>
+  @Transform(({ value }: { value: unknown }) =>
     typeof value === 'string' ? value.trim().toUpperCase() : value,
   )
   @IsString()
