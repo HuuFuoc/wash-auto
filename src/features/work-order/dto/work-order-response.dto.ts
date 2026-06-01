@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Types } from 'mongoose';
 import { WorkOrderDocument } from '../entities/work-order.entity';
 import { WorkOrderStatusEnum } from '../types/work-order-status.enum';
 
@@ -51,6 +52,13 @@ export class WorkOrderResponseDto {
 
   @ApiPropertyOptional({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
   assignedWasherId?: string;
+
+  @ApiPropertyOptional({
+    example: 'Trần Văn B',
+    description:
+      'Assigned washer name. Present only when the list populated it.',
+  })
+  assignedWasherName?: string;
 
   @ApiPropertyOptional({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
   assignedBy?: string;
@@ -105,7 +113,15 @@ export class WorkOrderResponseDto {
       doneAt: item.done_at,
     }));
     dto.status = doc.status;
-    dto.assignedWasherId = doc.assigned_washer_id?.toString();
+    // assigned_washer_id may be a raw ObjectId or a populated user sub-doc.
+    const washer: unknown = doc.assigned_washer_id;
+    if (washer && typeof washer === 'object' && '_id' in washer) {
+      const w = washer as { _id: Types.ObjectId; name?: string };
+      dto.assignedWasherId = w._id.toString();
+      dto.assignedWasherName = w.name;
+    } else {
+      dto.assignedWasherId = doc.assigned_washer_id?.toString();
+    }
     dto.assignedBy = doc.assigned_by?.toString();
     dto.estimatedMinutes = doc.estimated_minutes;
     dto.stationName = doc.station_name;

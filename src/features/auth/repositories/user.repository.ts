@@ -52,6 +52,14 @@ export class UserRepository {
     return this.userModel.findById(id).exec();
   }
 
+  /** Batch lookup by id — used to enrich list responses with user name/email. */
+  async findByIds(
+    ids: Array<Types.ObjectId | string>,
+  ): Promise<UserDocument[]> {
+    if (ids.length === 0) return [];
+    return this.userModel.find({ _id: { $in: ids } }).exec();
+  }
+
   async existsByEmail(email: string): Promise<boolean> {
     const found = await this.userModel
       .exists({ email: email.toLowerCase() })

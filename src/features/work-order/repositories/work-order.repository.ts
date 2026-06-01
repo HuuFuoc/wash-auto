@@ -98,6 +98,7 @@ export class WorkOrderRepository {
       .sort({ created_at: -1 })
       .skip(skip)
       .limit(limit)
+      .populate('assigned_washer_id', 'name')
       .exec();
   }
 
