@@ -187,7 +187,10 @@ export class VoucherService {
     this.logger.log(
       `Admin grant voucher voucherId=${voucher._id.toString()} customerId=${customer._id.toString()}`,
     );
-    return VoucherResponseDto.fromDocument(voucher);
+    return VoucherResponseDto.fromDocument(voucher, {
+      name: customer.name,
+      email: customer.email,
+    });
   }
 
   async adminList(query: QueryVoucherDto): Promise<VoucherListResponseDto> {
@@ -203,8 +206,19 @@ export class VoucherService {
       this.repository.findAllPaginated(filter, page, limit),
       this.repository.countAll(filter),
     ]);
+    // Enrich each voucher with the owner's name/email so the admin AND
+    // manager UIs can show a name (managers cannot call /admin/users).
+    const customerIds = [...new Set(docs.map((d) => d.customer_id.toString()))];
+    const users = await this.userRepository.findByIds(customerIds);
+    const userMap = new Map(users.map((u) => [u._id.toString(), u]));
     return {
-      data: docs.map((d) => VoucherResponseDto.fromDocument(d)),
+      data: docs.map((d) => {
+        const u = userMap.get(d.customer_id.toString());
+        return VoucherResponseDto.fromDocument(
+          d,
+          u ? { name: u.name, email: u.email } : undefined,
+        );
+      }),
       meta: {
         page,
         limit,
@@ -217,7 +231,11 @@ export class VoucherService {
   async adminGetById(id: string): Promise<VoucherResponseDto> {
     const doc = await this.repository.findById(id);
     if (!doc) throw new NotFoundException('Voucher not found');
-    return VoucherResponseDto.fromDocument(doc);
+    const u = await this.userRepository.findById(doc.customer_id);
+    return VoucherResponseDto.fromDocument(
+      doc,
+      u ? { name: u.name, email: u.email } : undefined,
+    );
   }
 
   /**

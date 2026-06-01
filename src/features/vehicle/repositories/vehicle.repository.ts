@@ -191,6 +191,8 @@ export class VehicleRepository {
       .sort({ created_at: -1 })
       .skip(skip)
       .limit(limit)
+      .populate('customer_id', 'name phone email')
+      .populate('vehicle_type_id', 'name')
       .exec();
   }
 

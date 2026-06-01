@@ -10,6 +10,17 @@ export class VoucherResponseDto {
   @ApiProperty({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
   customerId: string;
 
+  @ApiPropertyOptional({
+    example: 'Nguyễn Văn A',
+    description:
+      'Customer display name, populated on admin/manager list responses so ' +
+      'the UI can show a name without a separate /admin/users call.',
+  })
+  customerName?: string;
+
+  @ApiPropertyOptional({ example: 'a@example.com' })
+  customerEmail?: string;
+
   @ApiProperty({ example: 'FREEWASH-20260527-001' })
   code: string;
 
@@ -48,10 +59,15 @@ export class VoucherResponseDto {
   @ApiProperty()
   createdAt: Date;
 
-  static fromDocument(doc: VoucherDocument): VoucherResponseDto {
+  static fromDocument(
+    doc: VoucherDocument,
+    customer?: { name?: string; email?: string },
+  ): VoucherResponseDto {
     const dto = new VoucherResponseDto();
     dto.id = doc._id.toString();
     dto.customerId = doc.customer_id.toString();
+    dto.customerName = customer?.name;
+    dto.customerEmail = customer?.email;
     dto.code = doc.code;
     dto.type = doc.type;
     dto.status = doc.status;
