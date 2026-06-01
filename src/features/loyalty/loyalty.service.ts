@@ -22,8 +22,19 @@ import { LoyaltyTransactionTypeEnum } from './types/loyalty-transaction-type.enu
 // Penalty for not showing up to a confirmed booking. Kept here as a private
 // constant — promote to a config table only if/when product needs it tunable.
 const NO_SHOW_PENALTY_POINTS = 50;
-// Number of completed washes that earn a free wash voucher.
+// Number of VALID completed washes that earn a voucher.
 const WASHES_PER_FREE_VOUCHER = 10;
+
+// ─── Voucher economics (loyalty giveaway program) ───────────────────────────
+// A wash only counts toward the voucher cycle when it is a real, paid wash on a
+// voucher-eligible service. This blocks "farm cheap, redeem expensive" abuse
+// and stops free/heavily-discounted orders from fuelling the next reward.
+const MIN_VALID_WASH_VND = 40_000; // ngưỡng chi tối thiểu để 1 lượt được tính
+// Reward = a fixed % of what the customer actually spent over the cycle, so the
+// giveaway stays ~5% of valid revenue regardless of which packages were used.
+const VOUCHER_GIVEAWAY_RATE = 0.05;
+const VOUCHER_FLOOR_VND = 20_000; // sàn: giữ sức hấp dẫn cho khách chi ít
+const VOUCHER_CEIL_VND = 100_000; // trần: chặn rủi ro với hóa đơn lớn bất thường
 
 @Injectable()
 export class LoyaltyService {
@@ -150,6 +161,7 @@ export class LoyaltyService {
     customerId: Types.ObjectId | string,
     orderId: Types.ObjectId,
     amountVnd: number,
+    isVoucherEligibleService: boolean,
   ): Promise<void> {
     const account = await this.ensureForCustomer(customerId);
     const tier = await this.tierConfigRepository.findById(
@@ -162,25 +174,54 @@ export class LoyaltyService {
       return;
     }
 
+    // Points are earned on every completed order, on the amount actually paid.
     const earned = Math.floor((amountVnd / 1000) * tier.points_per_1000_vnd);
     const newBalance = account.points_balance + earned;
-    const newTowardVoucher = account.successful_washes_toward_voucher + 1;
     const newTotalWashes = account.total_successful_washes + 1;
 
-    let washesAfterReward = newTowardVoucher;
+    // A wash only advances the VOUCHER cycle when it is a real, paid wash on a
+    // voucher-eligible service. Free / heavily-discounted orders (below the
+    // min-spend threshold) and excluded services (e.g. Detailing) do NOT count
+    // — this is the core anti-abuse rule that keeps the giveaway near target.
+    const isValidWash =
+      isVoucherEligibleService && amountVnd >= MIN_VALID_WASH_VND;
+
+    let washesAfterReward = account.successful_washes_toward_voucher;
+    let spendAfterReward = account.spend_toward_voucher;
     let mintedVoucherId: Types.ObjectId | undefined;
-    if (newTowardVoucher >= WASHES_PER_FREE_VOUCHER) {
-      const voucher = await this.voucherService.grantFreeWash({
-        customerId: new Types.ObjectId(customerId),
-        reason: `Reward for ${WASHES_PER_FREE_VOUCHER} completed washes`,
-      });
-      mintedVoucherId = voucher._id;
-      washesAfterReward = newTowardVoucher - WASHES_PER_FREE_VOUCHER;
+    let mintedCap = 0;
+
+    if (isValidWash) {
+      washesAfterReward += 1;
+      spendAfterReward += amountVnd;
+
+      if (washesAfterReward >= WASHES_PER_FREE_VOUCHER) {
+        // Reward = a % of what the customer actually spent this cycle, clamped
+        // to a floor (stay attractive for low spenders) and a ceiling (cap the
+        // downside). This makes the giveaway scale with real revenue, so
+        // "farm cheap, redeem expensive" no longer pays off.
+        mintedCap = Math.min(
+          Math.max(
+            Math.round(spendAfterReward * VOUCHER_GIVEAWAY_RATE),
+            VOUCHER_FLOOR_VND,
+          ),
+          VOUCHER_CEIL_VND,
+        );
+        const voucher = await this.voucherService.grantFreeWash({
+          customerId: new Types.ObjectId(customerId),
+          discountCapVnd: mintedCap,
+          reason: `Thưởng ${WASHES_PER_FREE_VOUCHER} lượt rửa hợp lệ (5% của ${spendAfterReward.toLocaleString('vi-VN')}đ)`,
+        });
+        mintedVoucherId = voucher._id;
+        washesAfterReward -= WASHES_PER_FREE_VOUCHER;
+        spendAfterReward = 0;
+      }
     }
 
     await this.loyaltyRepository.updateById(account._id, {
       pointsBalance: newBalance,
       successfulWashesTowardVoucher: washesAfterReward,
+      spendTowardVoucher: spendAfterReward,
       totalSuccessfulWashes: newTotalWashes,
     });
 
@@ -201,7 +242,7 @@ export class LoyaltyService {
         balanceAfter: newBalance,
         orderId,
         voucherId: mintedVoucherId,
-        reason: `Free-wash voucher minted at ${WASHES_PER_FREE_VOUCHER}-wash threshold`,
+        reason: `Voucher thưởng cap ${mintedCap.toLocaleString('vi-VN')}đ tại mốc ${WASHES_PER_FREE_VOUCHER} lượt hợp lệ`,
       });
     }
 
@@ -284,6 +325,7 @@ export class LoyaltyService {
         await this.loyaltyRepository.updateById(account._id, {
           pointsBalance: 0,
           successfulWashesTowardVoucher: 0,
+          spendTowardVoucher: 0,
           tierConfigId: noneTier._id,
           lastAnnualResetAt: now,
         });

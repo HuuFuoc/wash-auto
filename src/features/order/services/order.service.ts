@@ -949,10 +949,17 @@ export class OrderService {
     if (!updated) return;
 
     try {
+      // Only washes on a voucher-eligible service advance the loyalty voucher
+      // cycle (e.g. Detailing is excluded), so the reward economics stay scoped
+      // to the wash packages the program is designed around.
+      const service = await this.serviceTypeRepository.findById(
+        updated.service_type_id.toString(),
+      );
       await this.loyaltyService.applyOrderCompleted(
         updated.customer_id,
         updated._id,
         updated.amount,
+        service?.is_voucher_eligible ?? false,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
