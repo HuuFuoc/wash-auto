@@ -63,7 +63,7 @@ export class AdminOrderController {
       'pending_payment→confirmed/cancelled, confirmed→cancelled/no_show, ' +
       'checked_in→cancelled/no_show. The operational transitions ' +
       '(checked_in, in_progress, completed) are driven by the Work Order ' +
-      'flow — see POST /admin/work-orders and the /me/work-orders endpoints.',
+      'flow - see POST /admin/work-orders and the /me/work-orders endpoints.',
   })
   @ApiResponse({ status: 200, type: OrderResponseDto })
   @ApiResponse({ status: 400, description: 'Invalid status transition' })

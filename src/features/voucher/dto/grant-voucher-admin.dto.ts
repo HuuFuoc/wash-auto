@@ -16,7 +16,7 @@ import {
  * Admin/manager-issued voucher grant. Used for service-recovery comps,
  * marketing campaigns, or one-off promotions. The cap is hard-capped at
  * 200k VND in the DTO layer so a single typo cannot blow up the program
- * economics — anything bigger needs a code change, not a runtime field.
+ * economics - anything bigger needs a code change, not a runtime field.
  */
 export class GrantVoucherAdminDto {
   @ApiProperty({

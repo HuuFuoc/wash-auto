@@ -20,7 +20,7 @@ import { LoyaltyTransactionRepository } from './repositories/loyalty-transaction
 import { LoyaltyTransactionTypeEnum } from './types/loyalty-transaction-type.enum';
 
 // Penalty for not showing up to a confirmed booking. Kept here as a private
-// constant — promote to a config table only if/when product needs it tunable.
+// constant - promote to a config table only if/when product needs it tunable.
 const NO_SHOW_PENALTY_POINTS = 50;
 // Number of VALID completed washes that earn a voucher.
 const WASHES_PER_FREE_VOUCHER = 10;
@@ -50,7 +50,7 @@ export class LoyaltyService {
   /**
    * Ensures a loyalty account exists for the customer. Called on register
    * AND lazily on any read endpoint so old customers also receive one.
-   * Idempotent — returns the existing account if already present. New
+   * Idempotent - returns the existing account if already present. New
    * accounts start at the None tier.
    */
   async ensureForCustomer(
@@ -72,14 +72,14 @@ export class LoyaltyService {
       );
       if (!fallback) {
         throw new InternalServerErrorException(
-          'None tier_config not seeded — restart app',
+          'None tier_config not seeded - restart app',
         );
       }
       const repaired = await this.loyaltyRepository.updateById(existing._id, {
         tierConfigId: fallback._id,
       });
       this.logger.warn(
-        `Loyalty account ${existing._id.toString()} pointed at missing tier — repaired to None`,
+        `Loyalty account ${existing._id.toString()} pointed at missing tier - repaired to None`,
       );
       return repaired ?? existing;
     }
@@ -89,7 +89,7 @@ export class LoyaltyService {
     );
     if (!baseTier) {
       throw new InternalServerErrorException(
-        'None tier_config not seeded — restart app',
+        'None tier_config not seeded - restart app',
       );
     }
 
@@ -110,7 +110,7 @@ export class LoyaltyService {
     );
     if (!tier) {
       throw new NotFoundException(
-        'Linked tier_config not found — DB inconsistent',
+        'Linked tier_config not found - DB inconsistent',
       );
     }
     return LoyaltyAccountResponseDto.fromDocument(account, tier.tier_name);
@@ -182,7 +182,7 @@ export class LoyaltyService {
     // A wash only advances the VOUCHER cycle when it is a real, paid wash on a
     // voucher-eligible service. Free / heavily-discounted orders (below the
     // min-spend threshold) and excluded services (e.g. Detailing) do NOT count
-    // — this is the core anti-abuse rule that keeps the giveaway near target.
+    // - this is the core anti-abuse rule that keeps the giveaway near target.
     const isValidWash =
       isVoucherEligibleService && amountVnd >= MIN_VALID_WASH_VND;
 
@@ -257,7 +257,7 @@ export class LoyaltyService {
 
   /**
    * Penalises the customer for a NO_SHOW: deducts a fixed penalty (clamped
-   * at 0), logs a transaction, and may demote tier. Idempotent in spirit —
+   * at 0), logs a transaction, and may demote tier. Idempotent in spirit -
    * the order state machine has NO_SHOW as terminal so this is called once.
    */
   async applyOrderNoShow(
@@ -312,7 +312,7 @@ export class LoyaltyService {
     );
     if (!noneTier) {
       throw new InternalServerErrorException(
-        'None tier_config not seeded — cannot run annual reset',
+        'None tier_config not seeded - cannot run annual reset',
       );
     }
 
@@ -364,7 +364,7 @@ export class LoyaltyService {
     orderId: Types.ObjectId | undefined,
   ): Promise<void> {
     const tiers = await this.tierConfigRepository.findActive();
-    // findActive returns ascending priority — pick the last one whose
+    // findActive returns ascending priority - pick the last one whose
     // threshold is satisfied so we land on the highest qualifying tier.
     let target: TierConfigDocument | null = null;
     for (const t of tiers) {

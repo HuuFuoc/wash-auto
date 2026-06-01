@@ -42,7 +42,7 @@ export class AuthService {
   ) {}
 
   /**
-   * Step 1 — Request an email OTP. If the user is already verified within
+   * Step 1 - Request an email OTP. If the user is already verified within
    * the skip window (default 7 days), no email is sent; a verified-email
    * JWT is returned immediately. The response shape is identical whether
    * the email is registered or not, to avoid enumeration.
@@ -70,7 +70,7 @@ export class AuthService {
     }
 
     if (!user || !user.is_active) {
-      // Don't leak existence — but also don't actually send.
+      // Don't leak existence - but also don't actually send.
       this.logger.log(
         `OTP request for unknown/inactive email=${email} ip=${ip}`,
       );
@@ -82,7 +82,7 @@ export class AuthService {
   }
 
   /**
-   * Step 2 — Verify the OTP. On success, persist email_verified_at and
+   * Step 2 - Verify the OTP. On success, persist email_verified_at and
    * issue the verified-email JWT used as the Authorization for
    * POST /me/bookings.
    */
@@ -152,7 +152,7 @@ export class AuthService {
 
     // Trigger email verification OTP right after registration so the user
     // sees a code in their inbox without an extra UI step. Fire-and-forget:
-    // a SMTP failure must NOT roll back the user creation — the user can
+    // a SMTP failure must NOT roll back the user creation - the user can
     // request another OTP via /auth/otp/send.
     void this.otpService
       .issueAndSend(user.email, 'register')
@@ -211,7 +211,7 @@ export class AuthService {
       const payload = await this.refreshTokenService.verify(refreshToken);
       await this.refreshTokenService.blacklist(payload.jti, payload.exp);
     } catch {
-      // Token already invalid/expired — nothing to revoke
+      // Token already invalid/expired - nothing to revoke
     }
   }
 

@@ -80,7 +80,7 @@ export class AdminVoucherController {
   @ApiOperation({
     summary: 'Revoke an unused voucher (admin/manager)',
     description:
-      'Flips an UNUSED voucher to EXPIRED early — used for fraud, wrong-' +
+      'Flips an UNUSED voucher to EXPIRED early - used for fraud, wrong-' +
       'customer grants, or campaign rollback. Fails 409 if the voucher ' +
       'is already USED or EXPIRED. A reason is recorded in granted_reason.',
   })

@@ -15,7 +15,7 @@ export class PaymentTransaction {
   order_code: number;
 
   /**
-   * PayOS transaction reference. Unique sparse index — guarantees
+   * PayOS transaction reference. Unique sparse index - guarantees
    * idempotency at the DB level (Redis SETNX is the first line of defense).
    */
   @Prop({ unique: true, sparse: true })

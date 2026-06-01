@@ -94,7 +94,7 @@ export class VoucherRepository {
   /**
    * Atomically flips an UNUSED voucher to EXPIRED early (admin revoke).
    * Returns null if the voucher does not exist or is already USED/EXPIRED
-   * — admin sees a 4xx instead of silently no-op-ing on a stale voucher.
+   * - admin sees a 4xx instead of silently no-op-ing on a stale voucher.
    * The `granted_reason` field is overwritten with the revocation note so
    * the audit trail explains why the voucher was killed.
    */
@@ -120,7 +120,7 @@ export class VoucherRepository {
   /**
    * Atomically marks an UNUSED voucher as USED. Returns null if the voucher
    * does not exist, is not owned by the customer, has already been consumed,
-   * or has already expired — callers MUST treat null as "voucher unavailable"
+   * or has already expired - callers MUST treat null as "voucher unavailable"
    * and refuse the booking, otherwise a race could double-apply the free wash.
    *
    * The `expires_at > now` filter guards against the corner case where the
@@ -153,7 +153,7 @@ export class VoucherRepository {
       .exec();
   }
 
-  /** Restore an UNUSED state — used to refund the voucher on order failure. */
+  /** Restore an UNUSED state - used to refund the voucher on order failure. */
   async refund(id: Types.ObjectId | string): Promise<VoucherDocument | null> {
     if (!Types.ObjectId.isValid(id)) return null;
     return this.model
@@ -170,7 +170,7 @@ export class VoucherRepository {
 
   /**
    * Bulk-flips every UNUSED voucher whose deadline has passed to EXPIRED.
-   * Idempotent — re-running the cron only touches the new arrivals.
+   * Idempotent - re-running the cron only touches the new arrivals.
    * Returns the number of affected docs so the cron can log it.
    */
   async expireDueVouchers(now: Date): Promise<number> {

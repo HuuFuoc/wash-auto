@@ -2,7 +2,7 @@ import * as Joi from 'joi';
 
 /**
  * Joi schema validated by ConfigModule.forRoot. Throws at boot if any
- * required env is missing or fails its rule — never let the app start
+ * required env is missing or fails its rule - never let the app start
  * with a blank JWT secret again.
  */
 export const configValidationSchema = Joi.object({

@@ -3,7 +3,7 @@ import { ApiProperty } from '@nestjs/swagger';
 export class ChatResponseDto {
   @ApiProperty({
     example: 'b3c7e0f4-9e6e-4c2d-aab2-08d3c1c0b1a2',
-    description: 'Id phiên hội thoại — lưu lại để gửi kèm ở lần chat sau',
+    description: 'Id phiên hội thoại - lưu lại để gửi kèm ở lần chat sau',
   })
   sessionId: string;
 

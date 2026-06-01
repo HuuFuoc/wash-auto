@@ -130,7 +130,7 @@ export class GeminiService implements OnModuleInit {
       if (status === 429) {
         const delayMs = this.extractRetryDelayMs(err);
         if (delayMs > 0 && delayMs <= 5_000) {
-          this.logger.warn(`Gemini 429 — retrying once after ${delayMs}ms`);
+          this.logger.warn(`Gemini 429 - retrying once after ${delayMs}ms`);
           await new Promise((r) => setTimeout(r, delayMs));
           try {
             return await this.client.models.generateContent(params);
@@ -171,7 +171,7 @@ export class GeminiService implements OnModuleInit {
       ? `Khách đang đăng nhập với userId=${ctx.customerId}. Có thể dùng tool cá nhân (get_my_orders, list_my_vehicles, get_available_slots, get_order_detail).`
       : 'Khách chưa đăng nhập. Không dùng tool cá nhân; nếu khách hỏi đơn/lịch của họ, mời họ đăng nhập trước rồi quay lại chat.';
 
-    return `Bạn là "Wave" — trợ lý ảo của Wash-Auto, trung tâm rửa xe tự động.
+    return `Bạn là "Wave" - trợ lý ảo của Wash-Auto, trung tâm rửa xe tự động.
 
 # Persona
 - Tên: Wave. Xưng "mình" hoặc "Wave", gọi khách là "anh/chị".
@@ -188,7 +188,7 @@ export class GeminiService implements OnModuleInit {
 # Quy tắc dùng tool
 - list_services: khi khách hỏi "có dịch vụ gì", "bảng giá", "gói nào".
 - get_my_orders / get_order_detail: khi khách hỏi về đơn của họ.
-- get_available_slots: khi khách hỏi giờ trống. Phải biết serviceTypeId — nếu
+- get_available_slots: khi khách hỏi giờ trống. Phải biết serviceTypeId - nếu
   chưa biết, gọi list_services trước.
 - list_my_vehicles: khi khách hỏi về xe đã đăng ký.
 - get_business_info: khi khách hỏi giờ mở cửa, địa chỉ, hotline, chính sách
@@ -206,9 +206,9 @@ export class GeminiService implements OnModuleInit {
 # Ví dụ
 - Khách: "Cho mình xem bảng giá đi"
   Bot: [gọi list_services] → "Wash-Auto đang có 3 gói ạ:
-  • Rửa cơ bản — 50.000đ (20 phút)
-  • Rửa Premium — 80.000đ (30 phút)
-  • Detailing — 200.000đ (90 phút)
+  • Rửa cơ bản - 50.000đ (20 phút)
+  • Rửa Premium - 80.000đ (30 phút)
+  • Detailing - 200.000đ (90 phút)
   Anh/chị quan tâm gói nào để mình kiểm tra giờ trống giúp ạ?"
 
 - Khách: "Mai 9h còn chỗ không?"

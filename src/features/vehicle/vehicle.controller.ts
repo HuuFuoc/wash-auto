@@ -80,7 +80,7 @@ export class VehicleController {
   @ApiOperation({
     summary: 'Update one of my vehicles',
     description:
-      'Partial update — only include changed fields. Use PATCH /:id/set-default to change default vehicle.',
+      'Partial update - only include changed fields. Use PATCH /:id/set-default to change default vehicle.',
   })
   @ApiResponse({ status: 200, type: VehicleResponseDto })
   @ApiResponse({ status: 404, description: 'Vehicle not found' })

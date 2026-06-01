@@ -48,7 +48,7 @@ export class UserService {
     if (query.role) {
       const roleDoc = await this.roleRepository.findByCode(query.role);
       if (!roleDoc) {
-        // Role enum exists but document not seeded — return empty result
+        // Role enum exists but document not seeded - return empty result
         return {
           data: [],
           meta: { page, limit, total: 0, totalPages: 0 },
@@ -98,7 +98,7 @@ export class UserService {
     const role = await this.roleRepository.findByCode(dto.role);
     if (!role) {
       throw new InternalServerErrorException(
-        `Role ${dto.role} not seeded — restart app or seed roles`,
+        `Role ${dto.role} not seeded - restart app or seed roles`,
       );
     }
 

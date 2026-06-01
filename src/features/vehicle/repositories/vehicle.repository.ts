@@ -105,7 +105,7 @@ export class VehicleRepository {
 
   /**
    * Hard delete. Used to roll back a vehicle that was created inline during
-   * a booking that then failed — soft delete would leave the license plate
+   * a booking that then failed - soft delete would leave the license plate
    * permanently reserved and block the customer from retrying.
    */
   async deleteById(id: Types.ObjectId | string): Promise<void> {

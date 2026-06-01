@@ -6,7 +6,7 @@ import { PaymentMethodEnum } from '../types/payment-method.enum';
 import { PaymentStatusEnum } from '../types/payment-status.enum';
 
 /**
- * A ref field is "populated" when the query used `.populate()` (admin list) —
+ * A ref field is "populated" when the query used `.populate()` (admin list) -
  * it becomes the referenced sub-document instead of a raw ObjectId. Other
  * callers leave it as an ObjectId, so the DTO handles both shapes.
  */

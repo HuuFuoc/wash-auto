@@ -49,7 +49,7 @@ export class StaffShiftService {
   /**
    * Active staff (washers + cashiers) that can be assigned to a shift.
    * Managers cannot list all users (/admin/users is admin-only), but they DO
-   * create shifts — so this scoped list lets them pick a real staff member
+   * create shifts - so this scoped list lets them pick a real staff member
    * instead of falling back to invalid placeholder ids.
    */
   async listAssignableStaff(): Promise<AssignableStaff[]> {

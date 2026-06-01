@@ -23,7 +23,7 @@ export class VehicleTypeController {
   @ApiOperation({
     summary: 'Get a vehicle type by id (public)',
     description:
-      'Returns one type regardless of active status — useful when a vehicle references a type that was later deactivated.',
+      'Returns one type regardless of active status - useful when a vehicle references a type that was later deactivated.',
   })
   @ApiResponse({ status: 200, type: VehicleTypeResponseDto })
   @ApiResponse({ status: 404, description: 'Vehicle type not found' })

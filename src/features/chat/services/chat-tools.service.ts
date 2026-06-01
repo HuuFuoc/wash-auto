@@ -8,14 +8,14 @@ import { ChatKnowledgeService } from './chat-knowledge.service';
 
 /**
  * Context the bot has about the caller. `customerId` is undefined for
- * guest sessions — personalized tools refuse to run without it.
+ * guest sessions - personalized tools refuse to run without it.
  */
 export interface IChatToolContext {
   customerId?: string;
 }
 
 export interface IChatToolResult {
-  /** Plain JSON the model can read back. Never throw — wrap errors here. */
+  /** Plain JSON the model can read back. Never throw - wrap errors here. */
   data: unknown;
   /** Human-friendly error message when something went wrong, else undefined. */
   error?: string;
@@ -33,7 +33,7 @@ export class ChatToolsService {
   ) {}
 
   /**
-   * Tool catalogue advertised to Gemini. Keep descriptions in Vietnamese —
+   * Tool catalogue advertised to Gemini. Keep descriptions in Vietnamese -
    * the bot reasons in Vietnamese and chooses tools based on these.
    */
   getDeclarations(): FunctionDeclaration[] {
@@ -205,7 +205,7 @@ export class ChatToolsService {
     if (!ctx.customerId) {
       return {
         data: null,
-        error: 'Khách chưa đăng nhập — không thể tra cứu đơn cá nhân.',
+        error: 'Khách chưa đăng nhập - không thể tra cứu đơn cá nhân.',
       };
     }
     const orders = await this.orderService.listOwn(ctx.customerId);
@@ -230,7 +230,7 @@ export class ChatToolsService {
     if (!ctx.customerId) {
       return {
         data: null,
-        error: 'Khách chưa đăng nhập — không thể tra cứu đơn cá nhân.',
+        error: 'Khách chưa đăng nhập - không thể tra cứu đơn cá nhân.',
       };
     }
     const orderId = typeof args.orderId === 'string' ? args.orderId : '';
@@ -260,7 +260,7 @@ export class ChatToolsService {
     if (!ctx.customerId) {
       return {
         data: null,
-        error: 'Khách chưa đăng nhập — không thể xem danh sách xe.',
+        error: 'Khách chưa đăng nhập - không thể xem danh sách xe.',
       };
     }
     const vehicles = await this.vehicleService.listOwn(ctx.customerId);
@@ -317,7 +317,7 @@ export class ChatToolsService {
   private getBusinessInfo(): IChatToolResult {
     return {
       data: {
-        name: 'Wash-Auto — Trung tâm rửa xe tự động',
+        name: 'Wash-Auto - Trung tâm rửa xe tự động',
         openingHours: '07:00 - 21:00 (Thứ Hai - Chủ Nhật)',
         hotline: '1900-xxxx',
         email: 'support@washauto.vn',

@@ -25,7 +25,7 @@ export class OtpService {
 
   /**
    * Generates an OTP, stores its hash, enforces per-email rate limits,
-   * and dispatches the code via SMTP. Returns sentinel info only —
+   * and dispatches the code via SMTP. Returns sentinel info only -
    * never the code itself.
    */
   async issueAndSend(email: string, ip: string): Promise<IOtpSendResult> {
@@ -93,7 +93,7 @@ export class OtpService {
       throw new BadRequestException('Invalid or expired OTP');
     }
 
-    // Success — burn the OTP so it cannot be replayed.
+    // Success - burn the OTP so it cannot be replayed.
     await this.redis.del(key);
   }
 

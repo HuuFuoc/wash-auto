@@ -9,7 +9,7 @@ import { VoucherService } from '../voucher.service';
  *
  * The voucher consume path already filters on `expires_at > now` defensively,
  * so a delayed cron run cannot cause a customer to redeem an expired voucher
- * — this job exists to keep listing/reporting tidy.
+ * - this job exists to keep listing/reporting tidy.
  */
 @Injectable()
 export class VoucherExpiryCron {

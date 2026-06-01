@@ -84,7 +84,7 @@ export class OrderService {
     customerId: string,
     dto: CreateOrderDto,
   ): Promise<OrderResponseDto> {
-    // 1) Vehicle source — exactly one of: a saved vehicle id, or inline
+    // 1) Vehicle source - exactly one of: a saved vehicle id, or inline
     //    details for a new vehicle. The vehicle itself is resolved later
     //    (step 7) so a failed booking never leaves a half-created vehicle.
     const hasSavedVehicle = !!dto.vehicleId;
@@ -104,7 +104,7 @@ export class OrderService {
       throw new BadRequestException('Service type not found or inactive');
     }
 
-    // 3) Time must be in the future. The server picks the shift later —
+    // 3) Time must be in the future. The server picks the shift later -
     //    no user-supplied staffShiftId.
     if (dto.scheduledAt.getTime() < Date.now() - 60_000) {
       throw new BadRequestException('scheduledAt must be in the future');
@@ -139,7 +139,7 @@ export class OrderService {
     }
 
     // 6) Auto-pick a shift that contains scheduledAt and has capacity.
-    //    Loop because findShiftsContaining is a non-transactional read —
+    //    Loop because findShiftsContaining is a non-transactional read -
     //    a concurrent booking may have filled the candidate between the
     //    read and the atomic increment.
     const candidates = await this.staffShiftRepository.findShiftsContaining(
@@ -182,7 +182,7 @@ export class OrderService {
     // 7) Resolve the vehicle now that the slot is held. Doing it here means
     //    the common "no shift" rejection above never registers a stray
     //    vehicle. `createdVehicleId` is set only when we saved a new vehicle
-    //    inline — it is rolled back if the order then fails to persist.
+    //    inline - it is rolled back if the order then fails to persist.
     let vehicleObjId: Types.ObjectId;
     let createdVehicleId: Types.ObjectId | undefined;
     try {
@@ -287,7 +287,7 @@ export class OrderService {
         // the counter.
         if (isOnline && amount === 0) {
           throw new BadRequestException(
-            'Order total is 0 VND after discounts — please pay in cash at the counter',
+            'Order total is 0 VND after discounts - please pay in cash at the counter',
           );
         }
       }
@@ -389,12 +389,12 @@ export class OrderService {
   /**
    * Returns the pricing breakdown a customer would see if they posted the
    * exact same (service, time, voucher) tuple to `POST /me/orders` right now.
-   * No side effects — the voucher is NOT consumed, no shift slot is held.
+   * No side effects - the voucher is NOT consumed, no shift slot is held.
    *
    * The math intentionally mirrors `createOrder` so the figures the FE shows
    * and the figures persisted on the order match to the dong. If the voucher
    * is missing, expired, or already used we return a `voucherError` and treat
-   * the request as if no voucher was supplied — the customer still sees the
+   * the request as if no voucher was supplied - the customer still sees the
    * tier-discount price and can decide whether to proceed.
    */
   async previewOrder(
@@ -439,7 +439,7 @@ export class OrderService {
       if (!voucher) {
         voucherError = 'Voucher not found, not owned, expired, or already used';
       } else if (!service.is_voucher_eligible) {
-        // Same guardrail as createOrder — surface the reason here so the
+        // Same guardrail as createOrder - surface the reason here so the
         // FE can disable the "Áp voucher" button instead of letting the
         // customer click then get a 400. See docs/ECONOMIC_GUARDRAILS.md §4.
         voucherDiscountCapVnd = voucher.discount_cap_vnd;
@@ -479,8 +479,8 @@ export class OrderService {
   /**
    * Enumerates the discrete start times a customer may book for a given
    * service inside [from, to]. A slot is bookable when some SCHEDULED shift
-   * fully contains [slot, slot + service duration] and still has capacity —
-   * exactly the rule `createOrder` applies — so every slot returned here is
+   * fully contains [slot, slot + service duration] and still has capacity -
+   * exactly the rule `createOrder` applies - so every slot returned here is
    * one `POST /me/orders` will accept (barring a concurrent fill).
    *
    * Slots sit on a fixed global grid (`booking.slotIntervalMinutes`), so a
@@ -507,7 +507,7 @@ export class OrderService {
     const durationMs = service.estimated_minutes * 60_000;
 
     // Clip the window: no slot earlier than now, none past the customer's
-    // tier booking horizon — mirrors the checks in createOrder so the FE
+    // tier booking horizon - mirrors the checks in createOrder so the FE
     // never shows a slot the POST would reject.
     const nowMs = Date.now();
     const loyaltyAccount =
@@ -534,7 +534,7 @@ export class OrderService {
 
     // Per-time-slot capacity: a slot's free capacity is the shift's
     // `max_bookings` minus the orders whose wash window actually OVERLAPS that
-    // slot — not the shift-wide `current_bookings` (which made every slot in a
+    // slot - not the shift-wide `current_bookings` (which made every slot in a
     // shift drop together when one was booked). Booking 09:00 only ties up the
     // washer for [09:00, 09:00 + serviceDuration], so 09:30 stays free.
     const serviceDurationMsById = new Map<string, number>();
@@ -584,8 +584,8 @@ export class OrderService {
 
     // Annotate every slot with the golden-hour flag and the tier discount
     // percent the caller would earn if they booked it. `isGoldenHour` is the
-    // literal "scheduled_at falls inside an active window" — true even for
-    // None-tier customers (FE can use it to suggest upgrading) — while
+    // literal "scheduled_at falls inside an active window" - true even for
+    // None-tier customers (FE can use it to suggest upgrading) - while
     // `discountPercent` is what the caller would actually save. Looking up
     // the golden-hour window directly (instead of computeOrderPricing) avoids
     // the early-return in computeOrderPricing that masks None-tier slots.
@@ -772,7 +772,7 @@ export class OrderService {
       cancelReason: dto.reason ?? 'Cancelled by customer',
     });
     if (!updated) throw new NotFoundException('Order not found');
-    // The customer never received service — return the voucher (if any)
+    // The customer never received service - return the voucher (if any)
     // to UNUSED so it can be redeemed on a future booking.
     await this.refundVoucherIfPresent(updated);
     return OrderResponseDto.fromDocument(updated);
@@ -824,7 +824,7 @@ export class OrderService {
     const lockAcquired = await this.redis.set(lockKey, '1', 'EX', 10, 'NX');
     if (lockAcquired === null) {
       this.logger.warn(
-        `Webhook lock contention orderCode=${String(orderCode)} — PayOS will retry`,
+        `Webhook lock contention orderCode=${String(orderCode)} - PayOS will retry`,
       );
       return;
     }
@@ -847,7 +847,7 @@ export class OrderService {
             status: OrderStatusEnum.CONFIRMED,
             paymentStatus: PaymentStatusEnum.PAID,
           });
-          // Payment settled — now safe to send the confirmation email.
+          // Payment settled - now safe to send the confirmation email.
           // Awaited so the serverless function doesn't freeze before SMTP completes.
           if (updated) {
             await this.sendConfirmationEmailSafe(updated);
@@ -1001,7 +1001,7 @@ export class OrderService {
 
     // Loyalty hook: a NO_SHOW transition penalises the customer's point
     // balance and may demote their tier. Failures are logged but never
-    // bubble up — the order status update has already happened and an audit
+    // bubble up - the order status update has already happened and an audit
     // gap is preferable to surfacing a 500 here.
     if (dto.status === OrderStatusEnum.NO_SHOW) {
       await this.applyNoShowLoyaltyHookSafe(updated);
@@ -1089,7 +1089,7 @@ export class OrderService {
   /**
    * Auto-marks cash orders as NO_SHOW when the customer never showed up
    * past the configured grace window after `scheduled_at`. Releases shift
-   * slot. Only touches `confirmed` + `cash` + `unpaid` — paid cash means
+   * slot. Only touches `confirmed` + `cash` + `unpaid` - paid cash means
    * the customer arrived and the cashier already collected. Returns the
    * affected order ids.
    */
@@ -1178,7 +1178,7 @@ export class OrderService {
 
   /**
    * Best-effort hard delete of a vehicle registered inline during a booking
-   * that then failed. Swallows its own errors — the booking failure is what
+   * that then failed. Swallows its own errors - the booking failure is what
    * the caller must surface; a leftover vehicle would only block the
    * customer from retrying with the same plate.
    */
@@ -1196,7 +1196,7 @@ export class OrderService {
   }
 
   /**
-   * Sends an order confirmation email. Errors are swallowed and logged —
+   * Sends an order confirmation email. Errors are swallowed and logged -
    * the order is already persisted, so failing the API on a SMTP hiccup
    * is worse than a missed email that staff can resend.
    *
@@ -1272,7 +1272,7 @@ export class OrderService {
   }
 
   /**
-   * Wraps LoyaltyService.applyOrderNoShow with a logged catch — the order
+   * Wraps LoyaltyService.applyOrderNoShow with a logged catch - the order
    * has already been moved to NO_SHOW, so a loyalty hiccup must not roll
    * back the status transition or surface as a 500.
    */
@@ -1293,7 +1293,7 @@ export class OrderService {
    * Returns a voucher consumed on `order` to UNUSED so the customer can
    * redeem it on a later booking. Called on every path that flips an order
    * to CANCELLED (customer cancel, admin cancel, payment timeout, PayOS
-   * webhook failure) — never on NO_SHOW, which intentionally burns the
+   * webhook failure) - never on NO_SHOW, which intentionally burns the
    * voucher as a no-show penalty.
    *
    * Wrapped in try/catch + logger: the order status update has already

@@ -52,7 +52,7 @@ export class UserRepository {
     return this.userModel.findById(id).exec();
   }
 
-  /** Batch lookup by id — used to enrich list responses with user name/email. */
+  /** Batch lookup by id - used to enrich list responses with user name/email. */
   async findByIds(
     ids: Array<Types.ObjectId | string>,
   ): Promise<UserDocument[]> {

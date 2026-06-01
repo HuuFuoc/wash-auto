@@ -21,8 +21,8 @@ interface ICachedResponse {
 
 /**
  * Caches the full response body for the tuple (userId, Idempotency-Key)
- * for IDEMPOTENCY_TTL_SECONDS (default 24h). A retry with the same key —
- * common after network blips — replays the cached response instead of
+ * for IDEMPOTENCY_TTL_SECONDS (default 24h). A retry with the same key -
+ * common after network blips - replays the cached response instead of
  * re-executing the handler. Without a key, the interceptor is a no-op.
  *
  * Must run AFTER an auth guard so req.user is populated.

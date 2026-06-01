@@ -23,7 +23,7 @@ export class ChatKnowledge {
   @Prop({ type: [String], default: [], index: true })
   keywords: string[];
 
-  /** Optional grouping label — eg. "pricing", "policy", "service". */
+  /** Optional grouping label - eg. "pricing", "policy", "service". */
   @Prop({ trim: true, index: true })
   category?: string;
 
