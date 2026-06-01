@@ -7,7 +7,7 @@ export enum WorkOrderStatusEnum {
   IN_PROGRESS = 'in_progress',
   /** Washer finished, awaiting quality check. */
   QUALITY_CHECK = 'quality_check',
-  /** QC rejected — sent back to the washer to redo. */
+  /** QC rejected - sent back to the washer to redo. */
   RETURNED = 'returned',
   /** QC passed. Terminal. */
   DONE = 'done',

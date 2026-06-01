@@ -15,7 +15,7 @@ export class SendMessageDto {
   @ApiPropertyOptional({
     example: 'b3c7e0f4-9e6e-4c2d-aab2-08d3c1c0b1a2',
     description:
-      'Id phiên hội thoại để tiếp tục lịch sử. Bỏ trống nếu bắt đầu phiên mới — server sẽ trả về sessionId trong response.',
+      'Id phiên hội thoại để tiếp tục lịch sử. Bỏ trống nếu bắt đầu phiên mới - server sẽ trả về sessionId trong response.',
   })
   @IsOptional()
   @IsString()

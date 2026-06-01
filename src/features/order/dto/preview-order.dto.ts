@@ -5,7 +5,7 @@ import { IsDate, IsMongoId, IsOptional } from 'class-validator';
 /**
  * Body of `POST /me/orders/preview`. Customer asks the server what the
  * final price would be for a given (service, time, voucher) tuple WITHOUT
- * committing the booking. Voucher consumption is NOT performed — the same
+ * committing the booking. Voucher consumption is NOT performed - the same
  * voucher remains UNUSED until the real POST /me/orders.
  */
 export class PreviewOrderDto {

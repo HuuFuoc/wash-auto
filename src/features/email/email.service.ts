@@ -47,7 +47,7 @@ export class EmailService implements OnModuleInit {
 
   /**
    * Sends a transactional OTP email. Never logs the code. Resolves once
-   * SMTP accepts the message — callers should await so we don't persist
+   * SMTP accepts the message - callers should await so we don't persist
    * an OTP record without successful dispatch.
    */
   async sendOtpEmail(
@@ -76,7 +76,7 @@ export class EmailService implements OnModuleInit {
 
   /**
    * Sends an order confirmation email after a successful create-order call.
-   * Caller is expected to swallow errors — failing the API on SMTP hiccup
+   * Caller is expected to swallow errors - failing the API on SMTP hiccup
    * is worse than a missed email.
    */
   async sendOrderConfirmationEmail(

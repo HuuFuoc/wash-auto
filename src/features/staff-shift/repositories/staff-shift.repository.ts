@@ -91,7 +91,7 @@ export class StaffShiftRepository {
 
   /**
    * Returns SCHEDULED shifts with spare capacity whose window overlaps
-   * [from, to] at all — including shifts that start before `from` but
+   * [from, to] at all - including shifts that start before `from` but
    * extend into it. Used to enumerate bookable slots; the caller still
    * checks that the full wash window fits inside each shift.
    */
@@ -179,7 +179,7 @@ export class StaffShiftRepository {
    * Atomic capacity reservation. Returns the updated doc if the shift
    * still had capacity (current_bookings < max_bookings AND
    * status=scheduled), else null. Use this BEFORE creating the
-   * booking document — call decrementCurrentBookings on failure paths.
+   * booking document - call decrementCurrentBookings on failure paths.
    */
   async incrementCurrentBookings(
     id: Types.ObjectId | string,

@@ -101,7 +101,7 @@ export class GoldenHourService {
     };
     const dayOfWeek = weekdayMap[map.weekday] ?? 0;
     let hour = parseInt(map.hour ?? '0', 10);
-    // `hour12: false` can yield "24" at midnight in some runtimes — normalize.
+    // `hour12: false` can yield "24" at midnight in some runtimes - normalize.
     if (hour === 24) hour = 0;
     const minute = parseInt(map.minute ?? '0', 10);
     return { dayOfWeek, hour, minute };

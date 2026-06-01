@@ -48,8 +48,8 @@ export class OrderController {
     description:
       'Authorization is the regular access token from /auth/login. ' +
       'Vehicle: send either `vehicleId` (a vehicle already in the garage) ' +
-      'or `vehicle` (new vehicle details — saved to the garage, then booked, ' +
-      'in one call) — exactly one. paymentMethod=online returns a PayOS ' +
+      'or `vehicle` (new vehicle details - saved to the garage, then booked, ' +
+      'in one call) - exactly one. paymentMethod=online returns a PayOS ' +
       'checkoutUrl (confirmation email sent only after webhook PAID); cash ' +
       'skips PayOS and the order starts CONFIRMED+UNPAID (confirmation email ' +
       'sent immediately). Optional Idempotency-Key header caches the ' +
@@ -169,7 +169,7 @@ export class OrderController {
   }
 }
 
-/** Public webhook endpoint — no auth, PayOS calls this. */
+/** Public webhook endpoint - no auth, PayOS calls this. */
 @ApiTags('payments · webhook')
 @Controller('payments')
 export class PaymentWebhookController {

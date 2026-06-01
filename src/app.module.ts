@@ -19,6 +19,7 @@ import { CacheModule } from './core/cache/cache.module';
 import { DatabaseModule } from './core/database/database.module';
 import { AuthModule } from './features/auth/auth.module';
 import { ChatModule } from './features/chat/chat.module';
+import { DashboardModule } from './features/dashboard/dashboard.module';
 import { GoldenHourModule } from './features/golden-hour/golden-hour.module';
 import { LoyaltyModule } from './features/loyalty/loyalty.module';
 import { OrderModule } from './features/order/order.module';
@@ -68,6 +69,7 @@ import { WorkOrderModule } from './features/work-order/work-order.module';
     OrderModule,
     WorkOrderModule,
     ChatModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

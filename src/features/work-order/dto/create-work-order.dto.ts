@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsMongoId } from 'class-validator';
 
 /**
- * Body for `POST /admin/work-orders` — the cashier check-in action.
+ * Body for `POST /admin/work-orders` - the cashier check-in action.
  * Creates the job ticket and moves the order from `confirmed` to `checked_in`.
  */
 export class CreateWorkOrderDto {

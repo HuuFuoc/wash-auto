@@ -5,7 +5,7 @@ import { IsDate, IsMongoId } from 'class-validator';
 /**
  * Query for `GET /me/orders/available-slots`. The customer picks a service
  * and a date range; the server returns the discrete, bookable start times.
- * `from`/`to` are absolute UTC instants so the timezone never matters — the
+ * `from`/`to` are absolute UTC instants so the timezone never matters - the
  * FE computes the day boundaries it wants to show.
  */
 export class QueryAvailableSlotsDto {

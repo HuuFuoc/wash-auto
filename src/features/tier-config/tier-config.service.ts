@@ -22,15 +22,15 @@ interface IDefaultTier {
 }
 
 // 4-tier loyalty ladder driven by accumulated loyalty points.
-//   None   — <   200  điểm,  0% giảm
-//   Bronze — >=  200  điểm,  5% giảm
-//   Silver — >=  500  điểm, 10% giảm
-//   Gold   — >= 1500  điểm, 10% giảm (raised from 1000 + dropped from 15%)
+//   None   - <   200  điểm,  0% giảm
+//   Bronze - >=  200  điểm,  5% giảm
+//   Silver - >=  500  điểm, 10% giảm
+//   Gold   - >= 1500  điểm, 10% giảm (raised from 1000 + dropped from 15%)
 //
 // Tier discount only applies when the booking falls inside a configured
 // golden hour (see GoldenHourConfigService). Gold was tuned from
 // "1000 điểm / 15%" to "1500 điểm / 10%" after the economic audit
-// (docs/ECONOMIC_GUARDRAILS.md §3) — the previous combination
+// (docs/ECONOMIC_GUARDRAILS.md §3) - the previous combination
 // produced a worst-case margin of ~1% on a Detailing order in
 // golden hour with a voucher applied, which is too close to the
 // break-even line for any cost overrun (water price hike, washer
@@ -81,7 +81,7 @@ export class TierConfigService {
     // Detect whether the live collection still holds the previous schema
     // (Member/Platinum names, or any doc missing the new min_loyalty_points
     // field, or priority_level values that collide with the new layout).
-    // When dirty we wipe the collection — partial deletes leave legacy
+    // When dirty we wipe the collection - partial deletes leave legacy
     // priority_level values that then clash on E11000 with the unique index.
     const existing = await this.repository.findAll();
     const canonical = new Set<string>(DEFAULT_TIERS.map((t) => t.tierName));
@@ -110,7 +110,7 @@ export class TierConfigService {
     if (isLegacySchema) {
       const dropped = await this.repository.deleteAll();
       this.logger.warn(
-        `Legacy tier_configs schema detected — dropped ${dropped} rows for reseed`,
+        `Legacy tier_configs schema detected - dropped ${dropped} rows for reseed`,
       );
     }
 
@@ -124,7 +124,7 @@ export class TierConfigService {
         const msg = err instanceof Error ? err.message : String(err);
         if (!/E11000|duplicate key/i.test(msg)) throw err;
         this.logger.log(
-          `Race on upsert ${tier.tierName} — already inserted by peer`,
+          `Race on upsert ${tier.tierName} - already inserted by peer`,
         );
       }
     }

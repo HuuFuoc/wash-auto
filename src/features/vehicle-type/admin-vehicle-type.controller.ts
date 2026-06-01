@@ -36,7 +36,7 @@ export class AdminVehicleTypeController {
   @ApiOperation({
     summary: 'List all vehicle types incl. inactive (admin/manager)',
     description:
-      'Same as the public list but includes inactive entries — use on the catalog management screen.',
+      'Same as the public list but includes inactive entries - use on the catalog management screen.',
   })
   @ApiResponse({ status: 200, type: VehicleTypeResponseDto, isArray: true })
   listAll(): Promise<VehicleTypeResponseDto[]> {
@@ -76,7 +76,7 @@ export class AdminVehicleTypeController {
   @ApiOperation({
     summary: 'Update a vehicle type (admin/manager)',
     description:
-      'Partial update — only include fields you want to change. Use PATCH /:id/status to toggle visibility.',
+      'Partial update - only include fields you want to change. Use PATCH /:id/status to toggle visibility.',
   })
   @ApiResponse({ status: 200, type: VehicleTypeResponseDto })
   @ApiResponse({ status: 404, description: 'Vehicle type not found' })
@@ -92,7 +92,7 @@ export class AdminVehicleTypeController {
   @ApiOperation({
     summary: 'Activate or deactivate a vehicle type (admin/manager)',
     description:
-      'Soft toggle — existing vehicles referencing this type keep working, but the public list hides inactive ones.',
+      'Soft toggle - existing vehicles referencing this type keep working, but the public list hides inactive ones.',
   })
   @ApiResponse({ status: 200, type: VehicleTypeResponseDto })
   @ApiResponse({ status: 404, description: 'Vehicle type not found' })

@@ -66,7 +66,7 @@ export class QueryOrderDto {
   @ApiPropertyOptional({
     example: '0901',
     description:
-      'Partial customer phone (case-insensitive substring) — cashier search at the counter.',
+      'Partial customer phone (case-insensitive substring) - cashier search at the counter.',
   })
   @IsOptional()
   @IsString()
@@ -76,7 +76,7 @@ export class QueryOrderDto {
   @ApiPropertyOptional({
     example: '51A',
     description:
-      'Partial vehicle license_plate (case-insensitive substring) — cashier search at the counter.',
+      'Partial vehicle license_plate (case-insensitive substring) - cashier search at the counter.',
   })
   @IsOptional()
   @IsString()

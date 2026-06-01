@@ -56,7 +56,7 @@ export class VoucherService {
    * Mints a single FREE_WASH voucher with a fresh daily-sequential code.
    * Called by LoyaltyService when the 10-wash threshold trips.
    *
-   * The cap and expiry default to program-wide constants — overriding them
+   * The cap and expiry default to program-wide constants - overriding them
    * is only intended for admin-issued grants (e.g. service-recovery comps).
    */
   async grantFreeWash(input: IGrantFreeWashInput): Promise<VoucherDocument> {
@@ -142,7 +142,7 @@ export class VoucherService {
       );
     }
     if (consumed.type !== VoucherTypeEnum.FREE_WASH) {
-      // Roll back the consume — this voucher type is not redeemable on
+      // Roll back the consume - this voucher type is not redeemable on
       // orders. Should not happen unless future voucher types are added.
       await this.repository.refund(consumed._id);
       throw new NotFoundException('Voucher is not redeemable for a wash');
@@ -240,7 +240,7 @@ export class VoucherService {
 
   /**
    * Admin revoke: flips an UNUSED voucher to EXPIRED early. Refuses if the
-   * voucher has already been redeemed (USED) or is already EXPIRED — admin
+   * voucher has already been redeemed (USED) or is already EXPIRED - admin
    * gets a 409 instead of a silent no-op so the UI shows the actual state.
    */
   async adminRevoke(id: string, reason: string): Promise<VoucherResponseDto> {

@@ -5,7 +5,7 @@ import { OrderService } from '../services/order.service';
 
 /**
  * Auto-cancels PENDING_PAYMENT orders whose payment window has elapsed.
- * Runs every minute. Idempotent — safe to overlap if the previous run
+ * Runs every minute. Idempotent - safe to overlap if the previous run
  * was slow.
  */
 @Injectable()

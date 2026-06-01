@@ -75,7 +75,7 @@ export class ChatKnowledgeRepository {
   /**
    * Full-text search over question/answer/keywords. Falls back to a regex
    * scan if Mongo returns no $text matches (helps with single-word queries
-   * the text index doesn't tokenise well — eg. plate numbers, codes).
+   * the text index doesn't tokenise well - eg. plate numbers, codes).
    */
   async search(query: string, limit: number): Promise<ChatKnowledgeDocument[]> {
     const trimmed = query.trim();
@@ -101,7 +101,7 @@ export class ChatKnowledgeRepository {
       .exec();
   }
 
-  /** Bulk upsert by question — used by the seeder so re-runs are safe. */
+  /** Bulk upsert by question - used by the seeder so re-runs are safe. */
   async upsertByQuestion(
     entries: ICreateChatKnowledgeInput[],
   ): Promise<number> {

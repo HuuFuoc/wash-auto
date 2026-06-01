@@ -18,7 +18,7 @@ export class CreateOrderDto {
     example: '6601e3b3f1a2c3a4b5d6e7f8',
     description:
       'Id of a vehicle already saved in the customer garage. ' +
-      'Provide this OR `vehicle` — exactly one, never both.',
+      'Provide this OR `vehicle` - exactly one, never both.',
   })
   @IsOptional()
   @IsMongoId()
@@ -28,8 +28,8 @@ export class CreateOrderDto {
     type: CreateVehicleDto,
     description:
       'Details of a new vehicle to register on the fly. The server creates ' +
-      'and saves it to the customer garage, then books it — one call. ' +
-      'Provide this OR `vehicleId` — exactly one, never both.',
+      'and saves it to the customer garage, then books it - one call. ' +
+      'Provide this OR `vehicleId` - exactly one, never both.',
   })
   @IsOptional()
   @IsObject()
