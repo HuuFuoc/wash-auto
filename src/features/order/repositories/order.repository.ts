@@ -128,6 +128,27 @@ export class OrderRepository {
       .exec();
   }
 
+  /**
+   * Active orders (those still holding a slot) on the given shifts. Used to
+   * compute per-time-slot concurrency: a slot's free capacity is
+   * `max_bookings − orders whose wash window overlaps that slot`, NOT the
+   * shift-wide `current_bookings` counter (which would make every slot in a
+   * shift drop together). Shift-scoped so the result set is small (≤ a day of
+   * bookings per shift); the caller widens to the wash window in memory.
+   */
+  async findActiveByShifts(
+    shiftIds: Types.ObjectId[],
+  ): Promise<OrderDocument[]> {
+    if (shiftIds.length === 0) return [];
+    return this.model
+      .find({
+        staff_shift_id: { $in: shiftIds },
+        status: { $in: ACTIVE_ORDER_STATUSES },
+      })
+      .select('staff_shift_id scheduled_at service_type_id')
+      .exec();
+  }
+
   async updateById(
     id: Types.ObjectId | string,
     input: IUpdateOrderInput,

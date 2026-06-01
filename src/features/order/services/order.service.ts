@@ -151,8 +151,22 @@ export class OrderService {
         'No shift covers this time, or all shifts are full',
       );
     }
+    // Per-time-slot concurrency: a candidate shift is only usable if the
+    // number of its active orders whose wash window overlaps this booking's
+    // window [scheduledAt, finishAt) is below max_bookings. This mirrors the
+    // overlap rule in listAvailableSlots so a slot the FE offered is the slot
+    // the POST accepts (barring a concurrent fill).
+    const wantStartMs = dto.scheduledAt.getTime();
+    const wantEndMs = wantStartMs + service.estimated_minutes * 60_000;
+    const concurrencyByShift = await this.countConcurrentByShift(
+      candidates.map((c) => c._id),
+      wantStartMs,
+      wantEndMs,
+    );
     let reservedShiftId: Types.ObjectId | undefined;
     for (const candidate of candidates) {
+      const busy = concurrencyByShift.get(candidate._id.toString()) ?? 0;
+      if (busy >= candidate.max_bookings) continue;
       const ok = await this.staffShiftRepository.incrementCurrentBookings(
         candidate._id,
       );
@@ -518,21 +532,53 @@ export class OrderService {
     const intervalMs =
       this.config.getOrThrow<number>('booking.slotIntervalMinutes') * 60_000;
 
+    // Per-time-slot capacity: a slot's free capacity is the shift's
+    // `max_bookings` minus the orders whose wash window actually OVERLAPS that
+    // slot — not the shift-wide `current_bookings` (which made every slot in a
+    // shift drop together when one was booked). Booking 09:00 only ties up the
+    // washer for [09:00, 09:00 + serviceDuration], so 09:30 stays free.
+    const serviceDurationMsById = new Map<string, number>();
+    for (const svc of await this.serviceTypeRepository.findAll()) {
+      serviceDurationMsById.set(
+        svc._id.toString(),
+        svc.estimated_minutes * 60_000,
+      );
+    }
+    // Existing active orders on these shifts → busy windows per shift.
+    const busyWindowsByShift = new Map<string, [number, number][]>();
+    const activeOrders = await this.orderRepository.findActiveByShifts(
+      shifts.map((s) => s._id),
+    );
+    for (const o of activeOrders) {
+      const shiftId = o.staff_shift_id.toString();
+      const startMs = o.scheduled_at.getTime();
+      const orderDurationMs =
+        serviceDurationMsById.get(o.service_type_id.toString()) ?? durationMs;
+      const list = busyWindowsByShift.get(shiftId) ?? [];
+      list.push([startMs, startMs + orderDurationMs]);
+      busyWindowsByShift.set(shiftId, list);
+    }
+
     // slot start (ms) → summed free capacity of every shift covering it.
     const capacityBySlot = new Map<number, number>();
     for (const shift of shifts) {
-      const remaining = shift.max_bookings - shift.current_bookings;
-      if (remaining <= 0) continue;
+      if (shift.max_bookings <= 0) continue;
+      const busyWindows = busyWindowsByShift.get(shift._id.toString()) ?? [];
       const shiftEndMs = shift.end_at.getTime();
       // First grid point at or after the shift start.
       let slotMs =
         Math.ceil(shift.start_at.getTime() / intervalMs) * intervalMs;
       for (; slotMs + durationMs <= shiftEndMs; slotMs += intervalMs) {
         if (slotMs < windowStartMs || slotMs > windowEndMs) continue;
-        capacityBySlot.set(
-          slotMs,
-          (capacityBySlot.get(slotMs) ?? 0) + remaining,
-        );
+        const slotEndMs = slotMs + durationMs;
+        // Concurrent orders on this shift overlapping [slotMs, slotEndMs).
+        let busy = 0;
+        for (const [bStart, bEnd] of busyWindows) {
+          if (bStart < slotEndMs && slotMs < bEnd) busy++;
+        }
+        const free = shift.max_bookings - busy;
+        if (free <= 0) continue;
+        capacityBySlot.set(slotMs, (capacityBySlot.get(slotMs) ?? 0) + free);
       }
     }
 
@@ -559,6 +605,41 @@ export class OrderService {
       }),
     );
     return annotated;
+  }
+
+  /**
+   * For each given shift, count its active orders whose wash window overlaps
+   * [fromMs, toMs). Used by createOrder/rescheduleOwn to enforce per-time-slot
+   * concurrency (up to max_bookings concurrent washes per slot) instead of the
+   * shift-wide counter.
+   */
+  private async countConcurrentByShift(
+    shiftIds: Types.ObjectId[],
+    fromMs: number,
+    toMs: number,
+  ): Promise<Map<string, number>> {
+    const result = new Map<string, number>();
+    if (shiftIds.length === 0) return result;
+    const serviceDurationMsById = new Map<string, number>();
+    for (const svc of await this.serviceTypeRepository.findAll()) {
+      serviceDurationMsById.set(
+        svc._id.toString(),
+        svc.estimated_minutes * 60_000,
+      );
+    }
+    const defaultDurationMs = toMs - fromMs;
+    const orders = await this.orderRepository.findActiveByShifts(shiftIds);
+    for (const o of orders) {
+      const startMs = o.scheduled_at.getTime();
+      const durMs =
+        serviceDurationMsById.get(o.service_type_id.toString()) ??
+        defaultDurationMs;
+      if (startMs < toMs && fromMs < startMs + durMs) {
+        const key = o.staff_shift_id.toString();
+        result.set(key, (result.get(key) ?? 0) + 1);
+      }
+    }
+    return result;
   }
 
   async rescheduleOwn(
@@ -611,6 +692,17 @@ export class OrderService {
       throw new BadRequestException(
         `Service requires ${service.estimated_minutes} min and would overrun the new shift end`,
       );
+    }
+
+    // Per-time-slot concurrency on the target shift (same overlap rule as
+    // createOrder / listAvailableSlots) before holding the shift-wide slot.
+    const concurrency = await this.countConcurrentByShift(
+      [new Types.ObjectId(dto.staffShiftId)],
+      dto.scheduledAt.getTime(),
+      finishMs,
+    );
+    if ((concurrency.get(dto.staffShiftId) ?? 0) >= newShift.max_bookings) {
+      throw new ConflictException('New shift is full at this time');
     }
 
     const reserved = await this.staffShiftRepository.incrementCurrentBookings(

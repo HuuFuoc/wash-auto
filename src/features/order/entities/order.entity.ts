@@ -121,3 +121,5 @@ export const OrderSchema = SchemaFactory.createForClass(Order);
 OrderSchema.index({ customer_id: 1, scheduled_at: -1 });
 OrderSchema.index({ scheduled_at: 1, status: 1 });
 OrderSchema.index({ customer_id: 1, status: 1 });
+// Serves per-slot capacity: active orders on a shift (findActiveByShifts).
+OrderSchema.index({ staff_shift_id: 1, status: 1 });

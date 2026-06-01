@@ -24,7 +24,7 @@ import { SetStaffShiftStatusDto } from './dto/set-staff-shift-status.dto';
 import { StaffShiftListResponseDto } from './dto/staff-shift-list-response.dto';
 import { StaffShiftResponseDto } from './dto/staff-shift-response.dto';
 import { UpdateStaffShiftDto } from './dto/update-staff-shift.dto';
-import { StaffShiftService } from './staff-shift.service';
+import { AssignableStaff, StaffShiftService } from './staff-shift.service';
 
 @ApiTags('admin · shifts')
 @ApiBearerAuth()
@@ -43,6 +43,17 @@ export class AdminStaffShiftController {
   @ApiResponse({ status: 200, type: StaffShiftListResponseDto })
   list(@Query() query: QueryStaffShiftDto): Promise<StaffShiftListResponseDto> {
     return this.service.adminList(query);
+  }
+
+  @Get('staff')
+  @ApiOperation({
+    summary: 'List assignable staff for shifts (manager/admin)',
+    description:
+      'Active washers + cashiers that can be assigned to a shift. Lets ' +
+      'managers (who cannot list all users) pick a real staff member.',
+  })
+  assignableStaff(): Promise<AssignableStaff[]> {
+    return this.service.listAssignableStaff();
   }
 
   @Get(':id')
