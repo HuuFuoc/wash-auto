@@ -15,6 +15,7 @@ export interface IUpdateLoyaltyAccountInput {
   tierConfigId?: Types.ObjectId;
   pointsBalance?: number;
   successfulWashesTowardVoucher?: number;
+  spendTowardVoucher?: number;
   totalSuccessfulWashes?: number;
   lastAnnualResetAt?: Date;
 }
@@ -51,6 +52,7 @@ export class LoyaltyAccountRepository {
       tier_config_id: input.tierConfigId,
       points_balance: 0,
       successful_washes_toward_voucher: 0,
+      spend_toward_voucher: 0,
       total_successful_washes: 0,
     });
   }
@@ -67,6 +69,8 @@ export class LoyaltyAccountRepository {
     if (input.successfulWashesTowardVoucher !== undefined)
       update.successful_washes_toward_voucher =
         input.successfulWashesTowardVoucher;
+    if (input.spendTowardVoucher !== undefined)
+      update.spend_toward_voucher = input.spendTowardVoucher;
     if (input.totalSuccessfulWashes !== undefined)
       update.total_successful_washes = input.totalSuccessfulWashes;
     if (input.lastAnnualResetAt !== undefined)

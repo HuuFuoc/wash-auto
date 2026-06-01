@@ -28,6 +28,14 @@ const SHIFT_TYPE_TO_ROLE: Record<ShiftTypeEnum, RoleEnum> = {
   [ShiftTypeEnum.WASHER]: RoleEnum.WASHER,
 };
 
+/** A staff member that can be assigned to a shift (washer or cashier). */
+export interface AssignableStaff {
+  id: string;
+  name: string;
+  email: string;
+  role: RoleEnum;
+}
+
 @Injectable()
 export class StaffShiftService {
   private readonly logger = new Logger(StaffShiftService.name);
@@ -37,6 +45,34 @@ export class StaffShiftService {
     private readonly userRepository: UserRepository,
     private readonly roleRepository: RoleRepository,
   ) {}
+
+  /**
+   * Active staff (washers + cashiers) that can be assigned to a shift.
+   * Managers cannot list all users (/admin/users is admin-only), but they DO
+   * create shifts — so this scoped list lets them pick a real staff member
+   * instead of falling back to invalid placeholder ids.
+   */
+  async listAssignableStaff(): Promise<AssignableStaff[]> {
+    const result: AssignableStaff[] = [];
+    for (const code of [RoleEnum.WASHER, RoleEnum.CASHIER]) {
+      const role = await this.roleRepository.findByCode(code);
+      if (!role) continue;
+      const users = await this.userRepository.findPaginated(
+        { roleId: role._id, isActive: true },
+        1,
+        200,
+      );
+      for (const u of users) {
+        result.push({
+          id: u._id.toString(),
+          name: u.name,
+          email: u.email,
+          role: code,
+        });
+      }
+    }
+    return result;
+  }
 
   async listAvailable(
     query: QueryAvailableShiftDto,

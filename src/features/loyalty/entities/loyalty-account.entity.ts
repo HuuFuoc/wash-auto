@@ -28,10 +28,18 @@ export class LoyaltyAccount {
   @Prop({ required: true, default: 0, min: 0 })
   points_balance: number;
 
-  // Number of COMPLETED orders since the last free-wash voucher was granted.
-  // Resets to 0 when the 10-wash threshold mints a voucher.
+  // Number of VALID COMPLETED washes since the last free-wash voucher was
+  // granted. Resets to 0 when the threshold mints a voucher. Only washes that
+  // pass the validity rule (eligible service + min spend) are counted.
   @Prop({ required: true, default: 0, min: 0 })
   successful_washes_toward_voucher: number;
+
+  // Sum of money actually paid across the valid washes in the current cycle.
+  // The voucher value is computed as a % of this spend (giveaway target), so
+  // the reward scales with what the customer really spent. Resets with the
+  // wash counter when a voucher is minted.
+  @Prop({ required: true, default: 0, min: 0 })
+  spend_toward_voucher: number;
 
   // Lifetime COMPLETED-order counter, never reset by the voucher mint.
   @Prop({ required: true, default: 0, min: 0 })
