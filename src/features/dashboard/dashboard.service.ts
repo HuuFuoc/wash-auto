@@ -13,6 +13,7 @@ import { VoucherStatusEnum } from '../voucher/types/voucher-status.enum';
 import { WorkOrder } from '../work-order/entities/work-order.entity';
 import { QueryDashboardDto } from './dto/query-dashboard.dto';
 import {
+  CustomerRiskRow,
   DashboardReport,
   HourBucket,
   NamedCount,
@@ -86,6 +87,7 @@ export class DashboardService {
       pointsBalanceTotal,
       roleCounts,
       scheduleStats,
+      cancellation,
     ] = await Promise.all([
       this.runOrderFacet(from, to, serviceId, topN),
       this.runWasherRanking(from, to, topN),
@@ -95,6 +97,7 @@ export class DashboardService {
       this.runPointsBalanceTotal(),
       this.runRoleCounts(from, to),
       this.runScheduleStats(from, to),
+      this.runCancellationNoShow(from, to, topN),
     ]);
 
     const report = this.assemble({
@@ -109,6 +112,7 @@ export class DashboardService {
       pointsBalanceTotal,
       roleCounts,
       scheduleStats,
+      cancellation,
     });
 
     // Scope is decided from the authenticated role, NOT from any request
@@ -125,6 +129,18 @@ export class DashboardService {
     report.customers.topByVehicles = [];
     report.customers.topByBookings = [];
     report.voucherLoyalty.topCustomersByVouchers = [];
+    // Managers may see cancel/no-show rankings (operational reliability), but
+    // not customer phone numbers - strip the masked phone for the manager scope.
+    report.cancellationNoShow.topCancellingCustomers =
+      report.cancellationNoShow.topCancellingCustomers.map((r) => ({
+        ...r,
+        phoneMasked: null,
+      }));
+    report.cancellationNoShow.topNoShowCustomers =
+      report.cancellationNoShow.topNoShowCustomers.map((r) => ({
+        ...r,
+        phoneMasked: null,
+      }));
     return report;
   }
 
@@ -704,6 +720,184 @@ export class DashboardService {
     };
   }
 
+  // ─── Cancellation & no-show analytics ──────────────────────────────────
+  //
+  // The Order schema has no cancelledAt / noShowAt / cancelledBy fields, so a
+  // cancel/no-show is dated by `updated_at` (the terminal status was the last
+  // change) - documented as a fallback. The "who cancelled" attribution is not
+  // available either, so customers are ranked by their own cancelled/no-show
+  // orders (customer_id), not by who pressed cancel.
+
+  private async runCancellationNoShow(from: Date, to: Date, topN: number) {
+    const riskPipeline: PipelineStage[] = [
+      {
+        $set: {
+          inWin: {
+            $and: [
+              { $gte: ['$updated_at', from] },
+              { $lte: ['$updated_at', to] },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: '$customer_id',
+          total: { $sum: 1 },
+          cancelledLife: {
+            $sum: { $cond: [{ $eq: ['$status', 'cancelled'] }, 1, 0] },
+          },
+          noShowLife: {
+            $sum: { $cond: [{ $eq: ['$status', 'no_show'] }, 1, 0] },
+          },
+          cancelledWin: {
+            $sum: {
+              $cond: [
+                { $and: [{ $eq: ['$status', 'cancelled'] }, '$inWin'] },
+                1,
+                0,
+              ],
+            },
+          },
+          noShowWin: {
+            $sum: {
+              $cond: [
+                { $and: [{ $eq: ['$status', 'no_show'] }, '$inWin'] },
+                1,
+                0,
+              ],
+            },
+          },
+          lastCancelledAt: {
+            $max: {
+              $cond: [{ $eq: ['$status', 'cancelled'] }, '$updated_at', null],
+            },
+          },
+          lastNoShowAt: {
+            $max: {
+              $cond: [{ $eq: ['$status', 'no_show'] }, '$updated_at', null],
+            },
+          },
+        },
+      },
+      {
+        $facet: {
+          cancelRank: [
+            { $match: { cancelledWin: { $gt: 0 } } },
+            { $sort: { cancelledWin: -1, cancelledLife: -1 } },
+            { $limit: topN },
+            ...riskLookup('cancelledWin', 'cancelledLife', 'lastCancelledAt'),
+          ],
+          noShowRank: [
+            { $match: { noShowWin: { $gt: 0 } } },
+            { $sort: { noShowWin: -1, noShowLife: -1 } },
+            { $limit: topN },
+            ...riskLookup('noShowWin', 'noShowLife', 'lastNoShowAt'),
+          ],
+          totals: [
+            {
+              $group: {
+                _id: null,
+                totalCancelled: { $sum: '$cancelledWin' },
+                totalNoShow: { $sum: '$noShowWin' },
+              },
+            },
+          ],
+        },
+      },
+    ];
+
+    const breakdownPipeline: PipelineStage[] = [
+      {
+        $match: {
+          status: { $in: ['cancelled', 'no_show'] },
+          updated_at: { $gte: from, $lte: to },
+        },
+      },
+      {
+        $lookup: {
+          from: 'service_types',
+          localField: 'service_type_id',
+          foreignField: '_id',
+          as: 'svc',
+        },
+      },
+      {
+        $set: {
+          serviceName: {
+            $ifNull: [{ $arrayElemAt: ['$svc.name', 0] }, 'Không xác định'],
+          },
+          hour: { $hour: { date: '$scheduled_at', timezone: TZ } },
+          day: {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: '$updated_at',
+              timezone: TZ,
+            },
+          },
+          isCancel: { $eq: ['$status', 'cancelled'] },
+          isNoShow: { $eq: ['$status', 'no_show'] },
+        },
+      },
+      {
+        $facet: {
+          cancelledByService: [
+            { $match: { isCancel: true } },
+            { $group: { _id: '$serviceName', c: { $sum: 1 } } },
+            { $sort: { c: -1 } },
+          ],
+          noShowByService: [
+            { $match: { isNoShow: true } },
+            { $group: { _id: '$serviceName', c: { $sum: 1 } } },
+            { $sort: { c: -1 } },
+          ],
+          cancelledByHour: [
+            { $match: { isCancel: true } },
+            { $group: { _id: '$hour', c: { $sum: 1 } } },
+            { $sort: { _id: 1 } },
+          ],
+          noShowByHour: [
+            { $match: { isNoShow: true } },
+            { $group: { _id: '$hour', c: { $sum: 1 } } },
+            { $sort: { _id: 1 } },
+          ],
+          reasons: [
+            { $match: { isCancel: true } },
+            {
+              $group: {
+                _id: { $ifNull: ['$cancel_reason', ''] },
+                c: { $sum: 1 },
+              },
+            },
+            { $sort: { c: -1 } },
+          ],
+          trend: [
+            {
+              $group: {
+                _id: '$day',
+                cancelled: { $sum: { $cond: ['$isCancel', 1, 0] } },
+                noShow: { $sum: { $cond: ['$isNoShow', 1, 0] } },
+              },
+            },
+            { $sort: { _id: 1 } },
+          ],
+        },
+      },
+    ];
+
+    const [riskDoc] = await this.orderModel
+      .aggregate<RiskFacetResult>(riskPipeline)
+      .exec();
+    const [breakdownDoc] = await this.orderModel
+      .aggregate<BreakdownFacetResult>(breakdownPipeline)
+      .exec();
+
+    return {
+      risk: riskDoc ?? ({} as RiskFacetResult),
+      breakdown: breakdownDoc ?? ({} as BreakdownFacetResult),
+    };
+  }
+
   // ─── Assemble the typed report from the raw aggregation rows ───────────
 
   private assemble(input: AssembleInput): DashboardReport {
@@ -719,6 +913,7 @@ export class DashboardService {
       pointsBalanceTotal,
       roleCounts,
       scheduleStats,
+      cancellation,
     } = input;
 
     const statusMap = toMap(orderFacet.statusCounts);
@@ -885,6 +1080,36 @@ export class DashboardService {
         ],
       },
 
+      cancellationNoShow: {
+        totalCancelled: cancellation.risk.totals?.[0]?.totalCancelled ?? 0,
+        totalNoShow: cancellation.risk.totals?.[0]?.totalNoShow ?? 0,
+        cancellationRate: pct(cancelled, totalBookings),
+        noShowRate: pct(noShow, totalBookings),
+        topCancellingCustomers: mapRiskRows(cancellation.risk.cancelRank),
+        topNoShowCustomers: mapRiskRows(cancellation.risk.noShowRank),
+        cancelledByService: mapCounts(
+          cancellation.breakdown.cancelledByService,
+        ),
+        noShowByService: mapCounts(cancellation.breakdown.noShowByService),
+        cancelledByHour: mapHours(cancellation.breakdown.cancelledByHour),
+        noShowByHour: mapHours(cancellation.breakdown.noShowByHour),
+        cancellationReasons: (cancellation.breakdown.reasons ?? []).map(
+          (r) => ({
+            name: r._id && r._id.trim() ? r._id : 'Không có lý do',
+            count: r.c,
+          }),
+        ),
+        trendByDay: (cancellation.breakdown.trend ?? []).map((t) => ({
+          key: t._id ?? '',
+          cancelled: t.cancelled,
+          noShow: t.noShow,
+        })),
+        notes: [
+          'Order không có field cancelledAt/noShowAt - dùng updated_at làm thời điểm hủy/không đến (fallback).',
+          'Không có field cancelledBy - chỉ thống kê theo khách hàng của đơn, không xác định được ai bấm hủy.',
+        ],
+      },
+
       schedule: {
         totalShifts: scheduleStats.totalShifts,
         totalCapacity: scheduleStats.totalCapacity,
@@ -952,6 +1177,56 @@ function pct(part: number, whole: number): number {
   return Math.round((part / whole) * 1000) / 10;
 }
 
+/** Mask a phone for display: 0901234567 -> 090****567. */
+function maskPhone(phone?: string | null): string | null {
+  if (!phone) return null;
+  const p = phone.trim();
+  if (p.length < 6) return '***';
+  return `${p.slice(0, 3)}****${p.slice(-3)}`;
+}
+
+/** Shared facet tail for a customer-risk ranking: join the user, project row. */
+function riskLookup(
+  winField: string,
+  lifeField: string,
+  lastField: string,
+): PipelineStage.FacetPipelineStage[] {
+  return [
+    {
+      $lookup: {
+        from: 'users',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'u',
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        id: { $toString: '$_id' },
+        name: { $ifNull: [{ $arrayElemAt: ['$u.name', 0] }, 'Khách đã xoá'] },
+        phone: { $arrayElemAt: ['$u.phone', 0] },
+        totalBookings: '$total',
+        count: `$${winField}`,
+        rateNum: `$${lifeField}`,
+        lastAt: `$${lastField}`,
+      },
+    },
+  ];
+}
+
+function mapRiskRows(rows?: RiskRow[]): CustomerRiskRow[] {
+  return (rows ?? []).map((r) => ({
+    id: r.id,
+    name: r.name,
+    phoneMasked: maskPhone(r.phone),
+    totalBookings: r.totalBookings,
+    count: r.count,
+    rate: pct(r.rateNum, r.totalBookings),
+    lastAt: r.lastAt ? new Date(r.lastAt).toISOString() : null,
+  }));
+}
+
 /** VN is a fixed UTC+7 offset (no DST), so the boundary can be built directly. */
 const VN_OFFSET = '+07:00';
 
@@ -991,6 +1266,31 @@ interface OrderFacetResult {
   returningStats: { _id: null; total: number; returning: number }[];
 }
 
+type RiskRow = {
+  id: string;
+  name: string;
+  phone?: string | null;
+  totalBookings: number;
+  count: number;
+  rateNum: number;
+  lastAt?: Date | string | null;
+};
+
+interface RiskFacetResult {
+  cancelRank: RiskRow[];
+  noShowRank: RiskRow[];
+  totals: { _id: null; totalCancelled: number; totalNoShow: number }[];
+}
+
+interface BreakdownFacetResult {
+  cancelledByService: CountRow[];
+  noShowByService: CountRow[];
+  cancelledByHour: CountRow[];
+  noShowByHour: CountRow[];
+  reasons: CountRow[];
+  trend: { _id: string; cancelled: number; noShow: number }[];
+}
+
 interface AssembleInput {
   from: Date;
   to: Date;
@@ -1027,5 +1327,9 @@ interface AssembleInput {
     totalShifts: number;
     totalCapacity: number;
     bookedSlots: number;
+  };
+  cancellation: {
+    risk: RiskFacetResult;
+    breakdown: BreakdownFacetResult;
   };
 }
