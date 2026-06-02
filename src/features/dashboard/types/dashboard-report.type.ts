@@ -147,6 +147,38 @@ export interface ScheduleAnalytics {
   peakHours: HourBucket[];
 }
 
+/** One customer in a cancellation / no-show reliability ranking. */
+export interface CustomerRiskRow {
+  id: string;
+  name: string;
+  /** Masked phone (090****567). `null` when redacted for the manager scope. */
+  phoneMasked: string | null;
+  /** Customer's lifetime total orders (rate denominator). */
+  totalBookings: number;
+  /** Cancelled / no-show count within the selected window (rank metric). */
+  count: number;
+  /** Lifetime cancel/no-show rate = lifetimeCount / totalBookings * 100. */
+  rate: number;
+  /** ISO of the most recent cancel / no-show (updated_at fallback). */
+  lastAt: string | null;
+}
+
+export interface CancellationNoShowAnalytics {
+  totalCancelled: number;
+  totalNoShow: number;
+  cancellationRate: number;
+  noShowRate: number;
+  topCancellingCustomers: CustomerRiskRow[];
+  topNoShowCustomers: CustomerRiskRow[];
+  cancelledByService: NamedCount[];
+  noShowByService: NamedCount[];
+  cancelledByHour: HourBucket[];
+  noShowByHour: HourBucket[];
+  cancellationReasons: NamedCount[];
+  trendByDay: { key: string; cancelled: number; noShow: number }[];
+  notes: string[];
+}
+
 /**
  * `full` = admin (sees everything, including customer-identifying rankings).
  * `manager` = operational scope: customer-identifying detail is redacted
@@ -166,5 +198,6 @@ export interface DashboardReport {
   voucherLoyalty: VoucherLoyaltyAnalytics;
   services: ServiceAnalytics;
   refundDispute: RefundDisputeAnalytics;
+  cancellationNoShow: CancellationNoShowAnalytics;
   schedule: ScheduleAnalytics;
 }
