@@ -57,7 +57,10 @@ export class DashboardService {
     private readonly shiftModel: Model<StaffShift>,
   ) {}
 
-  async getReport(query: QueryDashboardDto): Promise<DashboardReport> {
+  async getReport(
+    query: QueryDashboardDto,
+    role: RoleEnum,
+  ): Promise<DashboardReport> {
     // Resolve the requested window to VN (UTC+7) day boundaries: fromDate is
     // floored to 00:00:00.000 and toDate ceiled to 23:59:59.999 of that local
     // day. This keeps a wash recorded near midnight in the day the manager
@@ -94,7 +97,7 @@ export class DashboardService {
       this.runScheduleStats(from, to),
     ]);
 
-    return this.assemble({
+    const report = this.assemble({
       from,
       to,
       period,
@@ -107,6 +110,22 @@ export class DashboardService {
       roleCounts,
       scheduleStats,
     });
+
+    // Scope is decided from the authenticated role, NOT from any request
+    // parameter. A manager gets an operational view with customer-identifying
+    // rankings stripped here on the server, so hitting the API directly cannot
+    // leak them even if the UI is bypassed.
+    if (role === RoleEnum.ADMIN) {
+      report.scope = 'full';
+      return report;
+    }
+
+    report.scope = 'manager';
+    report.customers.topBySpending = [];
+    report.customers.topByVehicles = [];
+    report.customers.topByBookings = [];
+    report.voucherLoyalty.topCustomersByVouchers = [];
+    return report;
   }
 
   // ─── Orders: one $facet pass over the windowed orders ──────────────────
@@ -742,6 +761,8 @@ export class DashboardService {
     const qcRejections = washers.reduce((s, w) => s + w.reworkCount, 0);
 
     return {
+      // Overwritten by getReport based on the authenticated role.
+      scope: 'full',
       range: {
         fromDate: from.toISOString(),
         toDate: to.toISOString(),
