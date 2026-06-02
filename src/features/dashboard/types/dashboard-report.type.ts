@@ -147,7 +147,15 @@ export interface ScheduleAnalytics {
   peakHours: HourBucket[];
 }
 
+/**
+ * `full` = admin (sees everything, including customer-identifying rankings).
+ * `manager` = operational scope: customer-identifying detail is redacted
+ * server-side (top customers by spending / vehicles / bookings / vouchers).
+ */
+export type DashboardScope = 'full' | 'manager';
+
 export interface DashboardReport {
+  scope: DashboardScope;
   range: { fromDate: string; toDate: string; period: string | null };
   overview: DashboardOverview;
   revenue: RevenueAnalytics;
