@@ -1,5 +1,11 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsMongoId } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsMongoId,
+  IsOptional,
+  IsUrl,
+} from 'class-validator';
 
 /**
  * Body for `POST /admin/work-orders` - the cashier check-in action.
@@ -12,4 +18,17 @@ export class CreateWorkOrderDto {
   })
   @IsMongoId()
   orderId: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: ['https://cdn.example.com/checkin/abc-front.jpg'],
+    description:
+      'URLs of the vehicle photos the cashier captured at check-in. The FE ' +
+      'uploads the images and passes the resulting URLs here (max 10).',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @IsUrl({}, { each: true })
+  checkinPhotos?: string[];
 }

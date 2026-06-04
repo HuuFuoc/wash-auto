@@ -23,7 +23,6 @@ import { VoucherTypeEnum } from './types/voucher-type.enum';
 
 export interface IGrantFreeWashInput {
   customerId: Types.ObjectId;
-  reason?: string;
   /** Override the default 90-day expiry. */
   expiresAt?: Date;
   /** Override the default 100k VND cap. Mostly used by admin-issued grants. */
@@ -80,7 +79,6 @@ export class VoucherService {
       type: VoucherTypeEnum.FREE_WASH,
       discountCapVnd,
       expiresAt,
-      grantedReason: input.reason ?? 'Reward for 10 completed washes',
     });
     this.logger.log(
       `Granted FREE_WASH voucher ${voucher.code} cap=${discountCapVnd} expires=${expiresAt.toISOString()} customer=${input.customerId.toString()}`,
@@ -160,7 +158,6 @@ export class VoucherService {
    * Admin/manager-issued grant for a specific customer. Validates that:
    *  - target customer exists and is an active customer (not staff/admin)
    *  - cap is within program ceiling (DTO already enforces ≤200k)
-   *  - reason is recorded for the audit trail
    *
    * Returns the minted voucher so the admin UI can show its code/expiry.
    */
@@ -179,7 +176,6 @@ export class VoucherService {
     }
     const voucher = await this.grantFreeWash({
       customerId: customer._id,
-      reason: dto.reason,
       expiresAt: dto.expiresAt,
       discountCapVnd: dto.discountCapVnd,
       code: dto.code,

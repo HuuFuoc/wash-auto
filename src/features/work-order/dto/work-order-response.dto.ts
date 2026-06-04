@@ -45,6 +45,13 @@ export class WorkOrderResponseDto {
   checklist: ChecklistItemDto[];
 
   @ApiProperty({
+    type: [String],
+    example: ['https://cdn.example.com/checkin/abc-front.jpg'],
+    description: 'Vehicle photos the cashier captured at check-in.',
+  })
+  checkinPhotos: string[];
+
+  @ApiProperty({
     enum: WorkOrderStatusEnum,
     example: WorkOrderStatusEnum.WAITING,
   })
@@ -112,6 +119,7 @@ export class WorkOrderResponseDto {
       done: item.done,
       doneAt: item.done_at,
     }));
+    dto.checkinPhotos = doc.checkin_photos ?? [];
     dto.status = doc.status;
     // assigned_washer_id may be a raw ObjectId or a populated user sub-doc.
     const washer: unknown = doc.assigned_washer_id;

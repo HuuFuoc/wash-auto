@@ -15,6 +15,8 @@ import { RoleEnum } from '../auth/types/role.enum';
 import { OrderRepository } from '../order/repositories/order.repository';
 import { OrderService } from '../order/services/order.service';
 import { OrderStatusEnum } from '../order/types/order-status.enum';
+import { PaymentMethodEnum } from '../order/types/payment-method.enum';
+import { PaymentStatusEnum } from '../order/types/payment-status.enum';
 import { ServiceTypeRepository } from '../service-type/repositories/service-type.repository';
 import { StaffShiftRepository } from '../staff-shift/repositories/staff-shift.repository';
 import { VehicleTypeRepository } from '../vehicle-type/repositories/vehicle-type.repository';
@@ -62,6 +64,7 @@ export class WorkOrderService {
   async createFromOrder(
     orderId: string,
     actorId: string,
+    checkinPhotos: string[] = [],
   ): Promise<WorkOrderResponseDto> {
     if (!Types.ObjectId.isValid(orderId)) {
       throw new NotFoundException('Order not found');
@@ -103,12 +106,19 @@ export class WorkOrderService {
       },
       serviceName: service.name,
       checklist,
+      checkinPhotos,
       estimatedMinutes: service.estimated_minutes,
       stationName: shift?.station_name,
     });
 
+    // Cash is collected at the counter when the customer arrives, so check-in
+    // settles payment in the same step — no separate mark-paid action needed.
+    const settlesCash =
+      order.payment_method === PaymentMethodEnum.CASH &&
+      order.payment_status !== PaymentStatusEnum.PAID;
     await this.orderRepository.updateById(order._id, {
       status: OrderStatusEnum.CHECKED_IN,
+      ...(settlesCash ? { paymentStatus: PaymentStatusEnum.PAID } : {}),
     });
 
     this.logger.log(
@@ -161,6 +171,15 @@ export class WorkOrderService {
       );
     }
     await this.assertActiveWasher(washerId);
+
+    // A washer handles one car at a time. Block the assignment if they are
+    // already tied to another work order that is ASSIGNED or IN_PROGRESS.
+    const busy = await this.repository.findActiveByWasher(washerId, id);
+    if (busy.length > 0) {
+      throw new ConflictException(
+        `Washer is already handling work order ${busy[0].code} and cannot take another job`,
+      );
+    }
 
     const updated = await this.repository.updateById(id, {
       status: WorkOrderStatusEnum.ASSIGNED,

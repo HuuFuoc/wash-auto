@@ -53,6 +53,11 @@ export class WorkOrder {
   })
   checklist: IChecklistItem[];
 
+  /** Photos the cashier captures of the vehicle at check-in. Stored as
+   *  FE-uploaded URLs — the customer's record of the car's pre-wash state. */
+  @Prop({ type: [String], default: [] })
+  checkin_photos: string[];
+
   @Prop({
     type: String,
     required: true,

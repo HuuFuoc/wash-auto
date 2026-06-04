@@ -11,7 +11,6 @@ export interface ICreateVoucherInput {
   type: VoucherTypeEnum;
   discountCapVnd: number;
   expiresAt: Date;
-  grantedReason?: string;
 }
 
 @Injectable()
@@ -29,7 +28,6 @@ export class VoucherRepository {
       status: VoucherStatusEnum.UNUSED,
       discount_cap_vnd: input.discountCapVnd,
       expires_at: input.expiresAt,
-      granted_reason: input.grantedReason,
     });
   }
 

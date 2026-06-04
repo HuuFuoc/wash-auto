@@ -43,8 +43,10 @@ export class AdminWorkOrderController {
     summary: 'Check-in: create a work order from a confirmed order',
     description:
       'Cashier action when the customer arrives. Creates the job ticket ' +
-      '(status WAITING) and moves the order CONFIRMED → CHECKED_IN. One work ' +
-      'order per order.',
+      '(status WAITING) and moves the order CONFIRMED → CHECKED_IN. The ' +
+      'cashier may attach vehicle photos taken at check-in (checkinPhotos). ' +
+      'For cash orders this also settles payment (marks the order PAID). One ' +
+      'work order per order.',
   })
   @ApiResponse({ status: 201, type: WorkOrderResponseDto })
   @ApiResponse({ status: 400, description: 'Order is not in confirmed status' })
@@ -57,7 +59,11 @@ export class AdminWorkOrderController {
     @CurrentUser() user: IAuthPayload,
     @Body() dto: CreateWorkOrderDto,
   ): Promise<WorkOrderResponseDto> {
-    return this.service.createFromOrder(dto.orderId, user.sub);
+    return this.service.createFromOrder(
+      dto.orderId,
+      user.sub,
+      dto.checkinPhotos,
+    );
   }
 
   @Get()
@@ -91,6 +97,10 @@ export class AdminWorkOrderController {
     description: 'Invalid washer, or work order already started',
   })
   @ApiResponse({ status: 404, description: 'Work order not found' })
+  @ApiResponse({
+    status: 409,
+    description: 'Washer is already handling another active work order',
+  })
   assign(
     @CurrentUser() user: IAuthPayload,
     @Param('id') id: string,

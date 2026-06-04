@@ -15,6 +15,7 @@ export interface ICreateWorkOrderInput {
   vehicleSnapshot: IVehicleSnapshot;
   serviceName: string;
   checklist: IChecklistItem[];
+  checkinPhotos?: string[];
   estimatedMinutes: number;
   stationName?: string;
 }
@@ -57,11 +58,34 @@ export class WorkOrderRepository {
       vehicle_snapshot: input.vehicleSnapshot,
       service_name: input.serviceName,
       checklist: input.checklist,
+      checkin_photos: input.checkinPhotos ?? [],
       status: WorkOrderStatusEnum.WAITING,
       estimated_minutes: input.estimatedMinutes,
       station_name: input.stationName,
       return_count: 0,
     });
+  }
+
+  /**
+   * Work orders currently tying up `washerId` — ASSIGNED or IN_PROGRESS.
+   * Used to stop a busy washer being handed a second car. `excludeId` skips
+   * the work order being (re)assigned so re-assigning the same ticket is fine.
+   */
+  async findActiveByWasher(
+    washerId: Types.ObjectId | string,
+    excludeId?: Types.ObjectId | string,
+  ): Promise<WorkOrderDocument[]> {
+    return this.model
+      .find({
+        assigned_washer_id: new Types.ObjectId(washerId),
+        status: {
+          $in: [WorkOrderStatusEnum.ASSIGNED, WorkOrderStatusEnum.IN_PROGRESS],
+        },
+        ...(excludeId && Types.ObjectId.isValid(excludeId)
+          ? { _id: { $ne: new Types.ObjectId(excludeId) } }
+          : {}),
+      })
+      .exec();
   }
 
   async findById(

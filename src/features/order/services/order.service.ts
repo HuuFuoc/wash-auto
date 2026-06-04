@@ -56,6 +56,32 @@ import { PayosService } from './payos.service';
 const TXN_DEDUP_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 const MAX_SLOT_RANGE_MS = 31 * 24 * 60 * 60 * 1000; // slot query cap
 
+// Office hours the shop offers bookings for, in Vietnam local time (UTC+7):
+// 08:00–12:00 in the morning and 14:00–17:00 in the afternoon (midday break
+// in between). A slot is only offered when the whole service [start, start +
+// duration] fits inside one window, so a wash never runs into the break or
+// past closing. Slots are computed in UTC, so we shift by the offset to read
+// the local clock.
+const VN_UTC_OFFSET_MS = 7 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+// [open, close] as minutes from local midnight.
+const BUSINESS_HOUR_WINDOWS: ReadonlyArray<readonly [number, number]> = [
+  [8 * 60, 12 * 60],
+  [14 * 60, 17 * 60],
+];
+
+/**
+ * True when the service interval [slotMs, slotMs + durationMs] fits entirely
+ * inside one office-hour window, read in Vietnam local time.
+ */
+function fitsBusinessHours(slotMs: number, durationMs: number): boolean {
+  const startMin = ((slotMs + VN_UTC_OFFSET_MS) % DAY_MS) / 60_000;
+  const endMin = startMin + durationMs / 60_000;
+  return BUSINESS_HOUR_WINDOWS.some(
+    ([open, close]) => startMin >= open && endMin <= close,
+  );
+}
+
 @Injectable()
 export class OrderService {
   private readonly logger = new Logger(OrderService.name);
@@ -570,6 +596,8 @@ export class OrderService {
         Math.ceil(shift.start_at.getTime() / intervalMs) * intervalMs;
       for (; slotMs + durationMs <= shiftEndMs; slotMs += intervalMs) {
         if (slotMs < windowStartMs || slotMs > windowEndMs) continue;
+        // Only offer slots whose whole service fits inside office hours.
+        if (!fitsBusinessHours(slotMs, durationMs)) continue;
         const slotEndMs = slotMs + durationMs;
         // Concurrent orders on this shift overlapping [slotMs, slotEndMs).
         let busy = 0;

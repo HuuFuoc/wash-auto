@@ -8,7 +8,6 @@ import {
   IsString,
   Matches,
   Max,
-  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -68,16 +67,4 @@ export class GrantVoucherAdminDto {
   @Type(() => Date)
   @IsDate()
   expiresAt?: Date;
-
-  @ApiProperty({
-    example: 'Service recovery for late wash on order #1234',
-    minLength: 5,
-    maxLength: 500,
-    description:
-      'Required audit trail. Shows up on the voucher detail and in the ' +
-      'log line so support can explain why this voucher was issued.',
-  })
-  @IsString()
-  @MaxLength(500)
-  reason: string;
 }

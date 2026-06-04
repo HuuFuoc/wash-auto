@@ -210,7 +210,6 @@ export class LoyaltyService {
         const voucher = await this.voucherService.grantFreeWash({
           customerId: new Types.ObjectId(customerId),
           discountCapVnd: mintedCap,
-          reason: `Thưởng ${WASHES_PER_FREE_VOUCHER} lượt rửa hợp lệ (5% của ${spendAfterReward.toLocaleString('vi-VN')}đ)`,
         });
         mintedVoucherId = voucher._id;
         washesAfterReward -= WASHES_PER_FREE_VOUCHER;
