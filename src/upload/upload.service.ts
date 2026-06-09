@@ -63,4 +63,18 @@ export class UploadService {
       Readable.from(file.buffer).pipe(uploadStream);
     });
   }
+
+  /**
+   * Uploads several in-memory image buffers to Cloudinary in parallel.
+   *
+   * Each file is streamed through {@link uploadImage}; the returned URLs preserve
+   * the input order. If any single upload fails, the whole batch rejects.
+   *
+   * @param files Image files provided by Multer (memoryStorage engine).
+   * @returns The HTTPS `secure_url` of every stored image, in input order.
+   * @throws InternalServerErrorException When any Cloudinary upload fails.
+   */
+  uploadImages(files: Express.Multer.File[]): Promise<string[]> {
+    return Promise.all(files.map((file) => this.uploadImage(file)));
+  }
 }
