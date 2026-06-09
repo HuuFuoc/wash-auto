@@ -58,6 +58,10 @@ export const configValidationSchema = Joi.object({
   GEMINI_API_KEY: Joi.string().required(),
   GEMINI_MODEL: Joi.string().default('gemini-2.0-flash'),
 
+  CLOUDINARY_CLOUD_NAME: Joi.string().required(),
+  CLOUDINARY_API_KEY: Joi.string().required(),
+  CLOUDINARY_API_SECRET: Joi.string().required(),
+
   MAX_ACTIVE_BOOKINGS_PER_CUSTOMER: Joi.number().integer().min(1).default(3),
   MAX_RESCHEDULES: Joi.number().integer().min(0).default(2),
   BOOKING_PAYMENT_TIMEOUT_MINUTES: Joi.number()

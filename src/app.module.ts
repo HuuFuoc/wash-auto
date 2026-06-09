@@ -26,6 +26,7 @@ import { OrderModule } from './features/order/order.module';
 import { ServiceTypeModule } from './features/service-type/service-type.module';
 import { StaffShiftModule } from './features/staff-shift/staff-shift.module';
 import { TierConfigModule } from './features/tier-config/tier-config.module';
+import { UploadModule } from './upload/upload.module';
 import { UserModule } from './features/user/user.module';
 import { VehicleModule } from './features/vehicle/vehicle.module';
 import { VehicleTypeModule } from './features/vehicle-type/vehicle-type.module';
@@ -70,6 +71,7 @@ import { WorkOrderModule } from './features/work-order/work-order.module';
     WorkOrderModule,
     ChatModule,
     DashboardModule,
+    UploadModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
