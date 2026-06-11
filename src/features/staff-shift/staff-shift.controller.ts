@@ -21,7 +21,7 @@ export class StaffShiftController {
   @ApiOperation({
     summary: 'List shifts with remaining capacity in a time window',
     description:
-      'Returns scheduled shifts where current_bookings < max_bookings, sorted by start_at ascending. Use during the booking flow so customers pick a slot. Filter by shiftType=washer or =cashier if needed.',
+      'Returns scheduled shifts in the window, sorted by start_at ascending. Actual per-slot availability (one wash per washer at a time) is resolved during booking. Use during the booking flow so customers pick a slot. Filter by shiftType=washer or =cashier if needed.',
   })
   @ApiResponse({
     status: 200,

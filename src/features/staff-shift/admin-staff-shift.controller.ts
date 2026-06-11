@@ -68,7 +68,7 @@ export class AdminStaffShiftController {
   @ApiOperation({
     summary: 'Create a shift (manager/admin)',
     description:
-      'staffId must belong to a user whose role matches shiftType (cashier ↔ cashier, washer ↔ washer). Time validation: startAt < endAt. current_bookings auto-starts at 0; status auto=scheduled.',
+      'staffId must belong to a user whose role matches shiftType (cashier ↔ cashier, washer ↔ washer). Provide date + block (morning/afternoon); the server derives start/end. status auto=scheduled. Overlapping shifts for the same staff are rejected.',
   })
   @ApiResponse({ status: 201, type: StaffShiftResponseDto })
   @ApiResponse({
@@ -83,7 +83,7 @@ export class AdminStaffShiftController {
   @ApiOperation({
     summary: 'Update shift (manager/admin)',
     description:
-      'Partial update. Cannot drop maxBookings below current current_bookings. Use PATCH /:id/status for state transitions.',
+      'Partial update. Provide date + block together to move the shift. Use PATCH /:id/status for state transitions.',
   })
   @ApiResponse({ status: 200, type: StaffShiftResponseDto })
   @ApiResponse({ status: 400, description: 'Invalid input' })

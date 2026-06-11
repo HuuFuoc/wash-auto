@@ -4,6 +4,7 @@ import { Model, PipelineStage, Types } from 'mongoose';
 import { RoleEnum } from '../auth/types/role.enum';
 import { LoyaltyAccount } from '../loyalty/entities/loyalty-account.entity';
 import { Order } from '../order/entities/order.entity';
+import { OrderStatusEnum } from '../order/types/order-status.enum';
 import { StaffShift } from '../staff-shift/entities/staff-shift.entity';
 import { User } from '../auth/entities/user.entity';
 import { Role } from '../auth/entities/role.entity';
@@ -695,29 +696,21 @@ export class DashboardService {
   // ─── Schedule & capacity (staff_shifts) ────────────────────────────────
 
   private async runScheduleStats(from: Date, to: Date) {
-    const [doc] = await this.shiftModel
-      .aggregate<{
-        _id: null;
-        totalShifts: number;
-        totalCapacity: number;
-        bookedSlots: number;
-      }>([
-        { $match: { start_at: { $gte: from, $lte: to } } },
-        {
-          $group: {
-            _id: null,
-            totalShifts: { $sum: 1 },
-            totalCapacity: { $sum: '$max_bookings' },
-            bookedSlots: { $sum: '$current_bookings' },
-          },
-        },
-      ])
-      .exec();
-    return {
-      totalShifts: doc?.totalShifts ?? 0,
-      totalCapacity: doc?.totalCapacity ?? 0,
-      bookedSlots: doc?.bookedSlots ?? 0,
-    };
+    // One washer per shift (concurrency 1) → capacity = number of shifts. The
+    // per-shift booking counters were removed, so bookedSlots is derived from
+    // orders scheduled in the window that still hold a slot (not cancelled).
+    const [totalShifts, bookedSlots] = await Promise.all([
+      this.shiftModel
+        .countDocuments({ start_at: { $gte: from, $lte: to } })
+        .exec(),
+      this.orderModel
+        .countDocuments({
+          scheduled_at: { $gte: from, $lte: to },
+          status: { $ne: OrderStatusEnum.CANCELLED },
+        })
+        .exec(),
+    ]);
+    return { totalShifts, totalCapacity: totalShifts, bookedSlots };
   }
 
   // ─── Cancellation & no-show analytics ──────────────────────────────────
