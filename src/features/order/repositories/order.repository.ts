@@ -132,11 +132,10 @@ export class OrderRepository {
 
   /**
    * Active orders (those still holding a slot) on the given shifts. Used to
-   * compute per-time-slot concurrency: a slot's free capacity is
-   * `max_bookings − orders whose wash window overlaps that slot`, NOT the
-   * shift-wide `current_bookings` counter (which would make every slot in a
-   * shift drop together). Shift-scoped so the result set is small (≤ a day of
-   * bookings per shift); the caller widens to the wash window in memory.
+   * compute per-time-slot concurrency: one wash per washer at a time, so a slot
+   * is free unless an order's wash window overlaps it. Shift-scoped so the
+   * result set is small (≤ a day of bookings per shift); the caller widens to
+   * the wash window in memory.
    */
   async findActiveByShifts(
     shiftIds: Types.ObjectId[],

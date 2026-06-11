@@ -25,12 +25,6 @@ export class StaffShiftResponseDto {
   @ApiProperty({ enum: ShiftStatusEnum, example: ShiftStatusEnum.SCHEDULED })
   status: ShiftStatusEnum;
 
-  @ApiProperty({ example: 10 })
-  maxBookings: number;
-
-  @ApiProperty({ example: 0 })
-  currentBookings: number;
-
   @ApiPropertyOptional({ example: 'Morning shift' })
   note?: string;
 
@@ -43,8 +37,6 @@ export class StaffShiftResponseDto {
     dto.startAt = doc.start_at;
     dto.endAt = doc.end_at;
     dto.status = doc.status;
-    dto.maxBookings = doc.max_bookings;
-    dto.currentBookings = doc.current_bookings;
     dto.note = doc.note;
     return dto;
   }

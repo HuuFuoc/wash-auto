@@ -41,7 +41,6 @@ import { RescheduleOrderDto } from '../dto/reschedule-order.dto';
 import { UpdateOrderStatusDto } from '../dto/update-order-status.dto';
 import { OrderDocument } from '../entities/order.entity';
 import {
-  consumesShiftCapacity,
   isCancellableByOwner,
   isValidOrderTransition,
 } from '../order.state-machine';
@@ -237,17 +236,15 @@ export class OrderService {
       wantStartMs,
       wantEndMs,
     );
+    // Pick the first washer (shift) with no wash overlapping this window.
+    // Capacity is purely per-slot overlap (one wash per washer at a time);
+    // there is no whole-shift counter to reserve against.
     let reservedShiftId: Types.ObjectId | undefined;
     for (const candidate of candidates) {
       const busy = concurrencyByShift.get(candidate._id.toString()) ?? 0;
       if (busy >= 1) continue; // washer already busy in this window
-      const ok = await this.staffShiftRepository.incrementCurrentBookings(
-        candidate._id,
-      );
-      if (ok) {
-        reservedShiftId = candidate._id;
-        break;
-      }
+      reservedShiftId = candidate._id;
+      break;
     }
     if (!reservedShiftId) {
       throw new ConflictException('All shifts at this time are full');
@@ -259,21 +256,16 @@ export class OrderService {
     //    inline - it is rolled back if the order then fails to persist.
     let vehicleObjId: Types.ObjectId;
     let createdVehicleId: Types.ObjectId | undefined;
-    try {
-      if (savedVehicle) {
-        // Already loaded + validated in step 2b.
-        vehicleObjId = savedVehicle._id;
-      } else {
-        const created = await this.vehicleService.createOwn(
-          customerId,
-          dto.vehicle!,
-        );
-        vehicleObjId = new Types.ObjectId(created.id);
-        createdVehicleId = vehicleObjId;
-      }
-    } catch (err) {
-      await this.staffShiftRepository.decrementCurrentBookings(reservedShiftId);
-      throw err;
+    if (savedVehicle) {
+      // Already loaded + validated in step 2b.
+      vehicleObjId = savedVehicle._id;
+    } else {
+      const created = await this.vehicleService.createOwn(
+        customerId,
+        dto.vehicle!,
+      );
+      vehicleObjId = new Types.ObjectId(created.id);
+      createdVehicleId = vehicleObjId;
     }
 
     // 8) Compute amount: start from service base price, then apply
@@ -382,7 +374,6 @@ export class OrderService {
         payosOrderCode,
       });
     } catch (err) {
-      await this.staffShiftRepository.decrementCurrentBookings(reservedShiftId);
       if (createdVehicleId) {
         await this.rollbackInlineVehicle(createdVehicleId);
       }
@@ -412,9 +403,6 @@ export class OrderService {
         });
         if (updated) order = updated;
       } catch (err) {
-        await this.staffShiftRepository.decrementCurrentBookings(
-          reservedShiftId,
-        );
         await this.orderRepository.updateById(order._id, {
           status: OrderStatusEnum.CANCELLED,
           cancelReason: 'PayOS link creation failed',
@@ -773,33 +761,16 @@ export class OrderService {
       throw new ConflictException('New shift is full at this time');
     }
 
-    const reserved = await this.staffShiftRepository.incrementCurrentBookings(
-      dto.staffShiftId,
+    const updated = await this.orderRepository.applyReschedule(
+      id,
+      new Types.ObjectId(dto.staffShiftId),
+      dto.scheduledAt,
     );
-    if (!reserved) {
-      throw new ConflictException('New shift is full');
-    }
-
-    try {
-      const updated = await this.orderRepository.applyReschedule(
-        id,
-        new Types.ObjectId(dto.staffShiftId),
-        dto.scheduledAt,
-      );
-      if (!updated) throw new NotFoundException('Order not found');
-      await this.staffShiftRepository.decrementCurrentBookings(
-        order.staff_shift_id,
-      );
-      this.logger.log(
-        `Order rescheduled orderId=${id} newShiftId=${dto.staffShiftId}`,
-      );
-      return OrderResponseDto.fromDocument(updated);
-    } catch (err) {
-      await this.staffShiftRepository.decrementCurrentBookings(
-        dto.staffShiftId,
-      );
-      throw err;
-    }
+    if (!updated) throw new NotFoundException('Order not found');
+    this.logger.log(
+      `Order rescheduled orderId=${id} newShiftId=${dto.staffShiftId}`,
+    );
+    return OrderResponseDto.fromDocument(updated);
   }
 
   async cancelOwn(
@@ -830,11 +801,6 @@ export class OrderService {
       }
     }
 
-    if (consumesShiftCapacity(order.status)) {
-      await this.staffShiftRepository.decrementCurrentBookings(
-        order.staff_shift_id,
-      );
-    }
     const updated = await this.orderRepository.updateById(id, {
       status: OrderStatusEnum.CANCELLED,
       cancelReason: dto.reason ?? 'Cancelled by customer',
@@ -921,11 +887,6 @@ export class OrderService {
             await this.sendConfirmationEmailSafe(updated);
           }
         } else {
-          if (consumesShiftCapacity(order.status)) {
-            await this.staffShiftRepository.decrementCurrentBookings(
-              order.staff_shift_id,
-            );
-          }
           const cancelled = await this.orderRepository.updateById(order._id, {
             status: OrderStatusEnum.CANCELLED,
             cancelReason: 'Payment failed',
@@ -1046,15 +1007,6 @@ export class OrderService {
       return OrderResponseDto.fromDocument(order);
     }
 
-    if (
-      consumesShiftCapacity(order.status) &&
-      !consumesShiftCapacity(dto.status)
-    ) {
-      await this.staffShiftRepository.decrementCurrentBookings(
-        order.staff_shift_id,
-      );
-    }
-
     const cancelReason =
       dto.status === OrderStatusEnum.CANCELLED ||
       dto.status === OrderStatusEnum.NO_SHOW
@@ -1098,11 +1050,6 @@ export class OrderService {
     const order = await this.orderRepository.findById(orderId);
     if (!order) return;
     if (order.status === OrderStatusEnum.COMPLETED) return;
-    if (consumesShiftCapacity(order.status)) {
-      await this.staffShiftRepository.decrementCurrentBookings(
-        order.staff_shift_id,
-      );
-    }
     const updated = await this.orderRepository.updateById(order._id, {
       status: OrderStatusEnum.COMPLETED,
     });
@@ -1167,11 +1114,6 @@ export class OrderService {
     for (const doc of docs) {
       const id = doc._id.toString();
       try {
-        if (consumesShiftCapacity(doc.status)) {
-          await this.staffShiftRepository.decrementCurrentBookings(
-            doc.staff_shift_id,
-          );
-        }
         const updated = await this.orderRepository.updateById(id, {
           status: OrderStatusEnum.NO_SHOW,
           cancelReason: 'No arrival within grace window',
@@ -1198,11 +1140,6 @@ export class OrderService {
     for (const doc of docs) {
       const id = doc._id.toString();
       try {
-        if (consumesShiftCapacity(doc.status)) {
-          await this.staffShiftRepository.decrementCurrentBookings(
-            doc.staff_shift_id,
-          );
-        }
         const updated = await this.orderRepository.updateById(id, {
           status: OrderStatusEnum.CANCELLED,
           cancelReason: 'Payment timeout',

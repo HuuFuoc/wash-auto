@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -11,7 +11,6 @@ import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard';
 import { RolesGuard } from '../../shared/guards/roles.guard';
 import type { IAuthPayload } from '../../shared/types/auth-payload.type';
 import { RoleEnum } from '../auth/types/role.enum';
-import { UpdateChecklistDto } from './dto/update-checklist.dto';
 import { WorkOrderResponseDto } from './dto/work-order-response.dto';
 import { WorkOrderService } from './work-order.service';
 
@@ -55,25 +54,6 @@ export class WasherWorkOrderController {
     @Param('id') id: string,
   ): Promise<WorkOrderResponseDto> {
     return this.service.start(user.sub, id);
-  }
-
-  @Patch(':id/checklist')
-  @ApiOperation({
-    summary: 'Tick a checklist item',
-    description: 'Only while the work order is IN_PROGRESS.',
-  })
-  @ApiResponse({ status: 200, type: WorkOrderResponseDto })
-  @ApiResponse({
-    status: 400,
-    description: 'Not in progress, or index out of range',
-  })
-  @ApiResponse({ status: 404, description: 'Work order not found' })
-  updateChecklist(
-    @CurrentUser() user: IAuthPayload,
-    @Param('id') id: string,
-    @Body() dto: UpdateChecklistDto,
-  ): Promise<WorkOrderResponseDto> {
-    return this.service.updateChecklistItem(user.sub, id, dto.index, dto.done);
   }
 
   @Patch(':id/finish')

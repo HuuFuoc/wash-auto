@@ -44,23 +44,6 @@ export class StaffShift {
   })
   status: ShiftStatusEnum;
 
-  /**
-   * Legacy field, kept for API/UI compatibility. Capacity is no longer gated
-   * by this number: a shift = one washer = one wash at a time (concurrency 1).
-   * Per-time-slot capacity is the count of free washers (shifts) covering a
-   * slot - see order.service. Defaults to 1.
-   */
-  @Prop({ required: true, default: 1, min: 1 })
-  max_bookings: number;
-
-  /**
-   * Total active bookings on this shift (informational counter, NOT a capacity
-   * gate). May exceed 1 across a shift since one washer handles many sequential
-   * washes.
-   */
-  @Prop({ required: true, default: 0, min: 0 })
-  current_bookings: number;
-
   @Prop({ trim: true })
   note?: string;
 }

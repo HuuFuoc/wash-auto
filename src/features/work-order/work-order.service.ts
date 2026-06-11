@@ -27,10 +27,7 @@ import {
   WorkOrderListResponseDto,
   WorkOrderResponseDto,
 } from './dto/work-order-response.dto';
-import {
-  IChecklistItem,
-  WorkOrderDocument,
-} from './entities/work-order.entity';
+import { WorkOrderDocument } from './entities/work-order.entity';
 import {
   IWorkOrderListFilter,
   WorkOrderRepository,
@@ -92,10 +89,6 @@ export class WorkOrderService {
       vehicle.vehicle_type_id,
     );
 
-    const checklist: IChecklistItem[] = (service.checklist_template ?? []).map(
-      (label) => ({ label, done: false }),
-    );
-
     const created = await this.repository.create({
       orderId: order._id,
       code: await this.generateCode(),
@@ -105,7 +98,9 @@ export class WorkOrderService {
         color: vehicle.color,
       },
       serviceName: service.name,
-      checklist,
+      // Checklist ticking was removed from the washer flow (Start → Finish →
+      // QC). Kept as an empty array for schema/response compatibility.
+      checklist: [],
       checkinPhotos,
       // Duration was snapshotted on the order at booking (varies by vehicle
       // type); fall back to the service default for legacy orders only.
@@ -281,33 +276,6 @@ export class WorkOrderService {
       status: OrderStatusEnum.IN_PROGRESS,
     });
     this.logger.log(`Work order ${updated.code} started by washer ${washerId}`);
-    return WorkOrderResponseDto.fromDocument(updated);
-  }
-
-  /** Tick one checklist item. Only while the wash is IN_PROGRESS. */
-  async updateChecklistItem(
-    washerId: string,
-    id: string,
-    index: number,
-    done: boolean,
-  ): Promise<WorkOrderResponseDto> {
-    const wo = await this.requireAssignedToWasher(id, washerId);
-    if (wo.status !== WorkOrderStatusEnum.IN_PROGRESS) {
-      throw new BadRequestException(
-        'Checklist can only be updated while the wash is in progress',
-      );
-    }
-    if (index < 0 || index >= wo.checklist.length) {
-      throw new BadRequestException('Checklist item index out of range');
-    }
-
-    const checklist: IChecklistItem[] = wo.checklist.map((item, i) =>
-      i === index
-        ? { label: item.label, done, done_at: done ? new Date() : undefined }
-        : { label: item.label, done: item.done, done_at: item.done_at },
-    );
-    const updated = await this.repository.updateById(id, { checklist });
-    if (!updated) throw new NotFoundException('Work order not found');
     return WorkOrderResponseDto.fromDocument(updated);
   }
 

@@ -65,9 +65,8 @@ export class StaffShiftRepository {
   /**
    * Returns SCHEDULED shifts that fully contain the wash window
    * [scheduledAt, scheduledAt + durationMinutes]. Per-slot concurrency (one
-   * wash per washer at a time) is enforced by the caller via overlap, not by a
-   * whole-shift counter. Sorted by current_bookings ASC then start_at ASC so
-   * the caller load-balances across washers and prefers the earliest start.
+   * wash per washer at a time) is enforced by the caller via overlap. Sorted by
+   * start_at ASC so the caller prefers the earliest-starting shift.
    */
   async findShiftsContaining(
     scheduledAt: Date,
@@ -80,7 +79,7 @@ export class StaffShiftRepository {
         start_at: { $lte: scheduledAt },
         end_at: { $gte: finishAt },
       })
-      .sort({ current_bookings: 1, start_at: 1 })
+      .sort({ start_at: 1 })
       .exec();
   }
 
@@ -154,8 +153,6 @@ export class StaffShiftRepository {
       station_name: input.stationName,
       start_at: input.startAt,
       end_at: input.endAt,
-      max_bookings: 1, // one washer = one wash at a time
-      current_bookings: 0,
       status: ShiftStatusEnum.SCHEDULED,
       note: input.note,
     });
@@ -185,41 +182,6 @@ export class StaffShiftRepository {
   ): Promise<StaffShiftDocument | null> {
     return this.model
       .findByIdAndUpdate(id, { $set: { status } }, { returnDocument: 'after' })
-      .exec();
-  }
-
-  /**
-   * Bumps the informational booking counter for a SCHEDULED shift (no capacity
-   * gate - per-slot concurrency is checked by the caller via wash-window
-   * overlap before calling this). Returns the updated doc, or null if the shift
-   * is missing / not scheduled. Pair with decrementCurrentBookings on rollback.
-   */
-  async incrementCurrentBookings(
-    id: Types.ObjectId | string,
-  ): Promise<StaffShiftDocument | null> {
-    if (!Types.ObjectId.isValid(id)) return null;
-    return this.model
-      .findOneAndUpdate(
-        {
-          _id: id,
-          status: ShiftStatusEnum.SCHEDULED,
-        },
-        { $inc: { current_bookings: 1 } },
-        { returnDocument: 'after' },
-      )
-      .exec();
-  }
-
-  async decrementCurrentBookings(
-    id: Types.ObjectId | string,
-  ): Promise<StaffShiftDocument | null> {
-    if (!Types.ObjectId.isValid(id)) return null;
-    return this.model
-      .findOneAndUpdate(
-        { _id: id, current_bookings: { $gt: 0 } },
-        { $inc: { current_bookings: -1 } },
-        { returnDocument: 'after' },
-      )
       .exec();
   }
 
