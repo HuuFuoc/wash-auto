@@ -88,8 +88,10 @@ export class AdminWorkOrderController {
   @ApiOperation({
     summary: 'Assign (or re-assign) a washer',
     description:
-      'Allowed only while the work order is WAITING or ASSIGNED. ' +
-      'washerId must belong to a user with role=washer.',
+      'Allowed while the work order is WAITING, ASSIGNED, or RETURNED (so a ' +
+      'manager can hand a QC-rejected wash to a different washer). Re-assigning ' +
+      'a RETURNED ticket moves it back to ASSIGNED. washerId must belong to a ' +
+      'user with role=washer.',
   })
   @ApiResponse({ status: 200, type: WorkOrderResponseDto })
   @ApiResponse({
