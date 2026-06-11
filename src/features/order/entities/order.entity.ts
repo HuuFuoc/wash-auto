@@ -45,6 +45,15 @@ export class Order {
   @Prop({ required: true })
   scheduled_at: Date;
 
+  /**
+   * Wash duration in minutes, resolved from the service × vehicle-type pricing
+   * cell at booking time and snapshotted here. Slot/overlap math, reschedule,
+   * and the work order all use this agreed value instead of re-reading the
+   * service (whose duration now varies by vehicle type).
+   */
+  @Prop({ required: true, min: 1 })
+  estimated_minutes: number;
+
   @Prop({
     type: String,
     required: true,

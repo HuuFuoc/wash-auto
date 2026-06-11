@@ -1,8 +1,9 @@
 /* eslint-disable */
-// Seeds SCHEDULED staff shifts for the next 7 days, two shifts per day
-// (08:00–12:00 and 13:00–17:00 Vietnam time), max_bookings=5.
-// Uses any existing user with role washer/cashier; falls back to the
-// first user in the DB if none exists.
+// Seeds SCHEDULED staff shifts for the next 7 days, two shifts per day,
+// aligned to the fixed working blocks (08:00–12:00 and 14:00–17:00 VN time)
+// used by the booking engine. Each shift = one washer, concurrency 1
+// (max_bookings=1). Uses any existing user with role washer/cashier; falls
+// back to the first user in the DB if none exists.
 //
 // Run:  node scripts/seed-shift.js
 
@@ -13,7 +14,7 @@ const mongoose = require('mongoose');
 
 const VN_TZ_OFFSET_HOURS = 7;
 const DAYS = 7;
-const MAX_BOOKINGS = 5;
+const MAX_BOOKINGS = 1;
 
 const uri = `mongodb+srv://${encodeURIComponent(process.env.DB_USERNAME)}:${encodeURIComponent(process.env.DB_PASSWORD)}@${process.env.DB_HOST}/${process.env.DB_NAME}?retryWrites=true&w=majority`;
 
@@ -64,7 +65,7 @@ async function main() {
   for (let day = 0; day < DAYS; day++) {
     for (const block of [
       { start: 8, end: 12 },
-      { start: 13, end: 17 },
+      { start: 14, end: 17 },
     ]) {
       const startAt = vnTimeUtc(day, block.start);
       const endAt = vnTimeUtc(day, block.end);

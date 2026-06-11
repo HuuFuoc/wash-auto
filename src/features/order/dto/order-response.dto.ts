@@ -50,6 +50,14 @@ export class OrderResponseDto {
   @ApiProperty({ example: '2026-06-01T09:00:00.000Z' })
   scheduledAt: Date;
 
+  @ApiProperty({
+    example: 30,
+    description:
+      'Wash duration (minutes) snapshotted at booking from the ' +
+      'service × vehicle-type pricing cell.',
+  })
+  estimatedMinutes: number;
+
   @ApiProperty({ enum: OrderStatusEnum, example: OrderStatusEnum.CONFIRMED })
   status: OrderStatusEnum;
 
@@ -156,6 +164,7 @@ export class OrderResponseDto {
 
     dto.staffShiftId = doc.staff_shift_id?.toString() ?? '';
     dto.scheduledAt = doc.scheduled_at;
+    dto.estimatedMinutes = doc.estimated_minutes;
     dto.status = doc.status;
     dto.paymentMethod = doc.payment_method;
     dto.paymentStatus = doc.payment_status;

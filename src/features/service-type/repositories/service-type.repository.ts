@@ -6,6 +6,13 @@ import {
   ServiceTypeDocument,
 } from '../entities/service-type.entity';
 
+export interface IVehiclePricingInput {
+  vehicleTypeId: string;
+  price: Types.Decimal128;
+  estimatedMinutes: number;
+  isActive?: boolean;
+}
+
 export interface ICreateServiceTypeInput {
   name: string;
   description?: string;
@@ -14,6 +21,7 @@ export interface ICreateServiceTypeInput {
   pointsMultiplier: number;
   checklistTemplate?: string[];
   isVoucherEligible?: boolean;
+  vehiclePricing?: IVehiclePricingInput[];
 }
 
 export interface IUpdateServiceTypeInput {
@@ -24,6 +32,17 @@ export interface IUpdateServiceTypeInput {
   pointsMultiplier?: number;
   checklistTemplate?: string[];
   isVoucherEligible?: boolean;
+  vehiclePricing?: IVehiclePricingInput[];
+}
+
+/** Maps camelCase pricing inputs to the snake_case sub-doc shape. */
+function toVehiclePricingDocs(rows: IVehiclePricingInput[]) {
+  return rows.map((row) => ({
+    vehicle_type_id: new Types.ObjectId(row.vehicleTypeId),
+    price: row.price,
+    estimated_minutes: row.estimatedMinutes,
+    is_active: row.isActive ?? true,
+  }));
 }
 
 @Injectable()
@@ -61,6 +80,7 @@ export class ServiceTypeRepository {
       points_multiplier: input.pointsMultiplier,
       checklist_template: input.checklistTemplate ?? [],
       is_voucher_eligible: input.isVoucherEligible ?? true,
+      vehicle_pricing: toVehiclePricingDocs(input.vehiclePricing ?? []),
     });
   }
 
@@ -80,6 +100,8 @@ export class ServiceTypeRepository {
       update.checklist_template = input.checklistTemplate;
     if (input.isVoucherEligible !== undefined)
       update.is_voucher_eligible = input.isVoucherEligible;
+    if (input.vehiclePricing !== undefined)
+      update.vehicle_pricing = toVehiclePricingDocs(input.vehiclePricing);
 
     return this.model
       .findByIdAndUpdate(id, { $set: update }, { returnDocument: 'after' })

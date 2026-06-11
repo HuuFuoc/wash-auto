@@ -15,6 +15,7 @@ export interface ICreateOrderInput {
   serviceTypeId: Types.ObjectId;
   staffShiftId: Types.ObjectId;
   scheduledAt: Date;
+  estimatedMinutes: number;
   priorityLevel: number;
   paymentMethod: PaymentMethodEnum;
   paymentStatus: PaymentStatusEnum;
@@ -73,6 +74,7 @@ export class OrderRepository {
       service_type_id: input.serviceTypeId,
       staff_shift_id: input.staffShiftId,
       scheduled_at: input.scheduledAt,
+      estimated_minutes: input.estimatedMinutes,
       priority_level: input.priorityLevel,
       reschedule_count: 0,
       payment_method: input.paymentMethod,

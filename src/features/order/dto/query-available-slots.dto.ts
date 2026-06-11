@@ -13,6 +13,15 @@ export class QueryAvailableSlotsDto {
   @IsMongoId()
   serviceTypeId: string;
 
+  @ApiProperty({
+    example: '6601e3b3f1a2c3a4b5d6e7f8',
+    description:
+      'Vehicle type to size slots for. Slot width = the service × vehicle ' +
+      'type duration. Returns no slots when the combo does not apply.',
+  })
+  @IsMongoId()
+  vehicleTypeId: string;
+
   @ApiProperty({ example: '2026-06-01T00:00:00.000Z' })
   @Type(() => Date)
   @IsDate()

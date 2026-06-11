@@ -14,11 +14,13 @@ import { UserRepository } from '../../auth/repositories/user.repository';
 import { EmailService } from '../../email/email.service';
 import { GoldenHourService } from '../../golden-hour/golden-hour.service';
 import { LoyaltyService } from '../../loyalty/loyalty.service';
+import { ServiceTypeDocument } from '../../service-type/entities/service-type.entity';
 import { ServiceTypeRepository } from '../../service-type/repositories/service-type.repository';
 import { StaffShiftRepository } from '../../staff-shift/repositories/staff-shift.repository';
 import { ShiftStatusEnum } from '../../staff-shift/types/shift-status.enum';
 import { TierConfigDocument } from '../../tier-config/entities/tier-config.entity';
 import { TierConfigRepository } from '../../tier-config/repositories/tier-config.repository';
+import { VehicleDocument } from '../../vehicle/entities/vehicle.entity';
 import { VehicleRepository } from '../../vehicle/repositories/vehicle.repository';
 import { VehicleService } from '../../vehicle/vehicle.service';
 import { VoucherService } from '../../voucher/voucher.service';
@@ -104,6 +106,29 @@ export class OrderService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
+  /**
+   * Resolves the active price + duration for a (service, vehicle type) pair
+   * from the service's per-vehicle pricing board. Throws 400 when no active
+   * cell exists - i.e. the service does not apply to that vehicle type. The
+   * service-level base_price/estimated_minutes are intentionally NOT used as a
+   * fallback (they are only a default + migration seed).
+   */
+  private resolvePricingCell(
+    service: ServiceTypeDocument,
+    vehicleTypeId: string,
+  ): { price: number; estimatedMinutes: number } {
+    const cell = (service.vehicle_pricing ?? []).find(
+      (p) => p.is_active && p.vehicle_type_id.toString() === vehicleTypeId,
+    );
+    if (!cell) {
+      throw new BadRequestException('Dịch vụ không áp dụng cho loại xe này');
+    }
+    return {
+      price: Math.round(parseFloat(cell.price.toString())),
+      estimatedMinutes: cell.estimated_minutes,
+    };
+  }
+
   // ---------- CUSTOMER ----------
 
   async createOrder(
@@ -129,6 +154,29 @@ export class OrderService {
     if (!service || !service.is_active) {
       throw new BadRequestException('Service type not found or inactive');
     }
+
+    // 2b) Resolve the vehicle type up front - both the wash duration and the
+    //     price now depend on it, and the shift pick in step 6 needs the
+    //     duration. For a saved vehicle we load + validate it here (read-only,
+    //     safe to do before holding a slot); for an inline vehicle we read the
+    //     type id from the payload and defer the actual create to step 7 so a
+    //     failed booking never leaves a stray vehicle behind.
+    let savedVehicle: VehicleDocument | undefined;
+    let vehicleTypeId: string;
+    if (dto.vehicleId) {
+      const vehicle = await this.vehicleRepository.findByIdForOwner(
+        dto.vehicleId,
+        customerId,
+      );
+      if (!vehicle || !vehicle.is_active) {
+        throw new NotFoundException('Vehicle not found');
+      }
+      savedVehicle = vehicle;
+      vehicleTypeId = vehicle.vehicle_type_id.toString();
+    } else {
+      vehicleTypeId = dto.vehicle!.vehicleTypeId;
+    }
+    const cell = this.resolvePricingCell(service, vehicleTypeId);
 
     // 3) Time must be in the future. The server picks the shift later -
     //    no user-supplied staffShiftId.
@@ -170,20 +218,20 @@ export class OrderService {
     //    read and the atomic increment.
     const candidates = await this.staffShiftRepository.findShiftsContaining(
       dto.scheduledAt,
-      service.estimated_minutes,
+      cell.estimatedMinutes,
     );
     if (candidates.length === 0) {
       throw new ConflictException(
         'No shift covers this time, or all shifts are full',
       );
     }
-    // Per-time-slot concurrency: a candidate shift is only usable if the
-    // number of its active orders whose wash window overlaps this booking's
-    // window [scheduledAt, finishAt) is below max_bookings. This mirrors the
-    // overlap rule in listAvailableSlots so a slot the FE offered is the slot
-    // the POST accepts (barring a concurrent fill).
+    // Per-time-slot concurrency: one washer washes one car at a time, so a
+    // candidate shift is usable only if it has NO active order whose wash
+    // window overlaps this booking's window [scheduledAt, finishAt). This
+    // mirrors the overlap rule in listAvailableSlots so a slot the FE offered
+    // is the slot the POST accepts (barring a concurrent fill).
     const wantStartMs = dto.scheduledAt.getTime();
-    const wantEndMs = wantStartMs + service.estimated_minutes * 60_000;
+    const wantEndMs = wantStartMs + cell.estimatedMinutes * 60_000;
     const concurrencyByShift = await this.countConcurrentByShift(
       candidates.map((c) => c._id),
       wantStartMs,
@@ -192,7 +240,7 @@ export class OrderService {
     let reservedShiftId: Types.ObjectId | undefined;
     for (const candidate of candidates) {
       const busy = concurrencyByShift.get(candidate._id.toString()) ?? 0;
-      if (busy >= candidate.max_bookings) continue;
+      if (busy >= 1) continue; // washer already busy in this window
       const ok = await this.staffShiftRepository.incrementCurrentBookings(
         candidate._id,
       );
@@ -212,15 +260,9 @@ export class OrderService {
     let vehicleObjId: Types.ObjectId;
     let createdVehicleId: Types.ObjectId | undefined;
     try {
-      if (dto.vehicleId) {
-        const vehicle = await this.vehicleRepository.findByIdForOwner(
-          dto.vehicleId,
-          customerId,
-        );
-        if (!vehicle || !vehicle.is_active) {
-          throw new NotFoundException('Vehicle not found');
-        }
-        vehicleObjId = vehicle._id;
+      if (savedVehicle) {
+        // Already loaded + validated in step 2b.
+        vehicleObjId = savedVehicle._id;
       } else {
         const created = await this.vehicleService.createOwn(
           customerId,
@@ -241,9 +283,7 @@ export class OrderService {
     //    zero the order out (100% off); it now stacks with golden hour and
     //    is capped so a voucher minted off Basic washes cannot be redeemed
     //    against a Detailing service for more than its configured ceiling.
-    const originalAmount = Math.round(
-      parseFloat(service.base_price.toString()),
-    );
+    const originalAmount = cell.price;
     const pricing = await this.computeOrderPricing(
       dto.scheduledAt,
       tier,
@@ -327,6 +367,7 @@ export class OrderService {
         serviceTypeId: new Types.ObjectId(dto.serviceTypeId),
         staffShiftId: reservedShiftId,
         scheduledAt: dto.scheduledAt,
+        estimatedMinutes: cell.estimatedMinutes,
         priorityLevel: tier.priority_level,
         paymentMethod: dto.paymentMethod,
         paymentStatus: initialPaymentStatus,
@@ -443,9 +484,8 @@ export class OrderService {
       throw new BadRequestException('Tier config missing for this customer');
     }
 
-    const originalAmount = Math.round(
-      parseFloat(service.base_price.toString()),
-    );
+    const cell = this.resolvePricingCell(service, dto.vehicleTypeId);
+    const originalAmount = cell.price;
     const pricing = await this.computeOrderPricing(
       dto.scheduledAt,
       tier,
@@ -490,6 +530,7 @@ export class OrderService {
 
     return {
       originalAmount,
+      estimatedMinutes: cell.estimatedMinutes,
       discountAmount,
       discountPercent,
       discountReason,
@@ -530,7 +571,8 @@ export class OrderService {
     if (!service || !service.is_active) {
       throw new BadRequestException('Service type not found or inactive');
     }
-    const durationMs = service.estimated_minutes * 60_000;
+    const cell = this.resolvePricingCell(service, dto.vehicleTypeId);
+    const durationMs = cell.estimatedMinutes * 60_000;
 
     // Clip the window: no slot earlier than now, none past the customer's
     // tier booking horizon - mirrors the checks in createOrder so the FE
@@ -558,19 +600,15 @@ export class OrderService {
     const intervalMs =
       this.config.getOrThrow<number>('booking.slotIntervalMinutes') * 60_000;
 
-    // Per-time-slot capacity: a slot's free capacity is the shift's
-    // `max_bookings` minus the orders whose wash window actually OVERLAPS that
-    // slot - not the shift-wide `current_bookings` (which made every slot in a
-    // shift drop together when one was booked). Booking 09:00 only ties up the
-    // washer for [09:00, 09:00 + serviceDuration], so 09:30 stays free.
-    const serviceDurationMsById = new Map<string, number>();
-    for (const svc of await this.serviceTypeRepository.findAll()) {
-      serviceDurationMsById.set(
-        svc._id.toString(),
-        svc.estimated_minutes * 60_000,
-      );
-    }
-    // Existing active orders on these shifts → busy windows per shift.
+    // Per-time-slot capacity: each shift is one washer who washes one car at a
+    // time, so a shift contributes 1 free unit to a slot unless one of its
+    // orders' wash windows OVERLAPS that slot. Booking 09:00 only ties up the
+    // washer for [09:00, 09:00 + serviceDuration], so 09:30 stays free. Total
+    // slot capacity = number of free washers (shifts) covering it.
+    // Existing active orders on these shifts → busy windows per shift. Each
+    // order carries its own snapshotted duration (now varies by vehicle type),
+    // so its busy window is [scheduled_at, scheduled_at + estimated_minutes].
+    // Legacy orders without the snapshot fall back to this booking's duration.
     const busyWindowsByShift = new Map<string, [number, number][]>();
     const activeOrders = await this.orderRepository.findActiveByShifts(
       shifts.map((s) => s._id),
@@ -579,7 +617,7 @@ export class OrderService {
       const shiftId = o.staff_shift_id.toString();
       const startMs = o.scheduled_at.getTime();
       const orderDurationMs =
-        serviceDurationMsById.get(o.service_type_id.toString()) ?? durationMs;
+        o.estimated_minutes > 0 ? o.estimated_minutes * 60_000 : durationMs;
       const list = busyWindowsByShift.get(shiftId) ?? [];
       list.push([startMs, startMs + orderDurationMs]);
       busyWindowsByShift.set(shiftId, list);
@@ -588,7 +626,6 @@ export class OrderService {
     // slot start (ms) → summed free capacity of every shift covering it.
     const capacityBySlot = new Map<number, number>();
     for (const shift of shifts) {
-      if (shift.max_bookings <= 0) continue;
       const busyWindows = busyWindowsByShift.get(shift._id.toString()) ?? [];
       const shiftEndMs = shift.end_at.getTime();
       // First grid point at or after the shift start.
@@ -604,7 +641,8 @@ export class OrderService {
         for (const [bStart, bEnd] of busyWindows) {
           if (bStart < slotEndMs && slotMs < bEnd) busy++;
         }
-        const free = shift.max_bookings - busy;
+        // One washer per shift → free is 1 (washer idle) or 0 (busy) this slot.
+        const free = busy > 0 ? 0 : 1;
         if (free <= 0) continue;
         capacityBySlot.set(slotMs, (capacityBySlot.get(slotMs) ?? 0) + free);
       }
@@ -638,8 +676,8 @@ export class OrderService {
   /**
    * For each given shift, count its active orders whose wash window overlaps
    * [fromMs, toMs). Used by createOrder/rescheduleOwn to enforce per-time-slot
-   * concurrency (up to max_bookings concurrent washes per slot) instead of the
-   * shift-wide counter.
+   * concurrency (one wash per washer at a time → a count ≥ 1 means full)
+   * instead of the shift-wide counter.
    */
   private async countConcurrentByShift(
     shiftIds: Types.ObjectId[],
@@ -648,20 +686,16 @@ export class OrderService {
   ): Promise<Map<string, number>> {
     const result = new Map<string, number>();
     if (shiftIds.length === 0) return result;
-    const serviceDurationMsById = new Map<string, number>();
-    for (const svc of await this.serviceTypeRepository.findAll()) {
-      serviceDurationMsById.set(
-        svc._id.toString(),
-        svc.estimated_minutes * 60_000,
-      );
-    }
+    // Each order's wash window uses its snapshotted duration (varies by vehicle
+    // type); legacy orders without it fall back to the requested window width.
     const defaultDurationMs = toMs - fromMs;
     const orders = await this.orderRepository.findActiveByShifts(shiftIds);
     for (const o of orders) {
       const startMs = o.scheduled_at.getTime();
       const durMs =
-        serviceDurationMsById.get(o.service_type_id.toString()) ??
-        defaultDurationMs;
+        o.estimated_minutes > 0
+          ? o.estimated_minutes * 60_000
+          : defaultDurationMs;
       if (startMs < toMs && fromMs < startMs + durMs) {
         const key = o.staff_shift_id.toString();
         result.set(key, (result.get(key) ?? 0) + 1);
@@ -708,17 +742,23 @@ export class OrderService {
     if (dto.scheduledAt.getTime() < Date.now() - 60_000) {
       throw new BadRequestException('scheduledAt must be in the future');
     }
-    const service = await this.serviceTypeRepository.findById(
-      order.service_type_id,
-    );
-    if (!service) {
-      throw new BadRequestException('Original service type missing');
+    // Duration was snapshotted on the order at booking (varies by vehicle
+    // type), so a reschedule keeps the same wash length. Fall back to the
+    // service default only for legacy orders that predate the snapshot.
+    let durationMin = order.estimated_minutes;
+    if (!(durationMin > 0)) {
+      const service = await this.serviceTypeRepository.findById(
+        order.service_type_id,
+      );
+      if (!service) {
+        throw new BadRequestException('Original service type missing');
+      }
+      durationMin = service.estimated_minutes;
     }
-    const finishMs =
-      dto.scheduledAt.getTime() + service.estimated_minutes * 60_000;
+    const finishMs = dto.scheduledAt.getTime() + durationMin * 60_000;
     if (finishMs > newShift.end_at.getTime()) {
       throw new BadRequestException(
-        `Service requires ${service.estimated_minutes} min and would overrun the new shift end`,
+        `Service requires ${durationMin} min and would overrun the new shift end`,
       );
     }
 
@@ -729,7 +769,7 @@ export class OrderService {
       dto.scheduledAt.getTime(),
       finishMs,
     );
-    if ((concurrency.get(dto.staffShiftId) ?? 0) >= newShift.max_bookings) {
+    if ((concurrency.get(dto.staffShiftId) ?? 0) >= 1) {
       throw new ConflictException('New shift is full at this time');
     }
 

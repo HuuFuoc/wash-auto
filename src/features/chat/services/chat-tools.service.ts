@@ -101,6 +101,12 @@ export class ChatToolsService {
               description:
                 'MongoId của dịch vụ. Nếu chưa có, gọi list_services trước.',
             },
+            vehicleTypeId: {
+              type: Type.STRING,
+              description:
+                'MongoId loại xe (giá/thời lượng theo loại xe). Tùy chọn — ' +
+                'nếu bỏ trống sẽ dùng loại xe của xe đầu tiên trong gara khách.',
+            },
             fromDate: {
               type: Type.STRING,
               description:
@@ -290,8 +296,25 @@ export class ChatToolsService {
     if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
       return { data: null, error: 'fromDate/toDate không hợp lệ.' };
     }
+    // Price/duration vary by vehicle type, so slots need one. Prefer the
+    // supplied id, else default to the customer's first saved vehicle's type.
+    let vehicleTypeId =
+      typeof args.vehicleTypeId === 'string' ? args.vehicleTypeId : '';
+    if (!Types.ObjectId.isValid(vehicleTypeId)) {
+      const vehicles = await this.vehicleService.listOwn(ctx.customerId);
+      vehicleTypeId = vehicles[0]?.vehicleTypeId ?? '';
+    }
+    if (!Types.ObjectId.isValid(vehicleTypeId)) {
+      return {
+        data: null,
+        error:
+          'Chưa xác định được loại xe. Khách hãy thêm xe vào gara hoặc cho ' +
+          'biết loại xe để ước tính khung giờ.',
+      };
+    }
     const slots = await this.orderService.listAvailableSlots(ctx.customerId, {
       serviceTypeId,
+      vehicleTypeId,
       from,
       to,
     });

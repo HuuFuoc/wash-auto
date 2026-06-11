@@ -20,6 +20,7 @@ import {
   IShiftListFilter,
   StaffShiftRepository,
 } from './repositories/staff-shift.repository';
+import { resolveShiftBlock } from './shift-blocks';
 import { ShiftStatusEnum } from './types/shift-status.enum';
 import { ShiftTypeEnum } from './types/shift-type.enum';
 
@@ -122,17 +123,16 @@ export class StaffShiftService {
   }
 
   async create(dto: CreateStaffShiftDto): Promise<StaffShiftResponseDto> {
-    if (dto.startAt >= dto.endAt) {
-      throw new BadRequestException('startAt must be before endAt');
-    }
+    // Fixed working block → derive absolute start/end (enforces office hours).
+    const { startAt, endAt } = resolveShiftBlock(dto.date, dto.block);
     await this.assertStaffMatchesShiftType(dto.staffId, dto.shiftType);
+    await this.assertNoStaffShiftOverlap(dto.staffId, startAt, endAt);
     const created = await this.repository.create({
       staffId: new Types.ObjectId(dto.staffId),
       shiftType: dto.shiftType,
       stationName: dto.stationName,
-      startAt: dto.startAt,
-      endAt: dto.endAt,
-      maxBookings: dto.maxBookings,
+      startAt,
+      endAt,
       note: dto.note,
     });
     this.logger.log('Manager created shift', {
@@ -158,15 +158,25 @@ export class StaffShiftService {
       await this.assertStaffMatchesShiftType(nextStaffId, nextType);
     }
 
-    if (dto.startAt && dto.endAt && dto.startAt >= dto.endAt) {
-      throw new BadRequestException('startAt must be before endAt');
+    // Moving the shift requires both date and block; derive new start/end.
+    let startAt: Date | undefined;
+    let endAt: Date | undefined;
+    if (dto.date !== undefined || dto.block !== undefined) {
+      if (dto.date === undefined || dto.block === undefined) {
+        throw new BadRequestException(
+          'Provide both `date` and `block` to move a shift',
+        );
+      }
+      ({ startAt, endAt } = resolveShiftBlock(dto.date, dto.block));
     }
-    if (
-      dto.maxBookings !== undefined &&
-      dto.maxBookings < existing.current_bookings
-    ) {
-      throw new BadRequestException(
-        `maxBookings cannot drop below current_bookings (${existing.current_bookings})`,
+
+    // Re-check overlap when the staff member or the time window changes.
+    if (dto.staffId !== undefined || startAt !== undefined) {
+      await this.assertNoStaffShiftOverlap(
+        nextStaffId,
+        startAt ?? existing.start_at,
+        endAt ?? existing.end_at,
+        id,
       );
     }
 
@@ -174,9 +184,8 @@ export class StaffShiftService {
       staffId: dto.staffId ? new Types.ObjectId(dto.staffId) : undefined,
       shiftType: dto.shiftType,
       stationName: dto.stationName,
-      startAt: dto.startAt,
-      endAt: dto.endAt,
-      maxBookings: dto.maxBookings,
+      startAt,
+      endAt,
       note: dto.note,
     });
     if (!updated) throw new NotFoundException('Shift not found');
@@ -224,6 +233,29 @@ export class StaffShiftService {
     if (role.code !== expected) {
       throw new BadRequestException(
         `staffId must belong to a user with role=${expected} for shiftType=${shiftType}`,
+      );
+    }
+  }
+
+  /** Rejects creating/moving a shift that overlaps another for the same staff. */
+  private async assertNoStaffShiftOverlap(
+    staffId: string,
+    startAt: Date,
+    endAt: Date,
+    excludeId?: string,
+  ): Promise<void> {
+    if (!Types.ObjectId.isValid(staffId)) {
+      throw new BadRequestException('Invalid staffId');
+    }
+    const overlaps = await this.repository.findOverlappingForStaff(
+      new Types.ObjectId(staffId),
+      startAt,
+      endAt,
+      excludeId,
+    );
+    if (overlaps.length > 0) {
+      throw new BadRequestException(
+        'Nhân viên đã có ca làm việc trùng giờ với khoảng thời gian này',
       );
     }
   }
