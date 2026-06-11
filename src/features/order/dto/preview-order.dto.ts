@@ -13,6 +13,15 @@ export class PreviewOrderDto {
   @IsMongoId()
   serviceTypeId: string;
 
+  @ApiProperty({
+    example: '6601e3b3f1a2c3a4b5d6e7f8',
+    description:
+      'Vehicle type to price for. Price + duration come from the matching ' +
+      'service × vehicle-type cell; an inapplicable combo is rejected.',
+  })
+  @IsMongoId()
+  vehicleTypeId: string;
+
   @ApiProperty({ example: '2026-06-01T01:30:00.000Z' })
   @Type(() => Date)
   @IsDate()
@@ -36,8 +45,17 @@ export class PreviewOrderDto {
  * card before the customer commits.
  */
 export class PreviewOrderResponseDto {
-  @ApiProperty({ example: 150000, description: 'Service base price.' })
+  @ApiProperty({
+    example: 150000,
+    description: 'Service price for this vehicle type (before discounts).',
+  })
   originalAmount: number;
+
+  @ApiProperty({
+    example: 30,
+    description: 'Wash duration (minutes) for this service × vehicle type.',
+  })
+  estimatedMinutes: number;
 
   @ApiProperty({
     example: 15000,

@@ -4,13 +4,45 @@ import {
   IsArray,
   IsBoolean,
   IsInt,
+  IsMongoId,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
+
+/** One row of a service's price board: price + duration for one vehicle type. */
+export class VehiclePricingDto {
+  @ApiProperty({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
+  @IsMongoId()
+  vehicleTypeId: string;
+
+  @ApiProperty({ example: 60000 })
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  price: number;
+
+  @ApiProperty({ example: 30 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  estimatedMinutes: number;
+
+  @ApiPropertyOptional({
+    example: true,
+    default: true,
+    description:
+      'Whether this service is bookable for this vehicle type. false (or a ' +
+      'missing row) means the combo does not apply.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
 
 export class CreateServiceTypeDto {
   @ApiProperty({ example: 'Premium Wash' })
@@ -66,4 +98,17 @@ export class CreateServiceTypeDto {
   @IsOptional()
   @IsBoolean()
   isVoucherEligible?: boolean;
+
+  @ApiPropertyOptional({
+    type: [VehiclePricingDto],
+    description:
+      'Per-vehicle-type price + duration. Each vehicle type may appear at ' +
+      'most once. A row with isActive=false (or no row) means the service ' +
+      'does not apply to that vehicle type.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => VehiclePricingDto)
+  vehiclePricing?: VehiclePricingDto[];
 }

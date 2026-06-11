@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { VehicleTypeModule } from '../vehicle-type/vehicle-type.module';
 import { AdminServiceTypeController } from './admin-service-type.controller';
 import { ServiceType, ServiceTypeSchema } from './entities/service-type.entity';
 import { ServiceTypeRepository } from './repositories/service-type.repository';
@@ -11,6 +12,7 @@ import { ServiceTypeService } from './service-type.service';
     MongooseModule.forFeature([
       { name: ServiceType.name, schema: ServiceTypeSchema },
     ]),
+    VehicleTypeModule,
   ],
   controllers: [ServiceTypeController, AdminServiceTypeController],
   providers: [ServiceTypeService, ServiceTypeRepository],

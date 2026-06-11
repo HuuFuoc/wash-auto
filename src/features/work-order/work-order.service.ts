@@ -107,7 +107,12 @@ export class WorkOrderService {
       serviceName: service.name,
       checklist,
       checkinPhotos,
-      estimatedMinutes: service.estimated_minutes,
+      // Duration was snapshotted on the order at booking (varies by vehicle
+      // type); fall back to the service default for legacy orders only.
+      estimatedMinutes:
+        order.estimated_minutes > 0
+          ? order.estimated_minutes
+          : service.estimated_minutes,
       stationName: shift?.station_name,
     });
 
