@@ -18,7 +18,6 @@ export interface ICreateShiftInput {
   stationName?: string;
   startAt: Date;
   endAt: Date;
-  maxBookings: number;
   note?: string;
 }
 
@@ -28,7 +27,6 @@ export interface IUpdateShiftInput {
   stationName?: string;
   startAt?: Date;
   endAt?: Date;
-  maxBookings?: number;
   note?: string;
 }
 
@@ -58,20 +56,18 @@ export class StaffShiftRepository {
     };
     if (shiftType) query.shift_type = shiftType;
 
-    return this.model
-      .find({
-        ...query,
-        $expr: { $lt: ['$current_bookings', '$max_bookings'] },
-      })
-      .sort({ start_at: 1 })
-      .exec();
+    // Capacity is per-time-slot (concurrency 1 per washer), resolved by the
+    // caller via wash-window overlap - not a whole-shift counter. So this just
+    // lists scheduled shifts in range.
+    return this.model.find(query).sort({ start_at: 1 }).exec();
   }
 
   /**
    * Returns SCHEDULED shifts that fully contain the wash window
-   * [scheduledAt, scheduledAt + durationMinutes] AND still have capacity.
-   * Sorted by current_bookings ASC then start_at ASC so the caller
-   * load-balances across bays and prefers the earliest-starting shift on ties.
+   * [scheduledAt, scheduledAt + durationMinutes]. Per-slot concurrency (one
+   * wash per washer at a time) is enforced by the caller via overlap, not by a
+   * whole-shift counter. Sorted by current_bookings ASC then start_at ASC so
+   * the caller load-balances across washers and prefers the earliest start.
    */
   async findShiftsContaining(
     scheduledAt: Date,
@@ -83,7 +79,6 @@ export class StaffShiftRepository {
         status: ShiftStatusEnum.SCHEDULED,
         start_at: { $lte: scheduledAt },
         end_at: { $gte: finishAt },
-        $expr: { $lt: ['$current_bookings', '$max_bookings'] },
       })
       .sort({ current_bookings: 1, start_at: 1 })
       .exec();
@@ -101,10 +96,30 @@ export class StaffShiftRepository {
         status: ShiftStatusEnum.SCHEDULED,
         start_at: { $lte: to },
         end_at: { $gte: from },
-        $expr: { $lt: ['$current_bookings', '$max_bookings'] },
       })
       .sort({ start_at: 1 })
       .exec();
+  }
+
+  /**
+   * Non-cancelled shifts for a staff member whose window overlaps
+   * [startAt, endAt]. Used to block double-booking the same person into two
+   * overlapping shifts. `excludeId` skips the shift being updated.
+   */
+  async findOverlappingForStaff(
+    staffId: Types.ObjectId,
+    startAt: Date,
+    endAt: Date,
+    excludeId?: Types.ObjectId | string,
+  ): Promise<StaffShiftDocument[]> {
+    const query: Record<string, unknown> = {
+      staff_id: staffId,
+      status: { $ne: ShiftStatusEnum.CANCELLED },
+      start_at: { $lt: endAt },
+      end_at: { $gt: startAt },
+    };
+    if (excludeId) query._id = { $ne: excludeId };
+    return this.model.find(query).exec();
   }
 
   async findById(
@@ -139,7 +154,7 @@ export class StaffShiftRepository {
       station_name: input.stationName,
       start_at: input.startAt,
       end_at: input.endAt,
-      max_bookings: input.maxBookings,
+      max_bookings: 1, // one washer = one wash at a time
       current_bookings: 0,
       status: ShiftStatusEnum.SCHEDULED,
       note: input.note,
@@ -157,8 +172,6 @@ export class StaffShiftRepository {
       update.station_name = input.stationName;
     if (input.startAt !== undefined) update.start_at = input.startAt;
     if (input.endAt !== undefined) update.end_at = input.endAt;
-    if (input.maxBookings !== undefined)
-      update.max_bookings = input.maxBookings;
     if (input.note !== undefined) update.note = input.note;
 
     return this.model
@@ -176,10 +189,10 @@ export class StaffShiftRepository {
   }
 
   /**
-   * Atomic capacity reservation. Returns the updated doc if the shift
-   * still had capacity (current_bookings < max_bookings AND
-   * status=scheduled), else null. Use this BEFORE creating the
-   * booking document - call decrementCurrentBookings on failure paths.
+   * Bumps the informational booking counter for a SCHEDULED shift (no capacity
+   * gate - per-slot concurrency is checked by the caller via wash-window
+   * overlap before calling this). Returns the updated doc, or null if the shift
+   * is missing / not scheduled. Pair with decrementCurrentBookings on rollback.
    */
   async incrementCurrentBookings(
     id: Types.ObjectId | string,
@@ -190,7 +203,6 @@ export class StaffShiftRepository {
         {
           _id: id,
           status: ShiftStatusEnum.SCHEDULED,
-          $expr: { $lt: ['$current_bookings', '$max_bookings'] },
         },
         { $inc: { current_bookings: 1 } },
         { returnDocument: 'after' },

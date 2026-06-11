@@ -1,15 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
 import {
-  IsDate,
   IsEnum,
-  IsInt,
   IsMongoId,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
-  Min,
 } from 'class-validator';
+import { ShiftBlockEnum } from '../types/shift-block.enum';
 import { ShiftTypeEnum } from '../types/shift-type.enum';
 
 export class UpdateStaffShiftDto {
@@ -29,24 +27,21 @@ export class UpdateStaffShiftDto {
   @MaxLength(80)
   stationName?: string;
 
-  @ApiPropertyOptional({ example: '2026-06-01T08:00:00.000Z' })
+  @ApiPropertyOptional({
+    example: '2026-06-01',
+    description: 'New shift date (YYYY-MM-DD). Provide together with `block`.',
+  })
   @IsOptional()
-  @Type(() => Date)
-  @IsDate()
-  startAt?: Date;
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'date must be YYYY-MM-DD' })
+  date?: string;
 
-  @ApiPropertyOptional({ example: '2026-06-01T12:00:00.000Z' })
+  @ApiPropertyOptional({
+    enum: ShiftBlockEnum,
+    description: 'New working block. Provide together with `date`.',
+  })
   @IsOptional()
-  @Type(() => Date)
-  @IsDate()
-  endAt?: Date;
-
-  @ApiPropertyOptional({ example: 10, minimum: 1 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  maxBookings?: number;
+  @IsEnum(ShiftBlockEnum)
+  block?: ShiftBlockEnum;
 
   @ApiPropertyOptional({ example: 'Morning shift' })
   @IsOptional()

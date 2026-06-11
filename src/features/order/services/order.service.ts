@@ -225,11 +225,11 @@ export class OrderService {
         'No shift covers this time, or all shifts are full',
       );
     }
-    // Per-time-slot concurrency: a candidate shift is only usable if the
-    // number of its active orders whose wash window overlaps this booking's
-    // window [scheduledAt, finishAt) is below max_bookings. This mirrors the
-    // overlap rule in listAvailableSlots so a slot the FE offered is the slot
-    // the POST accepts (barring a concurrent fill).
+    // Per-time-slot concurrency: one washer washes one car at a time, so a
+    // candidate shift is usable only if it has NO active order whose wash
+    // window overlaps this booking's window [scheduledAt, finishAt). This
+    // mirrors the overlap rule in listAvailableSlots so a slot the FE offered
+    // is the slot the POST accepts (barring a concurrent fill).
     const wantStartMs = dto.scheduledAt.getTime();
     const wantEndMs = wantStartMs + cell.estimatedMinutes * 60_000;
     const concurrencyByShift = await this.countConcurrentByShift(
@@ -240,7 +240,7 @@ export class OrderService {
     let reservedShiftId: Types.ObjectId | undefined;
     for (const candidate of candidates) {
       const busy = concurrencyByShift.get(candidate._id.toString()) ?? 0;
-      if (busy >= candidate.max_bookings) continue;
+      if (busy >= 1) continue; // washer already busy in this window
       const ok = await this.staffShiftRepository.incrementCurrentBookings(
         candidate._id,
       );
@@ -600,11 +600,11 @@ export class OrderService {
     const intervalMs =
       this.config.getOrThrow<number>('booking.slotIntervalMinutes') * 60_000;
 
-    // Per-time-slot capacity: a slot's free capacity is the shift's
-    // `max_bookings` minus the orders whose wash window actually OVERLAPS that
-    // slot - not the shift-wide `current_bookings` (which made every slot in a
-    // shift drop together when one was booked). Booking 09:00 only ties up the
-    // washer for [09:00, 09:00 + serviceDuration], so 09:30 stays free.
+    // Per-time-slot capacity: each shift is one washer who washes one car at a
+    // time, so a shift contributes 1 free unit to a slot unless one of its
+    // orders' wash windows OVERLAPS that slot. Booking 09:00 only ties up the
+    // washer for [09:00, 09:00 + serviceDuration], so 09:30 stays free. Total
+    // slot capacity = number of free washers (shifts) covering it.
     // Existing active orders on these shifts → busy windows per shift. Each
     // order carries its own snapshotted duration (now varies by vehicle type),
     // so its busy window is [scheduled_at, scheduled_at + estimated_minutes].
@@ -626,7 +626,6 @@ export class OrderService {
     // slot start (ms) → summed free capacity of every shift covering it.
     const capacityBySlot = new Map<number, number>();
     for (const shift of shifts) {
-      if (shift.max_bookings <= 0) continue;
       const busyWindows = busyWindowsByShift.get(shift._id.toString()) ?? [];
       const shiftEndMs = shift.end_at.getTime();
       // First grid point at or after the shift start.
@@ -642,7 +641,8 @@ export class OrderService {
         for (const [bStart, bEnd] of busyWindows) {
           if (bStart < slotEndMs && slotMs < bEnd) busy++;
         }
-        const free = shift.max_bookings - busy;
+        // One washer per shift → free is 1 (washer idle) or 0 (busy) this slot.
+        const free = busy > 0 ? 0 : 1;
         if (free <= 0) continue;
         capacityBySlot.set(slotMs, (capacityBySlot.get(slotMs) ?? 0) + free);
       }
@@ -676,8 +676,8 @@ export class OrderService {
   /**
    * For each given shift, count its active orders whose wash window overlaps
    * [fromMs, toMs). Used by createOrder/rescheduleOwn to enforce per-time-slot
-   * concurrency (up to max_bookings concurrent washes per slot) instead of the
-   * shift-wide counter.
+   * concurrency (one wash per washer at a time → a count ≥ 1 means full)
+   * instead of the shift-wide counter.
    */
   private async countConcurrentByShift(
     shiftIds: Types.ObjectId[],
@@ -769,7 +769,7 @@ export class OrderService {
       dto.scheduledAt.getTime(),
       finishMs,
     );
-    if ((concurrency.get(dto.staffShiftId) ?? 0) >= newShift.max_bookings) {
+    if ((concurrency.get(dto.staffShiftId) ?? 0) >= 1) {
       throw new ConflictException('New shift is full at this time');
     }
 
