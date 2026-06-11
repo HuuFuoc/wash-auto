@@ -160,7 +160,13 @@ export class WorkOrderService {
     return WorkOrderResponseDto.fromDocument(doc);
   }
 
-  /** Assign (or re-assign) a washer. Allowed only before work starts. */
+  /**
+   * Assign (or re-assign) a washer. Allowed before work starts (WAITING /
+   * ASSIGNED) and after QC sent the ticket back (RETURNED) so a manager can
+   * hand a rejected wash to a different washer instead of being stuck with the
+   * original one. Re-assigning a RETURNED ticket moves it back to ASSIGNED; the
+   * new washer then Starts it (ASSIGNED → IN_PROGRESS). return_count is kept.
+   */
   async assignWasher(
     id: string,
     washerId: string,
@@ -169,7 +175,8 @@ export class WorkOrderService {
     const wo = await this.requireWorkOrder(id);
     if (
       wo.status !== WorkOrderStatusEnum.WAITING &&
-      wo.status !== WorkOrderStatusEnum.ASSIGNED
+      wo.status !== WorkOrderStatusEnum.ASSIGNED &&
+      wo.status !== WorkOrderStatusEnum.RETURNED
     ) {
       throw new BadRequestException(
         `Cannot assign a washer to a work order in status ${wo.status}`,
