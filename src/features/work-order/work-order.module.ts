@@ -7,7 +7,9 @@ import { StaffShiftModule } from '../staff-shift/staff-shift.module';
 import { VehicleTypeModule } from '../vehicle-type/vehicle-type.module';
 import { VehicleModule } from '../vehicle/vehicle.module';
 import { AdminWorkOrderController } from './admin-work-order.controller';
+import { AssignmentService } from './assignment.service';
 import { WorkOrder, WorkOrderSchema } from './entities/work-order.entity';
+import { QueueDrainCron } from './jobs/queue-drain.cron';
 import { WorkOrderRepository } from './repositories/work-order.repository';
 import { WasherWorkOrderController } from './washer-work-order.controller';
 import { WorkOrderService } from './work-order.service';
@@ -25,6 +27,11 @@ import { WorkOrderService } from './work-order.service';
     VehicleTypeModule,
   ],
   controllers: [AdminWorkOrderController, WasherWorkOrderController],
-  providers: [WorkOrderService, WorkOrderRepository],
+  providers: [
+    WorkOrderService,
+    AssignmentService,
+    WorkOrderRepository,
+    QueueDrainCron,
+  ],
 })
 export class WorkOrderModule {}

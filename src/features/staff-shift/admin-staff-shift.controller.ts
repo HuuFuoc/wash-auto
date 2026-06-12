@@ -66,16 +66,17 @@ export class AdminStaffShiftController {
 
   @Post()
   @ApiOperation({
-    summary: 'Create a shift (manager/admin)',
+    summary: 'Create shift(s) (manager/admin)',
     description:
-      'staffId must belong to a user whose role matches shiftType (cashier ↔ cashier, washer ↔ washer). Provide date + block (morning/afternoon); the server derives start/end. status auto=scheduled. Overlapping shifts for the same staff are rejected.',
+      'staffId must belong to a user whose role matches shiftType (cashier ↔ cashier, washer ↔ washer). Provide date + block (morning/afternoon/fullday); the server derives start/end. fullday creates two shifts (morning + afternoon) and returns both. status auto=scheduled. If any block overlaps an existing shift for the same staff, the whole request is rejected (all-or-nothing). Always returns an array.',
   })
-  @ApiResponse({ status: 201, type: StaffShiftResponseDto })
+  @ApiResponse({ status: 201, type: StaffShiftResponseDto, isArray: true })
   @ApiResponse({
     status: 400,
-    description: 'Time invalid, staff missing/inactive, or role mismatch',
+    description:
+      'Time invalid, staff missing/inactive, role mismatch, or overlap',
   })
-  create(@Body() dto: CreateStaffShiftDto): Promise<StaffShiftResponseDto> {
+  create(@Body() dto: CreateStaffShiftDto): Promise<StaffShiftResponseDto[]> {
     return this.service.create(dto);
   }
 

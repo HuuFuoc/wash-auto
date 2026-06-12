@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { User, UserDocument } from '../entities/user.entity';
+import { IWasherSkill, User, UserDocument } from '../entities/user.entity';
 
 type UserQuery = {
   role_id?: Types.ObjectId;
@@ -102,6 +102,45 @@ export class UserRepository {
       .select({ _id: 1 })
       .exec();
     return docs.map((d) => d._id);
+  }
+
+  /**
+   * Active washers whose skill list contains the exact (service, vehicle type)
+   * pair. Skills are only ever set on washers, so an `$elemMatch` hit implies
+   * role=washer. Used by skill-aware booking and the auto-assign engine.
+   */
+  async findWasherIdsWithSkill(
+    serviceTypeId: Types.ObjectId | string,
+    vehicleTypeId: Types.ObjectId | string,
+  ): Promise<Types.ObjectId[]> {
+    const docs = await this.userModel
+      .find({
+        is_active: true,
+        delete_requested_at: { $exists: false },
+        washer_skills: {
+          $elemMatch: {
+            service_type_id: new Types.ObjectId(serviceTypeId),
+            vehicle_type_id: new Types.ObjectId(vehicleTypeId),
+          },
+        },
+      })
+      .select({ _id: 1 })
+      .exec();
+    return docs.map((d) => d._id);
+  }
+
+  /** Replaces a washer's full skill list (set-semantics, not append). */
+  async setWasherSkills(
+    id: Types.ObjectId | string,
+    skills: IWasherSkill[],
+  ): Promise<UserDocument | null> {
+    return this.userModel
+      .findByIdAndUpdate(
+        id,
+        { $set: { washer_skills: skills } },
+        { returnDocument: 'after' },
+      )
+      .exec();
   }
 
   /** Stamps email_verified_at after a successful OTP verification. */

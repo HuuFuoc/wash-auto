@@ -21,6 +21,7 @@ import { ServiceTypeRepository } from '../service-type/repositories/service-type
 import { StaffShiftRepository } from '../staff-shift/repositories/staff-shift.repository';
 import { VehicleTypeRepository } from '../vehicle-type/repositories/vehicle-type.repository';
 import { VehicleRepository } from '../vehicle/repositories/vehicle.repository';
+import { AssignmentService } from './assignment.service';
 import { QcWorkOrderDto } from './dto/qc-work-order.dto';
 import { QueryWorkOrderDto } from './dto/query-work-order.dto';
 import {
@@ -48,6 +49,7 @@ export class WorkOrderService {
     private readonly staffShiftRepository: StaffShiftRepository,
     private readonly userRepository: UserRepository,
     private readonly roleRepository: RoleRepository,
+    private readonly assignmentService: AssignmentService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
@@ -98,6 +100,14 @@ export class WorkOrderService {
         color: vehicle.color,
       },
       serviceName: service.name,
+      // Snapshot the (service, vehicle type) pair + appointment time so the
+      // queue/auto-assign engine is self-contained. preferred_washer_id is the
+      // washer pinned at booking (the booked shift's staff), preferred at
+      // check-in when still eligible.
+      serviceTypeId: order.service_type_id,
+      vehicleTypeId: vehicle.vehicle_type_id,
+      scheduledAt: order.scheduled_at,
+      preferredWasherId: shift?.staff_id,
       // Checklist ticking was removed from the washer flow (Start → Finish →
       // QC). Kept as an empty array for schema/response compatibility.
       checklist: [],
@@ -124,7 +134,21 @@ export class WorkOrderService {
     this.logger.log(
       `Work order ${created.code} created for order ${orderId} by ${actorId}`,
     );
-    return WorkOrderResponseDto.fromDocument(created);
+
+    // Try to auto-assign immediately (event-driven push). A failure here must
+    // never fail check-in — the order is already CHECKED_IN and the ticket
+    // simply stays WAITING for the next free eligible washer.
+    let finalWo = created;
+    try {
+      await this.assignmentService.tryAutoAssign(created);
+      finalWo = (await this.repository.findById(created._id)) ?? created;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `Auto-assign on check-in failed for ${created.code}: ${msg}`,
+      );
+    }
+    return WorkOrderResponseDto.fromDocument(finalWo);
   }
 
   async adminList(query: QueryWorkOrderDto): Promise<WorkOrderListResponseDto> {
@@ -155,13 +179,13 @@ export class WorkOrderService {
     return WorkOrderResponseDto.fromDocument(doc);
   }
 
-  /**
-   * Assign (or re-assign) a washer. Allowed before work starts (WAITING /
-   * ASSIGNED) and after QC sent the ticket back (RETURNED) so a manager can
-   * hand a rejected wash to a different washer instead of being stuck with the
-   * original one. Re-assigning a RETURNED ticket moves it back to ASSIGNED; the
-   * new washer then Starts it (ASSIGNED → IN_PROGRESS). return_count is kept.
-   */
+  /** The WAITING FIFO queue (earliest appointment first, then arrival). */
+  async listQueue(): Promise<WorkOrderResponseDto[]> {
+    const docs = await this.repository.findWaitingQueue();
+    return docs.map((d) => WorkOrderResponseDto.fromDocument(d));
+  }
+
+  /** Assign (or re-assign) a washer. Allowed only before work starts. */
   async assignWasher(
     id: string,
     washerId: string,
@@ -179,8 +203,17 @@ export class WorkOrderService {
     }
     await this.assertActiveWasher(washerId);
 
+    // Manual override still honours the constraints: the washer must be skilled
+    // for this (service, vehicle type) and on an active shift right now.
+    await this.assignmentService.assertWasherCanTake(
+      washerId,
+      wo.service_type_id,
+      wo.vehicle_type_id,
+    );
+
     // A washer handles one car at a time. Block the assignment if they are
-    // already tied to another work order that is ASSIGNED or IN_PROGRESS.
+    // already tied to another work order that is ASSIGNED, IN_PROGRESS or
+    // RETURNED (owing a redo).
     const busy = await this.repository.findActiveByWasher(washerId, id);
     if (busy.length > 0) {
       throw new ConflictException(
@@ -296,6 +329,15 @@ export class WorkOrderService {
     this.logger.log(
       `Work order ${updated.code} finished by washer ${washerId} → QC`,
     );
+
+    // The washer is free again (QUALITY_CHECK does not tie them up) → hand them
+    // the next car in the FIFO queue they are skilled for. Best-effort.
+    try {
+      await this.assignmentService.tryPullNextForWasher(washerId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Pull-next after finish failed: ${msg}`);
+    }
     return WorkOrderResponseDto.fromDocument(updated);
   }
 

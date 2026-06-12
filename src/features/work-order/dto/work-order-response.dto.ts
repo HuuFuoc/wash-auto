@@ -41,6 +41,19 @@ export class WorkOrderResponseDto {
   @ApiProperty({ example: 'Standard Wash' })
   serviceName: string;
 
+  @ApiPropertyOptional({
+    example: '2026-05-22T09:00:00.000Z',
+    description: 'Appointment time copied from the order — the FIFO queue key.',
+  })
+  scheduledAt?: Date;
+
+  @ApiPropertyOptional({
+    example: '6601e3b3f1a2c3a4b5d6e7f8',
+    description:
+      'Washer pinned at booking; auto-assign prefers them at check-in.',
+  })
+  preferredWasherId?: string;
+
   @ApiProperty({ type: ChecklistItemDto, isArray: true })
   checklist: ChecklistItemDto[];
 
@@ -114,6 +127,8 @@ export class WorkOrderResponseDto {
       color: doc.vehicle_snapshot.color,
     };
     dto.serviceName = doc.service_name;
+    dto.scheduledAt = doc.scheduled_at;
+    dto.preferredWasherId = doc.preferred_washer_id?.toString();
     dto.checklist = doc.checklist.map((item) => ({
       label: item.label,
       done: item.done,

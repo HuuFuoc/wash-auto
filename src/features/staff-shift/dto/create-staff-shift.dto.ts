@@ -7,7 +7,7 @@ import {
   Matches,
   MaxLength,
 } from 'class-validator';
-import { ShiftBlockEnum } from '../types/shift-block.enum';
+import { ShiftScheduleEnum } from '../types/shift-schedule.enum';
 import { ShiftTypeEnum } from '../types/shift-type.enum';
 
 export class CreateStaffShiftDto {
@@ -33,14 +33,15 @@ export class CreateStaffShiftDto {
   date: string;
 
   @ApiProperty({
-    enum: ShiftBlockEnum,
-    example: ShiftBlockEnum.MORNING,
+    enum: ShiftScheduleEnum,
+    example: ShiftScheduleEnum.MORNING,
     description:
-      'Fixed working block. Morning = 08:00–12:00, Afternoon = 14:00–17:00 ' +
-      '(VN). The server derives start/end from date + block.',
+      'Shift selection. morning = 08:00–12:00, afternoon = 14:00–17:00, ' +
+      'fullday = both (creates two separate shifts). The server derives ' +
+      'start/end from date + block.',
   })
-  @IsEnum(ShiftBlockEnum)
-  block: ShiftBlockEnum;
+  @IsEnum(ShiftScheduleEnum)
+  block: ShiftScheduleEnum;
 
   @ApiPropertyOptional({ example: 'Morning shift' })
   @IsOptional()

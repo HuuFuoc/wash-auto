@@ -76,6 +76,18 @@ export class AdminWorkOrderController {
     return this.service.adminList(query);
   }
 
+  @Get('queue')
+  @ApiOperation({
+    summary: 'The WAITING FIFO queue',
+    description:
+      'Work orders waiting to be auto-assigned, ordered by appointment time ' +
+      'then arrival. Declared before :id so "queue" is not read as an id.',
+  })
+  @ApiResponse({ status: 200, type: WorkOrderResponseDto, isArray: true })
+  queue(): Promise<WorkOrderResponseDto[]> {
+    return this.service.listQueue();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get one work order by id' })
   @ApiResponse({ status: 200, type: WorkOrderResponseDto })

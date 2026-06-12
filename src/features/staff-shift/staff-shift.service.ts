@@ -20,7 +20,7 @@ import {
   IShiftListFilter,
   StaffShiftRepository,
 } from './repositories/staff-shift.repository';
-import { resolveShiftBlock } from './shift-blocks';
+import { expandSchedule, resolveShiftBlock } from './shift-blocks';
 import { ShiftStatusEnum } from './types/shift-status.enum';
 import { ShiftTypeEnum } from './types/shift-type.enum';
 
@@ -122,25 +122,45 @@ export class StaffShiftService {
     return StaffShiftResponseDto.fromDocument(doc);
   }
 
-  async create(dto: CreateStaffShiftDto): Promise<StaffShiftResponseDto> {
-    // Fixed working block → derive absolute start/end (enforces office hours).
-    const { startAt, endAt } = resolveShiftBlock(dto.date, dto.block);
+  /**
+   * Creates one shift per selected block. `fullday` expands to morning +
+   * afternoon (two records). All blocks are validated before any write, so a
+   * partial overlap (e.g. the staff already has the morning block) rejects the
+   * whole request without creating anything (all-or-nothing).
+   */
+  async create(dto: CreateStaffShiftDto): Promise<StaffShiftResponseDto[]> {
+    const blocks = expandSchedule(dto.block);
+    // Each block → absolute start/end (enforces office hours). The two
+    // fullday windows (08–12, 14–17) are disjoint so they never self-overlap.
+    const windows = blocks.map((block) => resolveShiftBlock(dto.date, block));
+
     await this.assertStaffMatchesShiftType(dto.staffId, dto.shiftType);
-    await this.assertNoStaffShiftOverlap(dto.staffId, startAt, endAt);
-    const created = await this.repository.create({
-      staffId: new Types.ObjectId(dto.staffId),
-      shiftType: dto.shiftType,
-      stationName: dto.stationName,
-      startAt,
-      endAt,
-      note: dto.note,
-    });
-    this.logger.log('Manager created shift', {
-      shiftId: created._id.toString(),
+    // Validate every window first - reject the whole request before any write.
+    for (const { startAt, endAt } of windows) {
+      await this.assertNoStaffShiftOverlap(dto.staffId, startAt, endAt);
+    }
+
+    const created: StaffShiftDocument[] = [];
+    for (const { startAt, endAt } of windows) {
+      created.push(
+        await this.repository.create({
+          staffId: new Types.ObjectId(dto.staffId),
+          shiftType: dto.shiftType,
+          stationName: dto.stationName,
+          startAt,
+          endAt,
+          note: dto.note,
+        }),
+      );
+    }
+
+    this.logger.log('Manager created shift(s)', {
+      shiftIds: created.map((c) => c._id.toString()),
       staffId: dto.staffId,
       type: dto.shiftType,
+      schedule: dto.block,
     });
-    return StaffShiftResponseDto.fromDocument(created);
+    return created.map((doc) => StaffShiftResponseDto.fromDocument(doc));
   }
 
   async update(

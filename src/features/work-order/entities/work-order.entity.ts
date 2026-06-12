@@ -47,6 +47,28 @@ export class WorkOrder {
   @Prop({ required: true, trim: true })
   service_name: string;
 
+  /** Service + vehicle type the job needs, snapshotted at check-in. Drive the
+   *  washer-skill match for auto-assign and manual assign. */
+  @Prop({
+    type: Types.ObjectId,
+    ref: 'ServiceType',
+    required: true,
+    index: true,
+  })
+  service_type_id: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'VehicleType', required: true })
+  vehicle_type_id: Types.ObjectId;
+
+  /** Appointment time copied from the order — the FIFO key for the queue. */
+  @Prop({ required: true })
+  scheduled_at: Date;
+
+  /** Washer pinned at booking (the booked shift's staff). Auto-assign prefers
+   *  this washer at check-in when they are eligible and free. */
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  preferred_washer_id?: Types.ObjectId;
+
   @Prop({
     type: [{ label: String, done: Boolean, done_at: Date }],
     default: [],
@@ -105,3 +127,5 @@ export class WorkOrder {
 
 export const WorkOrderSchema = SchemaFactory.createForClass(WorkOrder);
 WorkOrderSchema.index({ assigned_washer_id: 1, status: 1 });
+// FIFO queue scan: WAITING tickets ordered by appointment time then arrival.
+WorkOrderSchema.index({ status: 1, scheduled_at: 1, created_at: 1 });
