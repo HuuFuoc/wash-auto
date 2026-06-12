@@ -194,7 +194,8 @@ export class WorkOrderService {
     const wo = await this.requireWorkOrder(id);
     if (
       wo.status !== WorkOrderStatusEnum.WAITING &&
-      wo.status !== WorkOrderStatusEnum.ASSIGNED
+      wo.status !== WorkOrderStatusEnum.ASSIGNED &&
+      wo.status !== WorkOrderStatusEnum.RETURNED
     ) {
       throw new BadRequestException(
         `Cannot assign a washer to a work order in status ${wo.status}`,
