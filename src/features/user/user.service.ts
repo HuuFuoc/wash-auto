@@ -11,20 +11,24 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { Types } from 'mongoose';
 import { UserResponseDto } from '../auth/dto/user-response.dto';
-import { UserDocument } from '../auth/entities/user.entity';
+import { IWasherSkill, UserDocument } from '../auth/entities/user.entity';
 import { RoleRepository } from '../auth/repositories/role.repository';
 import {
   IUserListFilter,
   UserRepository,
 } from '../auth/repositories/user.repository';
 import { RoleEnum } from '../auth/types/role.enum';
+import { ServiceTypeRepository } from '../service-type/repositories/service-type.repository';
+import { VehicleTypeRepository } from '../vehicle-type/repositories/vehicle-type.repository';
 import { ChangeUserRoleDto } from './dto/change-user-role.dto';
 import { CreateUserAdminDto } from './dto/create-user-admin.dto';
 import { QueryUserDto } from './dto/query-user.dto';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import { SetUserStatusDto } from './dto/set-user-status.dto';
+import { SetWasherSkillsDto } from './dto/set-washer-skills.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserListResponseDto } from './dto/user-list-response.dto';
+import { WasherSkillsResponseDto } from './dto/washer-skills-response.dto';
 
 @Injectable()
 export class UserService {
@@ -33,6 +37,8 @@ export class UserService {
   constructor(
     private readonly userRepository: UserRepository,
     private readonly roleRepository: RoleRepository,
+    private readonly serviceTypeRepository: ServiceTypeRepository,
+    private readonly vehicleTypeRepository: VehicleTypeRepository,
     private readonly configService: ConfigService,
   ) {}
 
@@ -227,6 +233,93 @@ export class UserService {
       throw new NotFoundException('User not found');
     }
     this.logger.warn('Admin soft-deleted user', { userId: id });
+  }
+
+  // ---------- washer skills ----------
+
+  /** Returns a washer's current (service, vehicle type) skill pairs. */
+  async getWasherSkills(id: string): Promise<WasherSkillsResponseDto> {
+    const user = await this.requireUser(id);
+    await this.assertWasher(user);
+    return WasherSkillsResponseDto.fromDocument(user);
+  }
+
+  /**
+   * Replaces a washer's full skill list. Each pair must reference an active
+   * service whose per-vehicle pricing actually covers that vehicle type (i.e. a
+   * real offering), so a washer can never be skilled at a combination the shop
+   * does not sell. Duplicate pairs are collapsed.
+   */
+  async setWasherSkills(
+    id: string,
+    dto: SetWasherSkillsDto,
+  ): Promise<WasherSkillsResponseDto> {
+    const user = await this.requireUser(id);
+    await this.assertWasher(user);
+
+    // Collapse duplicate (service, vehicle) pairs up front.
+    const seen = new Set<string>();
+    const unique = dto.skills.filter((s) => {
+      const key = `${s.serviceTypeId}:${s.vehicleTypeId}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    // Validate each pair is a real, active service × vehicle-type offering.
+    const serviceCache = new Map<
+      string,
+      Awaited<ReturnType<ServiceTypeRepository['findById']>>
+    >();
+    const skills: IWasherSkill[] = [];
+    for (const pair of unique) {
+      let service = serviceCache.get(pair.serviceTypeId);
+      if (service === undefined) {
+        service = await this.serviceTypeRepository.findById(pair.serviceTypeId);
+        serviceCache.set(pair.serviceTypeId, service);
+      }
+      if (!service || !service.is_active) {
+        throw new BadRequestException(
+          `Service ${pair.serviceTypeId} not found or inactive`,
+        );
+      }
+      const vehicleType = await this.vehicleTypeRepository.findById(
+        pair.vehicleTypeId,
+      );
+      if (!vehicleType) {
+        throw new BadRequestException(
+          `Vehicle type ${pair.vehicleTypeId} not found`,
+        );
+      }
+      const hasCell = (service.vehicle_pricing ?? []).some(
+        (c) =>
+          c.is_active && c.vehicle_type_id.toString() === pair.vehicleTypeId,
+      );
+      if (!hasCell) {
+        throw new BadRequestException(
+          `Service "${service.name}" does not apply to vehicle type ${pair.vehicleTypeId}`,
+        );
+      }
+      skills.push({
+        service_type_id: new Types.ObjectId(pair.serviceTypeId),
+        vehicle_type_id: new Types.ObjectId(pair.vehicleTypeId),
+      });
+    }
+
+    const updated = await this.userRepository.setWasherSkills(id, skills);
+    if (!updated) throw new NotFoundException('User not found');
+    this.logger.log('Set washer skills', {
+      userId: id,
+      skillCount: skills.length,
+    });
+    return WasherSkillsResponseDto.fromDocument(updated);
+  }
+
+  private async assertWasher(user: UserDocument): Promise<void> {
+    const role = await this.roleRepository.findById(user.role_id);
+    if (!role || role.code !== RoleEnum.WASHER) {
+      throw new BadRequestException('User is not a washer');
+    }
   }
 
   private async requireUser(id: string): Promise<UserDocument> {

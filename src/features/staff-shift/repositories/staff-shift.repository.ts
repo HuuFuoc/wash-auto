@@ -6,7 +6,7 @@ import { ShiftStatusEnum } from '../types/shift-status.enum';
 import { ShiftTypeEnum } from '../types/shift-type.enum';
 
 type ShiftQuery = {
-  staff_id?: Types.ObjectId;
+  staff_id?: Types.ObjectId | { $in: Types.ObjectId[] };
   shift_type?: ShiftTypeEnum;
   status?: ShiftStatusEnum | { $in: ShiftStatusEnum[] };
   start_at?: { $gte?: Date; $lte?: Date };
@@ -71,16 +71,41 @@ export class StaffShiftRepository {
   async findShiftsContaining(
     scheduledAt: Date,
     durationMinutes: number,
+    staffIds?: Types.ObjectId[],
   ): Promise<StaffShiftDocument[]> {
+    if (staffIds && staffIds.length === 0) return [];
     const finishAt = new Date(scheduledAt.getTime() + durationMinutes * 60_000);
     return this.model
       .find({
         status: ShiftStatusEnum.SCHEDULED,
         start_at: { $lte: scheduledAt },
         end_at: { $gte: finishAt },
+        ...(staffIds ? { staff_id: { $in: staffIds } } : {}),
       })
       .sort({ start_at: 1 })
       .exec();
+  }
+
+  /**
+   * Staff ids of WASHER shifts currently ACTIVE (clocked in) whose window
+   * covers `now`. Optionally intersected with `staffIds`. Backs auto-assign
+   * eligibility ("washer is on an active shift right now").
+   */
+  async findActiveWasherStaffIdsAt(
+    now: Date,
+    staffIds?: Types.ObjectId[],
+  ): Promise<Types.ObjectId[]> {
+    if (staffIds && staffIds.length === 0) return [];
+    const ids = await this.model
+      .distinct('staff_id', {
+        shift_type: ShiftTypeEnum.WASHER,
+        status: ShiftStatusEnum.ACTIVE,
+        start_at: { $lte: now },
+        end_at: { $gte: now },
+        ...(staffIds ? { staff_id: { $in: staffIds } } : {}),
+      })
+      .exec();
+    return ids;
   }
 
   /**
@@ -89,10 +114,16 @@ export class StaffShiftRepository {
    * extend into it. Used to enumerate bookable slots; the caller still
    * checks that the full wash window fits inside each shift.
    */
-  async findOverlapping(from: Date, to: Date): Promise<StaffShiftDocument[]> {
+  async findOverlapping(
+    from: Date,
+    to: Date,
+    staffIds?: Types.ObjectId[],
+  ): Promise<StaffShiftDocument[]> {
+    if (staffIds && staffIds.length === 0) return [];
     return this.model
       .find({
         status: ShiftStatusEnum.SCHEDULED,
+        ...(staffIds ? { staff_id: { $in: staffIds } } : {}),
         start_at: { $lte: to },
         end_at: { $gte: from },
       })

@@ -14,11 +14,30 @@ export interface ICreateWorkOrderInput {
   code: string;
   vehicleSnapshot: IVehicleSnapshot;
   serviceName: string;
+  serviceTypeId: Types.ObjectId;
+  vehicleTypeId: Types.ObjectId;
+  scheduledAt: Date;
+  preferredWasherId?: Types.ObjectId;
   checklist: IChecklistItem[];
   checkinPhotos?: string[];
   estimatedMinutes: number;
   stationName?: string;
 }
+
+/** A (service, vehicle type) pair used to match WAITING jobs to a washer's skills. */
+export interface ISkillPair {
+  serviceTypeId: Types.ObjectId;
+  vehicleTypeId: Types.ObjectId;
+}
+
+/** Work-order statuses that tie up a washer (cannot take another car). A
+ *  RETURNED ticket counts as busy: the washer owes a redo. QUALITY_CHECK does
+ *  not — the washer physically finished and is free for the next car. */
+export const BUSY_WASHER_STATUSES = [
+  WorkOrderStatusEnum.ASSIGNED,
+  WorkOrderStatusEnum.IN_PROGRESS,
+  WorkOrderStatusEnum.RETURNED,
+];
 
 export interface IUpdateWorkOrderInput {
   status?: WorkOrderStatusEnum;
@@ -57,6 +76,10 @@ export class WorkOrderRepository {
       code: input.code,
       vehicle_snapshot: input.vehicleSnapshot,
       service_name: input.serviceName,
+      service_type_id: input.serviceTypeId,
+      vehicle_type_id: input.vehicleTypeId,
+      scheduled_at: input.scheduledAt,
+      preferred_washer_id: input.preferredWasherId,
       checklist: input.checklist,
       checkin_photos: input.checkinPhotos ?? [],
       status: WorkOrderStatusEnum.WAITING,
@@ -64,6 +87,109 @@ export class WorkOrderRepository {
       station_name: input.stationName,
       return_count: 0,
     });
+  }
+
+  /**
+   * The FIFO queue: WAITING tickets ordered by appointment time, then arrival.
+   * `skillPairs` (optional) restricts to jobs whose (service, vehicle type)
+   * matches one of a washer's skills — used when a washer pulls the next car.
+   */
+  async findWaitingQueue(
+    skillPairs?: ISkillPair[],
+    limit = 100,
+  ): Promise<WorkOrderDocument[]> {
+    const query: Record<string, unknown> = {
+      status: WorkOrderStatusEnum.WAITING,
+    };
+    if (skillPairs) {
+      if (skillPairs.length === 0) return [];
+      query.$or = skillPairs.map((p) => ({
+        service_type_id: p.serviceTypeId,
+        vehicle_type_id: p.vehicleTypeId,
+      }));
+    }
+    return this.model
+      .find(query)
+      .sort({ scheduled_at: 1, created_at: 1 })
+      .limit(limit)
+      .exec();
+  }
+
+  /**
+   * Atomically claims a WAITING ticket for a washer (WAITING → ASSIGNED). The
+   * `status: WAITING` guard makes this a no-op (returns null) if another
+   * assignment already took the ticket, preventing double assignment.
+   */
+  async claimForWasher(
+    id: Types.ObjectId | string,
+    washerId: Types.ObjectId | string,
+    assignedBy?: Types.ObjectId | string,
+  ): Promise<WorkOrderDocument | null> {
+    return this.model
+      .findOneAndUpdate(
+        { _id: id, status: WorkOrderStatusEnum.WAITING },
+        {
+          $set: {
+            status: WorkOrderStatusEnum.ASSIGNED,
+            assigned_washer_id: new Types.ObjectId(washerId),
+            ...(assignedBy
+              ? { assigned_by: new Types.ObjectId(assignedBy) }
+              : {}),
+          },
+        },
+        { returnDocument: 'after' },
+      )
+      .exec();
+  }
+
+  /** Of the given washers, the subset currently tied up (see BUSY_WASHER_STATUSES). */
+  async findBusyWasherIds(
+    washerIds: Array<Types.ObjectId | string>,
+  ): Promise<Set<string>> {
+    if (washerIds.length === 0) return new Set();
+    const ids = await this.model
+      .distinct('assigned_washer_id', {
+        assigned_washer_id: {
+          $in: washerIds.map((w) => new Types.ObjectId(w)),
+        },
+        status: { $in: BUSY_WASHER_STATUSES },
+      })
+      .exec();
+    return new Set(ids.map((id) => id.toString()));
+  }
+
+  /**
+   * Most recent `finished_at` per washer, for the idle-longest tiebreak. A
+   * washer absent from the result has never finished a wash → treat as most
+   * idle (assign first).
+   */
+  async findLastFinishedAtByWashers(
+    washerIds: Array<Types.ObjectId | string>,
+  ): Promise<Map<string, Date>> {
+    const result = new Map<string, Date>();
+    if (washerIds.length === 0) return result;
+    const rows = await this.model
+      .aggregate<{ _id: Types.ObjectId; lastFinishedAt: Date }>([
+        {
+          $match: {
+            assigned_washer_id: {
+              $in: washerIds.map((w) => new Types.ObjectId(w)),
+            },
+            finished_at: { $ne: null },
+          },
+        },
+        {
+          $group: {
+            _id: '$assigned_washer_id',
+            lastFinishedAt: { $max: '$finished_at' },
+          },
+        },
+      ])
+      .exec();
+    for (const row of rows) {
+      result.set(row._id.toString(), row.lastFinishedAt);
+    }
+    return result;
   }
 
   /**
@@ -78,9 +204,7 @@ export class WorkOrderRepository {
     return this.model
       .find({
         assigned_washer_id: new Types.ObjectId(washerId),
-        status: {
-          $in: [WorkOrderStatusEnum.ASSIGNED, WorkOrderStatusEnum.IN_PROGRESS],
-        },
+        status: { $in: BUSY_WASHER_STATUSES },
         ...(excludeId && Types.ObjectId.isValid(excludeId)
           ? { _id: { $ne: new Types.ObjectId(excludeId) } }
           : {}),
