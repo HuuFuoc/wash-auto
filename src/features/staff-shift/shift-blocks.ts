@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { ShiftBlockEnum } from './types/shift-block.enum';
+import { ShiftScheduleEnum } from './types/shift-schedule.enum';
 
 const VN_UTC_OFFSET_MS = 7 * 60 * 60 * 1000;
 
@@ -41,4 +42,20 @@ export function resolveShiftBlock(
     Date.UTC(y, m - 1, d, hours.endHour, 0, 0, 0) - VN_UTC_OFFSET_MS,
   );
   return { startAt, endAt };
+}
+
+/**
+ * Expands a manager's shift selection into the concrete blocks to create.
+ * `FULLDAY` becomes [morning, afternoon] - two separate shift records, each
+ * aligned to a bookable window (no lunch gap inside a single record).
+ */
+export function expandSchedule(schedule: ShiftScheduleEnum): ShiftBlockEnum[] {
+  switch (schedule) {
+    case ShiftScheduleEnum.MORNING:
+      return [ShiftBlockEnum.MORNING];
+    case ShiftScheduleEnum.AFTERNOON:
+      return [ShiftBlockEnum.AFTERNOON];
+    case ShiftScheduleEnum.FULLDAY:
+      return [ShiftBlockEnum.MORNING, ShiftBlockEnum.AFTERNOON];
+  }
 }
