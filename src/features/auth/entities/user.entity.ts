@@ -3,17 +3,6 @@ import { HydratedDocument, Types } from 'mongoose';
 
 export type UserDocument = HydratedDocument<User>;
 
-/**
- * One (service, vehicle type) pair a washer is allowed to handle. Only
- * meaningful for users with role=washer. Auto-assign / manual assign match a
- * job's (service_type_id, vehicle_type_id) against this list before a washer
- * can take the car.
- */
-export interface IWasherSkill {
-  service_type_id: Types.ObjectId;
-  vehicle_type_id: Types.ObjectId;
-}
-
 @Schema({
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
   collection: 'users',
@@ -65,28 +54,6 @@ export class User {
    */
   @Prop({ type: Date })
   email_verified_at?: Date;
-
-  /**
-   * Washer specialisation: the (service, vehicle type) pairs this washer may
-   * service. Empty/undefined for non-washers and for washers with no skills
-   * configured yet (such a washer is never auto-assigned any car).
-   */
-  @Prop({
-    type: [
-      {
-        service_type_id: { type: Types.ObjectId, ref: 'ServiceType' },
-        vehicle_type_id: { type: Types.ObjectId, ref: 'VehicleType' },
-      },
-    ],
-    default: undefined,
-  })
-  washer_skills?: IWasherSkill[];
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
-// Lookup washers able to handle a given (service, vehicle type) pair, used by
-// skill-aware booking and the auto-assign engine.
-UserSchema.index({
-  'washer_skills.service_type_id': 1,
-  'washer_skills.vehicle_type_id': 1,
-});

@@ -203,13 +203,9 @@ export class WorkOrderService {
     }
     await this.assertActiveWasher(washerId);
 
-    // Manual override still honours the constraints: the washer must be skilled
-    // for this (service, vehicle type) and on an active shift right now.
-    await this.assignmentService.assertWasherCanTake(
-      washerId,
-      wo.service_type_id,
-      wo.vehicle_type_id,
-    );
+    // Manual override still honours the constraint: the washer must be on an
+    // active shift right now. Any washer on shift can service any car.
+    await this.assignmentService.assertWasherCanTake(washerId);
 
     // A washer handles one car at a time. Block the assignment if they are
     // already tied to another work order that is ASSIGNED, IN_PROGRESS or
@@ -331,7 +327,7 @@ export class WorkOrderService {
     );
 
     // The washer is free again (QUALITY_CHECK does not tie them up) → hand them
-    // the next car in the FIFO queue they are skilled for. Best-effort.
+    // the next car at the front of the FIFO queue. Best-effort.
     try {
       await this.assignmentService.tryPullNextForWasher(washerId);
     } catch (err) {
