@@ -1,5 +1,6 @@
 import { Logger, Module, OnModuleInit } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { AdminGoldenHourController } from './admin-golden-hour.controller';
 import {
   GoldenHourConfig,
   GoldenHourConfigSchema,
@@ -13,6 +14,7 @@ import { GoldenHourConfigRepository } from './repositories/golden-hour-config.re
       { name: GoldenHourConfig.name, schema: GoldenHourConfigSchema },
     ]),
   ],
+  controllers: [AdminGoldenHourController],
   providers: [GoldenHourService, GoldenHourConfigRepository],
   exports: [GoldenHourService, GoldenHourConfigRepository],
 })

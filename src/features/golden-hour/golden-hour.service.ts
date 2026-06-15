@@ -1,6 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { CreateGoldenHourDto } from './dto/create-golden-hour.dto';
+import { GoldenHourResponseDto } from './dto/golden-hour-response.dto';
+import { UpdateGoldenHourDto } from './dto/update-golden-hour.dto';
 import { GoldenHourConfigDocument } from './entities/golden-hour-config.entity';
 import { GoldenHourConfigRepository } from './repositories/golden-hour-config.repository';
+
+const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
 interface IDefaultGoldenHour {
   name: string;
@@ -43,6 +54,104 @@ export class GoldenHourService {
     this.logger.log(
       `Seeded ${DEFAULT_GOLDEN_HOURS.length} golden_hour_configs`,
     );
+  }
+
+  // ---------- admin CRUD ----------
+
+  /** Every window (active + inactive), earliest start first. */
+  async list(): Promise<GoldenHourResponseDto[]> {
+    const docs = await this.repository.findAll();
+    return docs.map((d) => GoldenHourResponseDto.fromDocument(d));
+  }
+
+  async create(dto: CreateGoldenHourDto): Promise<GoldenHourResponseDto> {
+    const timezone = dto.timezone ?? DEFAULT_TIMEZONE;
+    this.assertWindowValid(dto.startMinute, dto.endMinute, timezone);
+    if (await this.repository.existsByNameExcept(dto.name)) {
+      throw new ConflictException(
+        `A golden hour named "${dto.name}" already exists`,
+      );
+    }
+    const created = await this.repository.create({
+      name: dto.name,
+      daysOfWeek: dto.daysOfWeek ?? [],
+      startMinute: dto.startMinute,
+      endMinute: dto.endMinute,
+      timezone,
+      isActive: true,
+    });
+    this.logger.log('Created golden hour', {
+      id: created._id.toString(),
+      name: created.name,
+    });
+    return GoldenHourResponseDto.fromDocument(created);
+  }
+
+  async update(
+    id: string,
+    dto: UpdateGoldenHourDto,
+  ): Promise<GoldenHourResponseDto> {
+    const existing = await this.repository.findById(id);
+    if (!existing) throw new NotFoundException('Golden hour not found');
+
+    // Validate the window as it would look AFTER the patch (merge with current).
+    const startMinute = dto.startMinute ?? existing.start_minute;
+    const endMinute = dto.endMinute ?? existing.end_minute;
+    const timezone = dto.timezone ?? existing.timezone;
+    this.assertWindowValid(startMinute, endMinute, timezone);
+
+    if (
+      dto.name !== undefined &&
+      (await this.repository.existsByNameExcept(dto.name, id))
+    ) {
+      throw new ConflictException(
+        `A golden hour named "${dto.name}" already exists`,
+      );
+    }
+
+    const updated = await this.repository.updateById(id, {
+      name: dto.name,
+      daysOfWeek: dto.daysOfWeek,
+      startMinute: dto.startMinute,
+      endMinute: dto.endMinute,
+      timezone: dto.timezone,
+      isActive: dto.isActive,
+    });
+    if (!updated) throw new NotFoundException('Golden hour not found');
+    this.logger.log('Updated golden hour', { id });
+    return GoldenHourResponseDto.fromDocument(updated);
+  }
+
+  async remove(id: string): Promise<void> {
+    const deleted = await this.repository.deleteById(id);
+    if (!deleted) throw new NotFoundException('Golden hour not found');
+    this.logger.log('Deleted golden hour', { id });
+  }
+
+  /** Window invariants shared by create + update. */
+  private assertWindowValid(
+    startMinute: number,
+    endMinute: number,
+    timezone: string,
+  ): void {
+    if (endMinute <= startMinute) {
+      throw new BadRequestException(
+        'endMinute must be greater than startMinute',
+      );
+    }
+    if (!this.isValidTimezone(timezone)) {
+      throw new BadRequestException(`Invalid IANA timezone: ${timezone}`);
+    }
+  }
+
+  private isValidTimezone(timezone: string): boolean {
+    try {
+      // Throws RangeError for an unknown IANA zone; .format() forces the probe.
+      new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
