@@ -89,11 +89,12 @@ export class StaffShiftRepository {
   }
 
   /**
-   * Staff ids of WASHER shifts currently ACTIVE (clocked in) whose window
-   * covers `now`. Optionally intersected with `staffIds`. Backs auto-assign
-   * eligibility ("washer is on an active shift right now").
+   * Staff ids of WASHER shifts that cover `now` and are still live - i.e.
+   * SCHEDULED or ACTIVE (CANCELLED/COMPLETED excluded). Optionally intersected
+   * with `staffIds`. Backs auto-assign eligibility: a washer scheduled for the
+   * current window is dispatchable without a manual clock-in to ACTIVE.
    */
-  async findActiveWasherStaffIdsAt(
+  async findOnShiftWasherStaffIdsAt(
     now: Date,
     staffIds?: Types.ObjectId[],
   ): Promise<Types.ObjectId[]> {
@@ -101,7 +102,9 @@ export class StaffShiftRepository {
     const ids = await this.model
       .distinct('staff_id', {
         shift_type: ShiftTypeEnum.WASHER,
-        status: ShiftStatusEnum.ACTIVE,
+        status: {
+          $in: [ShiftStatusEnum.SCHEDULED, ShiftStatusEnum.ACTIVE],
+        },
         start_at: { $lte: now },
         end_at: { $gte: now },
         ...(staffIds ? { staff_id: { $in: staffIds } } : {}),

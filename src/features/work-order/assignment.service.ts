@@ -13,8 +13,9 @@ import { WorkOrderRepository } from './repositories/work-order.repository';
 
 /**
  * Decides which washer should service a checked-in car. A washer is eligible
- * for a job when they are on a washer shift that is ACTIVE right now and free
- * (not already tied up). Any washer on shift can service any car.
+ * for a job when they are on a washer shift covering right now (SCHEDULED or
+ * ACTIVE) and free (not already tied up). Any washer on shift can service any
+ * car - no manual clock-in to ACTIVE is required.
  *
  * Assignment is event-driven push: on check-in, when a washer frees up, and a
  * per-minute cron drain as a safety net. All claims funnel through an atomic
@@ -33,12 +34,12 @@ export class AssignmentService {
   ) {}
 
   /**
-   * Washer ids eligible AND free for any job right now: on-active-shift ∩
-   * not-busy. Any washer on shift can service any car. Returned as id strings.
+   * Washer ids eligible AND free for any job right now: on-shift ∩ not-busy.
+   * Any washer on shift can service any car. Returned as id strings.
    */
   async findEligibleFreeWasherIds(now: Date = new Date()): Promise<string[]> {
     const onShift =
-      await this.staffShiftRepository.findActiveWasherStaffIdsAt(now);
+      await this.staffShiftRepository.findOnShiftWasherStaffIdsAt(now);
     if (onShift.length === 0) return [];
 
     const busy = await this.workOrderRepository.findBusyWasherIds(onShift);
@@ -94,13 +95,14 @@ export class AssignmentService {
     const acquired = await this.acquireLock(lockKey);
     if (!acquired) return false;
     try {
-      // Still free + on an active shift?
+      // Still free + on shift right now?
       const busy = await this.workOrderRepository.findBusyWasherIds([idStr]);
       if (busy.has(idStr)) return false;
       const onShift =
-        await this.staffShiftRepository.findActiveWasherStaffIdsAt(new Date(), [
-          new Types.ObjectId(idStr),
-        ]);
+        await this.staffShiftRepository.findOnShiftWasherStaffIdsAt(
+          new Date(),
+          [new Types.ObjectId(idStr)],
+        );
       if (onShift.length === 0) return false;
 
       const [next] = await this.workOrderRepository.findWaitingQueue(1);
@@ -136,19 +138,18 @@ export class AssignmentService {
   }
 
   /**
-   * Guard for manual assignment: throws when the washer is not on an active
-   * shift right now. Any washer on shift can service any car. (The free / role
-   * checks live in WorkOrderService.assignWasher.)
+   * Guard for manual assignment: throws when the washer is not on shift right
+   * now (no SCHEDULED/ACTIVE washer shift covering the moment). Any washer on
+   * shift can service any car. (The free / role checks live in
+   * WorkOrderService.assignWasher.)
    */
   async assertWasherCanTake(washerId: string): Promise<void> {
-    const onShift = await this.staffShiftRepository.findActiveWasherStaffIdsAt(
+    const onShift = await this.staffShiftRepository.findOnShiftWasherStaffIdsAt(
       new Date(),
       [new Types.ObjectId(washerId)],
     );
     if (onShift.length === 0) {
-      throw new BadRequestException(
-        'Washer is not on an active shift right now',
-      );
+      throw new BadRequestException('Washer is not on shift right now');
     }
   }
 

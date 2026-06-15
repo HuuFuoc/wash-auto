@@ -6,8 +6,8 @@ import { WorkOrderRepository } from './repositories/work-order.repository';
 /**
  * Pure-logic unit tests for the assignment engine. The repositories are
  * mocked, so these exercise the eligibility (on-shift ∩ free) intersection and
- * the preferred-or-idle-longest selection without a database. Any washer on an
- * active shift can service any car - there is no skill gate.
+ * the preferred-or-idle-longest selection without a database. Any washer on
+ * shift can service any car - there is no skill gate.
  */
 describe('AssignmentService', () => {
   let workOrderRepo: jest.Mocked<
@@ -17,7 +17,7 @@ describe('AssignmentService', () => {
     >
   >;
   let staffShiftRepo: jest.Mocked<
-    Pick<StaffShiftRepository, 'findActiveWasherStaffIdsAt'>
+    Pick<StaffShiftRepository, 'findOnShiftWasherStaffIdsAt'>
   >;
   let service: AssignmentService;
 
@@ -26,7 +26,7 @@ describe('AssignmentService', () => {
       findBusyWasherIds: jest.fn(),
       findLastFinishedAtByWashers: jest.fn(),
     };
-    staffShiftRepo = { findActiveWasherStaffIdsAt: jest.fn() };
+    staffShiftRepo = { findOnShiftWasherStaffIdsAt: jest.fn() };
     service = new AssignmentService(
       workOrderRepo as unknown as WorkOrderRepository,
       staffShiftRepo as unknown as StaffShiftRepository,
@@ -35,8 +35,8 @@ describe('AssignmentService', () => {
   });
 
   describe('findEligibleFreeWasherIds', () => {
-    it('returns empty when no washer is on an active shift (no busy lookup)', async () => {
-      staffShiftRepo.findActiveWasherStaffIdsAt.mockResolvedValue([]);
+    it('returns empty when no washer is on shift (no busy lookup)', async () => {
+      staffShiftRepo.findOnShiftWasherStaffIdsAt.mockResolvedValue([]);
 
       const result = await service.findEligibleFreeWasherIds();
 
@@ -47,7 +47,7 @@ describe('AssignmentService', () => {
     it('returns every on-shift washer when none are busy', async () => {
       const a = new Types.ObjectId();
       const b = new Types.ObjectId();
-      staffShiftRepo.findActiveWasherStaffIdsAt.mockResolvedValue([a, b]);
+      staffShiftRepo.findOnShiftWasherStaffIdsAt.mockResolvedValue([a, b]);
       workOrderRepo.findBusyWasherIds.mockResolvedValue(new Set());
 
       const result = await service.findEligibleFreeWasherIds();
@@ -58,7 +58,7 @@ describe('AssignmentService', () => {
     it('removes busy washers from the on-shift set', async () => {
       const a = new Types.ObjectId();
       const b = new Types.ObjectId();
-      staffShiftRepo.findActiveWasherStaffIdsAt.mockResolvedValue([a, b]);
+      staffShiftRepo.findOnShiftWasherStaffIdsAt.mockResolvedValue([a, b]);
       // `a` is busy → only `b` remains eligible.
       workOrderRepo.findBusyWasherIds.mockResolvedValue(
         new Set([a.toString()]),
