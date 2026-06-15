@@ -63,10 +63,11 @@ export class StaffShiftRepository {
   }
 
   /**
-   * Returns SCHEDULED shifts that fully contain the wash window
+   * Returns SCHEDULED washer shifts that fully contain the wash window
    * [scheduledAt, scheduledAt + durationMinutes]. Per-slot concurrency (one
    * wash per washer at a time) is enforced by the caller via overlap. Sorted by
-   * start_at ASC so the caller prefers the earliest-starting shift.
+   * start_at ASC so the caller prefers the earliest-starting shift. Only WASHER
+   * shifts are bookable - any washer on shift can service any car.
    */
   async findShiftsContaining(
     scheduledAt: Date,
@@ -78,6 +79,7 @@ export class StaffShiftRepository {
     return this.model
       .find({
         status: ShiftStatusEnum.SCHEDULED,
+        shift_type: ShiftTypeEnum.WASHER,
         start_at: { $lte: scheduledAt },
         end_at: { $gte: finishAt },
         ...(staffIds ? { staff_id: { $in: staffIds } } : {}),
@@ -109,10 +111,11 @@ export class StaffShiftRepository {
   }
 
   /**
-   * Returns SCHEDULED shifts with spare capacity whose window overlaps
-   * [from, to] at all - including shifts that start before `from` but
-   * extend into it. Used to enumerate bookable slots; the caller still
-   * checks that the full wash window fits inside each shift.
+   * Returns SCHEDULED washer shifts whose window overlaps [from, to] at all -
+   * including shifts that start before `from` but extend into it. Used to
+   * enumerate bookable slots; the caller still checks that the full wash window
+   * fits inside each shift. Only WASHER shifts are bookable - any washer on
+   * shift can service any car.
    */
   async findOverlapping(
     from: Date,
@@ -123,6 +126,7 @@ export class StaffShiftRepository {
     return this.model
       .find({
         status: ShiftStatusEnum.SCHEDULED,
+        shift_type: ShiftTypeEnum.WASHER,
         ...(staffIds ? { staff_id: { $in: staffIds } } : {}),
         start_at: { $lte: to },
         end_at: { $gte: from },

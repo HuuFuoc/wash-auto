@@ -8,7 +8,6 @@ import {
   Param,
   Patch,
   Post,
-  Put,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -30,10 +29,8 @@ import { CreateUserAdminDto } from './dto/create-user-admin.dto';
 import { QueryUserDto } from './dto/query-user.dto';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import { SetUserStatusDto } from './dto/set-user-status.dto';
-import { SetWasherSkillsDto } from './dto/set-washer-skills.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserListResponseDto } from './dto/user-list-response.dto';
-import { WasherSkillsResponseDto } from './dto/washer-skills-response.dto';
 import { UserService } from './user.service';
 
 @ApiTags('admin · users')
@@ -88,40 +85,6 @@ export class AdminUserController {
     @Body() dto: ChangeUserRoleDto,
   ): Promise<UserResponseDto> {
     return this.userService.changeRole(id, dto);
-  }
-
-  @Get(':id/washer-skills')
-  @Roles(RoleEnum.MANAGER, RoleEnum.ADMIN)
-  @ApiOperation({
-    summary: 'Get a washer’s (service, vehicle type) skills (manager/admin)',
-  })
-  @ApiResponse({ status: 200, type: WasherSkillsResponseDto })
-  @ApiResponse({ status: 400, description: 'User is not a washer' })
-  @ApiResponse({ status: 404, description: 'User not found' })
-  getWasherSkills(@Param('id') id: string): Promise<WasherSkillsResponseDto> {
-    return this.userService.getWasherSkills(id);
-  }
-
-  @Put(':id/washer-skills')
-  @Roles(RoleEnum.MANAGER, RoleEnum.ADMIN)
-  @ApiOperation({
-    summary: 'Set a washer’s (service, vehicle type) skills (manager/admin)',
-    description:
-      'Replaces the full skill list. Each pair must be an active service that ' +
-      'applies to the given vehicle type. An empty array clears all skills, ' +
-      'after which the washer is never auto-assigned any car.',
-  })
-  @ApiResponse({ status: 200, type: WasherSkillsResponseDto })
-  @ApiResponse({
-    status: 400,
-    description: 'User is not a washer, or an invalid skill pair',
-  })
-  @ApiResponse({ status: 404, description: 'User not found' })
-  setWasherSkills(
-    @Param('id') id: string,
-    @Body() dto: SetWasherSkillsDto,
-  ): Promise<WasherSkillsResponseDto> {
-    return this.userService.setWasherSkills(id, dto);
   }
 
   @Patch(':id/status')

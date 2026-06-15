@@ -24,12 +24,6 @@ export interface ICreateWorkOrderInput {
   stationName?: string;
 }
 
-/** A (service, vehicle type) pair used to match WAITING jobs to a washer's skills. */
-export interface ISkillPair {
-  serviceTypeId: Types.ObjectId;
-  vehicleTypeId: Types.ObjectId;
-}
-
 /** Work-order statuses that tie up a washer (cannot take another car). A
  *  RETURNED ticket counts as busy: the washer owes a redo. QUALITY_CHECK does
  *  not — the washer physically finished and is free for the next car. */
@@ -91,25 +85,12 @@ export class WorkOrderRepository {
 
   /**
    * The FIFO queue: WAITING tickets ordered by appointment time, then arrival.
-   * `skillPairs` (optional) restricts to jobs whose (service, vehicle type)
-   * matches one of a washer's skills — used when a washer pulls the next car.
+   * Any washer on shift can service any car, so the queue is not filtered by
+   * skill - the front of the queue is the next car for whoever frees up.
    */
-  async findWaitingQueue(
-    skillPairs?: ISkillPair[],
-    limit = 100,
-  ): Promise<WorkOrderDocument[]> {
-    const query: Record<string, unknown> = {
-      status: WorkOrderStatusEnum.WAITING,
-    };
-    if (skillPairs) {
-      if (skillPairs.length === 0) return [];
-      query.$or = skillPairs.map((p) => ({
-        service_type_id: p.serviceTypeId,
-        vehicle_type_id: p.vehicleTypeId,
-      }));
-    }
+  async findWaitingQueue(limit = 100): Promise<WorkOrderDocument[]> {
     return this.model
-      .find(query)
+      .find({ status: WorkOrderStatusEnum.WAITING })
       .sort({ scheduled_at: 1, created_at: 1 })
       .limit(limit)
       .exec();

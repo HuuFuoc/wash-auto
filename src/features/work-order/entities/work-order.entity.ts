@@ -47,8 +47,8 @@ export class WorkOrder {
   @Prop({ required: true, trim: true })
   service_name: string;
 
-  /** Service + vehicle type the job needs, snapshotted at check-in. Drive the
-   *  washer-skill match for auto-assign and manual assign. */
+  /** Service + vehicle type the job needs, snapshotted at check-in. Kept for
+   *  reporting and pricing context (no longer gates washer assignment). */
   @Prop({
     type: Types.ObjectId,
     ref: 'ServiceType',

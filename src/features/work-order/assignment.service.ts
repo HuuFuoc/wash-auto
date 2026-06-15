@@ -7,18 +7,14 @@ import {
 import type Redis from 'ioredis';
 import { Types } from 'mongoose';
 import { REDIS_CLIENT } from '../../core/cache/cache.module';
-import { UserRepository } from '../auth/repositories/user.repository';
 import { StaffShiftRepository } from '../staff-shift/repositories/staff-shift.repository';
 import { WorkOrderDocument } from './entities/work-order.entity';
-import {
-  ISkillPair,
-  WorkOrderRepository,
-} from './repositories/work-order.repository';
+import { WorkOrderRepository } from './repositories/work-order.repository';
 
 /**
  * Decides which washer should service a checked-in car. A washer is eligible
- * for a job only when they are skilled for the job's (service, vehicle type),
- * on a washer shift that is ACTIVE right now, and free (not already tied up).
+ * for a job when they are on a washer shift that is ACTIVE right now and free
+ * (not already tied up). Any washer on shift can service any car.
  *
  * Assignment is event-driven push: on check-in, when a washer frees up, and a
  * per-minute cron drain as a safety net. All claims funnel through an atomic
@@ -32,30 +28,17 @@ export class AssignmentService {
 
   constructor(
     private readonly workOrderRepository: WorkOrderRepository,
-    private readonly userRepository: UserRepository,
     private readonly staffShiftRepository: StaffShiftRepository,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   /**
-   * Washer ids eligible AND free for a (service, vehicle type) job right now:
-   * skilled ∩ on-active-shift ∩ not-busy. Returned as id strings.
+   * Washer ids eligible AND free for any job right now: on-active-shift ∩
+   * not-busy. Any washer on shift can service any car. Returned as id strings.
    */
-  async findEligibleFreeWasherIds(
-    serviceTypeId: Types.ObjectId | string,
-    vehicleTypeId: Types.ObjectId | string,
-    now: Date = new Date(),
-  ): Promise<string[]> {
-    const skilled = await this.userRepository.findWasherIdsWithSkill(
-      serviceTypeId,
-      vehicleTypeId,
-    );
-    if (skilled.length === 0) return [];
-
-    const onShift = await this.staffShiftRepository.findActiveWasherStaffIdsAt(
-      now,
-      skilled,
-    );
+  async findEligibleFreeWasherIds(now: Date = new Date()): Promise<string[]> {
+    const onShift =
+      await this.staffShiftRepository.findActiveWasherStaffIdsAt(now);
     if (onShift.length === 0) return [];
 
     const busy = await this.workOrderRepository.findBusyWasherIds(onShift);
@@ -89,10 +72,7 @@ export class AssignmentService {
    * the ticket stays WAITING and is picked up later when a washer frees up.
    */
   async tryAutoAssign(wo: WorkOrderDocument): Promise<boolean> {
-    const eligible = await this.findEligibleFreeWasherIds(
-      wo.service_type_id,
-      wo.vehicle_type_id,
-    );
+    const eligible = await this.findEligibleFreeWasherIds();
     const washerId = await this.pickWasher(
       eligible,
       wo.preferred_washer_id?.toString(),
@@ -103,7 +83,8 @@ export class AssignmentService {
 
   /**
    * Called when a washer frees up: hands them the front-of-FIFO WAITING car
-   * they are skilled for (earliest appointment, then earliest arrival).
+   * (earliest appointment, then earliest arrival). Any washer on shift can
+   * service any car.
    */
   async tryPullNextForWasher(
     washerId: Types.ObjectId | string,
@@ -122,13 +103,7 @@ export class AssignmentService {
         ]);
       if (onShift.length === 0) return false;
 
-      const skillPairs = await this.skillPairsForWasher(idStr);
-      if (skillPairs.length === 0) return false;
-
-      const [next] = await this.workOrderRepository.findWaitingQueue(
-        skillPairs,
-        1,
-      );
+      const [next] = await this.workOrderRepository.findWaitingQueue(1);
       if (!next) return false;
 
       const claimed = await this.workOrderRepository.claimForWasher(
@@ -152,10 +127,7 @@ export class AssignmentService {
    * just clocked in) run from a per-minute cron. Returns the number assigned.
    */
   async drainQueue(limit = 100): Promise<number> {
-    const queue = await this.workOrderRepository.findWaitingQueue(
-      undefined,
-      limit,
-    );
+    const queue = await this.workOrderRepository.findWaitingQueue(limit);
     let assigned = 0;
     for (const wo of queue) {
       if (await this.tryAutoAssign(wo)) assigned++;
@@ -164,26 +136,11 @@ export class AssignmentService {
   }
 
   /**
-   * Guard for manual assignment: throws when the washer is not skilled for the
-   * job or is not on an active shift right now. (The free / role checks live in
-   * WorkOrderService.assignWasher.)
+   * Guard for manual assignment: throws when the washer is not on an active
+   * shift right now. Any washer on shift can service any car. (The free / role
+   * checks live in WorkOrderService.assignWasher.)
    */
-  async assertWasherCanTake(
-    washerId: string,
-    serviceTypeId: Types.ObjectId | string,
-    vehicleTypeId: Types.ObjectId | string,
-  ): Promise<void> {
-    const skillPairs = await this.skillPairsForWasher(washerId);
-    const skilled = skillPairs.some(
-      (p) =>
-        p.serviceTypeId.toString() === serviceTypeId.toString() &&
-        p.vehicleTypeId.toString() === vehicleTypeId.toString(),
-    );
-    if (!skilled) {
-      throw new BadRequestException(
-        'Washer is not skilled for this service / vehicle type',
-      );
-    }
+  async assertWasherCanTake(washerId: string): Promise<void> {
     const onShift = await this.staffShiftRepository.findActiveWasherStaffIdsAt(
       new Date(),
       [new Types.ObjectId(washerId)],
@@ -222,14 +179,6 @@ export class AssignmentService {
     } finally {
       await this.redis.del(lockKey);
     }
-  }
-
-  private async skillPairsForWasher(washerId: string): Promise<ISkillPair[]> {
-    const washer = await this.userRepository.findById(washerId);
-    return (washer?.washer_skills ?? []).map((s) => ({
-      serviceTypeId: s.service_type_id,
-      vehicleTypeId: s.vehicle_type_id,
-    }));
   }
 
   private lockKey(washerId: string): string {

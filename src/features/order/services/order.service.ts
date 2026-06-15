@@ -18,6 +18,7 @@ import { ServiceTypeDocument } from '../../service-type/entities/service-type.en
 import { ServiceTypeRepository } from '../../service-type/repositories/service-type.repository';
 import { StaffShiftRepository } from '../../staff-shift/repositories/staff-shift.repository';
 import { ShiftStatusEnum } from '../../staff-shift/types/shift-status.enum';
+import { ShiftTypeEnum } from '../../staff-shift/types/shift-type.enum';
 import { TierConfigDocument } from '../../tier-config/entities/tier-config.entity';
 import { TierConfigRepository } from '../../tier-config/repositories/tier-config.repository';
 import { VehicleDocument } from '../../vehicle/entities/vehicle.entity';
@@ -211,26 +212,15 @@ export class OrderService {
       );
     }
 
-    // 6) Auto-pick a shift that contains scheduledAt and has capacity.
-    //    Loop because findShiftsContaining is a non-transactional read -
-    //    a concurrent booking may have filled the candidate between the
-    //    read and the atomic increment.
-    // Skill-aware (model A): only shifts of washers skilled for this exact
-    // (service, vehicle type) pair can take the booking. No skilled washer →
-    // reject up front so we never accept a job no washer can service.
-    const skilledWasherIds = await this.userRepository.findWasherIdsWithSkill(
-      dto.serviceTypeId,
-      vehicleTypeId,
-    );
-    if (skilledWasherIds.length === 0) {
-      throw new ConflictException(
-        'No washer is skilled for this service and vehicle type',
-      );
-    }
+    // 6) Auto-pick a washer shift that contains scheduledAt and is free.
+    //    Any washer on a scheduled shift can service any car, so we just need a
+    //    washer shift covering the window. findShiftsContaining is a
+    //    non-transactional read - a concurrent booking may have filled the
+    //    candidate between the read and the claim, so the per-slot concurrency
+    //    check below still decides.
     const candidates = await this.staffShiftRepository.findShiftsContaining(
       dto.scheduledAt,
       cell.estimatedMinutes,
-      skilledWasherIds,
     );
     if (candidates.length === 0) {
       throw new ConflictException(
@@ -593,19 +583,11 @@ export class OrderService {
     const windowEndMs = Math.min(dto.to.getTime(), tierMaxMs);
     if (windowStartMs > windowEndMs) return [];
 
-    // Skill-aware (model A): only count shifts of washers skilled for this
-    // (service, vehicle type) pair, so every offered slot is one a washer can
-    // actually service. None skilled → no bookable slots.
-    const skilledWasherIds = await this.userRepository.findWasherIdsWithSkill(
-      dto.serviceTypeId,
-      dto.vehicleTypeId,
-    );
-    if (skilledWasherIds.length === 0) return [];
-
+    // Any washer on a scheduled shift can service any car, so every overlapping
+    // washer shift in the window contributes bookable slots.
     const shifts = await this.staffShiftRepository.findOverlapping(
       new Date(windowStartMs),
       new Date(windowEndMs),
-      skilledWasherIds,
     );
 
     const intervalMs =
@@ -739,7 +721,11 @@ export class OrderService {
     }
 
     const newShift = await this.staffShiftRepository.findById(dto.staffShiftId);
-    if (!newShift || newShift.status !== ShiftStatusEnum.SCHEDULED) {
+    if (
+      !newShift ||
+      newShift.status !== ShiftStatusEnum.SCHEDULED ||
+      newShift.shift_type !== ShiftTypeEnum.WASHER
+    ) {
       throw new BadRequestException('New shift not available');
     }
     if (
@@ -751,25 +737,6 @@ export class OrderService {
       );
     }
 
-    // Skill-aware (model A): the new shift's washer must be skilled for this
-    // order's (service, vehicle type), otherwise the moved car could not be
-    // serviced there.
-    const vehicle = await this.vehicleRepository.findById(order.vehicle_id);
-    if (!vehicle) throw new BadRequestException('Order vehicle missing');
-    const skilledForReschedule =
-      await this.userRepository.findWasherIdsWithSkill(
-        order.service_type_id,
-        vehicle.vehicle_type_id,
-      );
-    if (
-      !skilledForReschedule.some(
-        (id) => id.toString() === newShift.staff_id.toString(),
-      )
-    ) {
-      throw new BadRequestException(
-        'Selected shift’s washer is not skilled for this service and vehicle type',
-      );
-    }
     if (dto.scheduledAt.getTime() < Date.now() - 60_000) {
       throw new BadRequestException('scheduledAt must be in the future');
     }
