@@ -7,6 +7,7 @@ import { AuthModule } from '../auth/auth.module';
 import { EmailModule } from '../email/email.module';
 import { GoldenHourModule } from '../golden-hour/golden-hour.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
+import { PricingPolicyModule } from '../pricing-policy/pricing-policy.module';
 import { ServiceTypeModule } from '../service-type/service-type.module';
 import { StaffShiftModule } from '../staff-shift/staff-shift.module';
 import { TierConfigModule } from '../tier-config/tier-config.module';
@@ -42,6 +43,7 @@ import { PayosService } from './services/payos.service';
     LoyaltyModule,
     VoucherModule,
     GoldenHourModule,
+    PricingPolicyModule,
   ],
   controllers: [
     OrderController,

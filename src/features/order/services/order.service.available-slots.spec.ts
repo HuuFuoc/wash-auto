@@ -34,6 +34,7 @@ describe('OrderService.listAvailableSlots (skill-agnostic)', () => {
   let tierConfigRepository: { findById: jest.Mock };
   let loyaltyService: { ensureForCustomer: jest.Mock };
   let goldenHourService: { findActiveAt: jest.Mock };
+  let pricingPolicyService: { getMaxStackedDiscountPercent: jest.Mock };
   let config: { getOrThrow: jest.Mock };
   let userRepository: Record<string, never>;
   let service: OrderService;
@@ -67,6 +68,9 @@ describe('OrderService.listAvailableSlots (skill-agnostic)', () => {
         .mockResolvedValue({ tier_config_id: new Types.ObjectId() }),
     };
     goldenHourService = { findActiveAt: jest.fn().mockResolvedValue(null) };
+    pricingPolicyService = {
+      getMaxStackedDiscountPercent: jest.fn().mockResolvedValue(50),
+    };
     config = { getOrThrow: jest.fn().mockReturnValue(30) };
     userRepository = {};
 
@@ -88,6 +92,7 @@ describe('OrderService.listAvailableSlots (skill-agnostic)', () => {
       {} as never, // emailService
       config as never,
       {} as never, // redis
+      pricingPolicyService as never,
     );
   });
 
@@ -118,5 +123,67 @@ describe('OrderService.listAvailableSlots (skill-agnostic)', () => {
     const slots = await service.listAvailableSlots('customer-1', dto);
 
     expect(slots).toEqual([]);
+  });
+
+  it('stacks the golden-hour window discount on the tier discount', async () => {
+    tierConfigRepository.findById.mockResolvedValue({
+      booking_window_days: 3650,
+      discount_percent: 10,
+    });
+    goldenHourService.findActiveAt.mockResolvedValue({
+      name: 'Morning',
+      discount_percent: 15,
+    });
+
+    const slots = await service.listAvailableSlots('customer-1', dto);
+
+    expect(slots.every((s) => s.isGoldenHour)).toBe(true);
+    // 15 (window) + 10 (tier) = 25, under the 50% cap.
+    expect(slots.every((s) => s.discountPercent === 25)).toBe(true);
+  });
+
+  it('clamps the stacked discount to the 50% ceiling', async () => {
+    tierConfigRepository.findById.mockResolvedValue({
+      booking_window_days: 3650,
+      discount_percent: 10,
+    });
+    goldenHourService.findActiveAt.mockResolvedValue({
+      name: 'Mega',
+      discount_percent: 45,
+    });
+
+    const slots = await service.listAvailableSlots('customer-1', dto);
+
+    // 45 + 10 = 55 → capped at 50.
+    expect(slots.every((s) => s.discountPercent === 50)).toBe(true);
+  });
+
+  it('grants the window discount to a None-tier customer (0% tier)', async () => {
+    // tier discount stays 0 (default mock); the window alone drives the saving.
+    goldenHourService.findActiveAt.mockResolvedValue({
+      name: 'Morning',
+      discount_percent: 12,
+    });
+
+    const slots = await service.listAvailableSlots('customer-1', dto);
+
+    expect(slots.every((s) => s.discountPercent === 12)).toBe(true);
+  });
+
+  it('honours the admin-configured pricing-policy cap', async () => {
+    pricingPolicyService.getMaxStackedDiscountPercent.mockResolvedValue(20);
+    tierConfigRepository.findById.mockResolvedValue({
+      booking_window_days: 3650,
+      discount_percent: 10,
+    });
+    goldenHourService.findActiveAt.mockResolvedValue({
+      name: 'Morning',
+      discount_percent: 15,
+    });
+
+    const slots = await service.listAvailableSlots('customer-1', dto);
+
+    // 15 + 10 = 25 → clamped to the policy cap of 20, not the old 50.
+    expect(slots.every((s) => s.discountPercent === 20)).toBe(true);
   });
 });

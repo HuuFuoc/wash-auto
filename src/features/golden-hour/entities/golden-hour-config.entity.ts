@@ -29,6 +29,13 @@ export class GoldenHourConfig {
   @Prop({ required: true, default: 'Asia/Ho_Chi_Minh' })
   timezone: string;
 
+  // Discount this window contributes, stacked additively on top of the
+  // customer's tier discount (capped by the admin-configured pricing policy at
+  // pricing time). 0 means the window only gates the tier discount, as
+  // before. Default 0 keeps existing windows behaving exactly as they did.
+  @Prop({ required: true, default: 0, min: 0, max: 100 })
+  discount_percent: number;
+
   @Prop({ default: true, index: true })
   is_active: boolean;
 }
