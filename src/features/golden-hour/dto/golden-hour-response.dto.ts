@@ -42,6 +42,14 @@ export class GoldenHourResponseDto {
   @ApiProperty({ example: 'Asia/Ho_Chi_Minh' })
   timezone: string;
 
+  @ApiProperty({
+    example: 10,
+    description:
+      'Discount percent this window grants, stacked on the tier discount ' +
+      '(total capped at 50% before vouchers).',
+  })
+  discountPercent: number;
+
   @ApiProperty({ example: true })
   isActive: boolean;
 
@@ -55,6 +63,7 @@ export class GoldenHourResponseDto {
     dto.startTime = toClock(doc.start_minute);
     dto.endTime = toClock(doc.end_minute);
     dto.timezone = doc.timezone;
+    dto.discountPercent = doc.discount_percent ?? 0;
     dto.isActive = doc.is_active;
     return dto;
   }

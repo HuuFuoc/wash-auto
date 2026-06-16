@@ -20,6 +20,7 @@ export interface ICreateGoldenHourInput {
   startMinute: number;
   endMinute: number;
   timezone: string;
+  discountPercent: number;
   isActive: boolean;
 }
 
@@ -29,6 +30,7 @@ export interface IUpdateGoldenHourInput {
   startMinute?: number;
   endMinute?: number;
   timezone?: string;
+  discountPercent?: number;
   isActive?: boolean;
 }
 
@@ -79,6 +81,7 @@ export class GoldenHourConfigRepository {
       start_minute: input.startMinute,
       end_minute: input.endMinute,
       timezone: input.timezone,
+      discount_percent: input.discountPercent,
       is_active: input.isActive,
     });
   }
@@ -94,6 +97,8 @@ export class GoldenHourConfigRepository {
       update.start_minute = input.startMinute;
     if (input.endMinute !== undefined) update.end_minute = input.endMinute;
     if (input.timezone !== undefined) update.timezone = input.timezone;
+    if (input.discountPercent !== undefined)
+      update.discount_percent = input.discountPercent;
     if (input.isActive !== undefined) update.is_active = input.isActive;
 
     return this.model

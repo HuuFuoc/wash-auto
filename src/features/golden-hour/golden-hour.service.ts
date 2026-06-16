@@ -78,6 +78,7 @@ export class GoldenHourService {
       startMinute: dto.startMinute,
       endMinute: dto.endMinute,
       timezone,
+      discountPercent: dto.discountPercent ?? 0,
       isActive: true,
     });
     this.logger.log('Created golden hour', {
@@ -115,6 +116,7 @@ export class GoldenHourService {
       startMinute: dto.startMinute,
       endMinute: dto.endMinute,
       timezone: dto.timezone,
+      discountPercent: dto.discountPercent,
       isActive: dto.isActive,
     });
     if (!updated) throw new NotFoundException('Golden hour not found');

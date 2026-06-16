@@ -23,6 +23,7 @@ import { DashboardModule } from './features/dashboard/dashboard.module';
 import { GoldenHourModule } from './features/golden-hour/golden-hour.module';
 import { LoyaltyModule } from './features/loyalty/loyalty.module';
 import { OrderModule } from './features/order/order.module';
+import { PricingPolicyModule } from './features/pricing-policy/pricing-policy.module';
 import { ServiceTypeModule } from './features/service-type/service-type.module';
 import { StaffShiftModule } from './features/staff-shift/staff-shift.module';
 import { TierConfigModule } from './features/tier-config/tier-config.module';
@@ -65,6 +66,7 @@ import { WorkOrderModule } from './features/work-order/work-order.module';
     TierConfigModule,
     VoucherModule,
     GoldenHourModule,
+    PricingPolicyModule,
     LoyaltyModule,
     StaffShiftModule,
     OrderModule,

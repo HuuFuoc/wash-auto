@@ -14,6 +14,7 @@ import { UserRepository } from '../../auth/repositories/user.repository';
 import { EmailService } from '../../email/email.service';
 import { GoldenHourService } from '../../golden-hour/golden-hour.service';
 import { LoyaltyService } from '../../loyalty/loyalty.service';
+import { PricingPolicyService } from '../../pricing-policy/pricing-policy.service';
 import { ServiceTypeDocument } from '../../service-type/entities/service-type.entity';
 import { ServiceTypeRepository } from '../../service-type/repositories/service-type.repository';
 import { StaffShiftRepository } from '../../staff-shift/repositories/staff-shift.repository';
@@ -57,6 +58,18 @@ import { PayosService } from './payos.service';
 
 const TXN_DEDUP_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 const MAX_SLOT_RANGE_MS = 31 * 24 * 60 * 60 * 1000; // slot query cap
+
+/**
+ * Golden-hour window discount + tier discount, clamped to the admin-configured
+ * pricing-policy cap. The voucher path stacks after this with its own VND cap.
+ */
+function stackedDiscountPercent(
+  windowDiscountPercent: number,
+  tierDiscountPercent: number,
+  capPercent: number,
+): number {
+  return Math.min(windowDiscountPercent + tierDiscountPercent, capPercent);
+}
 
 // Office hours the shop offers bookings for, in Vietnam local time (UTC+7):
 // 08:00–12:00 in the morning and 14:00–17:00 in the afternoon (midday break
@@ -104,6 +117,7 @@ export class OrderService {
     private readonly emailService: EmailService,
     private readonly config: ConfigService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly pricingPolicyService: PricingPolicyService,
   ) {}
 
   /**
@@ -271,10 +285,10 @@ export class OrderService {
       createdVehicleId = vehicleObjId;
     }
 
-    // 8) Compute amount: start from service base price, then apply
-    //    golden-hour tier discount (if scheduledAt falls inside an active
-    //    window AND tier has a discount), then optionally stack a FREE_WASH
-    //    voucher capped at `voucher.discount_cap_vnd`. The voucher used to
+    // 8) Compute amount: start from service base price, then apply the
+    //    golden-hour discount (window discount + tier discount, clamped) when
+    //    scheduledAt falls inside an active window, then optionally stack a
+    //    FREE_WASH voucher capped at `voucher.discount_cap_vnd`. The voucher used to
     //    zero the order out (100% off); it now stacks with golden hour and
     //    is capped so a voucher minted off Basic washes cannot be redeemed
     //    against a Detailing service for more than its configured ceiling.
@@ -641,16 +655,18 @@ export class OrderService {
       }
     }
 
-    // Annotate every slot with the golden-hour flag and the tier discount
-    // percent the caller would earn if they booked it. `isGoldenHour` is the
-    // literal "scheduled_at falls inside an active window" - true even for
-    // None-tier customers (FE can use it to suggest upgrading) - while
-    // `discountPercent` is what the caller would actually save. Looking up
-    // the golden-hour window directly (instead of computeOrderPricing) avoids
-    // the early-return in computeOrderPricing that masks None-tier slots.
+    // Annotate every slot with the golden-hour flag and the discount the
+    // caller would earn if they booked it. `isGoldenHour` is the literal
+    // "scheduled_at falls inside an active window" - true even for None-tier
+    // customers (FE can use it to suggest upgrading) - while `discountPercent`
+    // is the window discount stacked on the tier discount (clamped), exactly
+    // what computeOrderPricing charges. None-tier customers still earn the
+    // window's own discount, so the look-up mirrors the pricing path.
     const sortedEntries = [...capacityBySlot.entries()].sort(
       ([a], [b]) => a - b,
     );
+    const capPercent =
+      await this.pricingPolicyService.getMaxStackedDiscountPercent();
     const annotated = await Promise.all(
       sortedEntries.map(async ([ms, capacity]) => {
         const scheduledAt = new Date(ms);
@@ -659,7 +675,13 @@ export class OrderService {
         slot.scheduledAt = scheduledAt;
         slot.remainingCapacity = capacity;
         slot.isGoldenHour = !!window;
-        slot.discountPercent = window ? tier.discount_percent : 0;
+        slot.discountPercent = window
+          ? stackedDiscountPercent(
+              window.discount_percent ?? 0,
+              tier.discount_percent,
+              capPercent,
+            )
+          : 0;
         return slot;
       }),
     );
@@ -1251,11 +1273,13 @@ export class OrderService {
   }
 
   /**
-   * Resolves the booking-time price: applies the customer's tier discount
-   * percent when scheduledAt lands inside an active golden-hour window.
-   * Outside golden hours OR when the tier carries no discount, the original
-   * price is returned untouched. The voucher path overrides this entirely
-   * (handled by the caller).
+   * Resolves the booking-time price. Golden hour is the gate: only a
+   * scheduledAt inside an active window earns a discount. Inside the window the
+   * window's own discount stacks additively on the customer's tier discount,
+   * clamped to the admin-configured pricing-policy cap. Outside any window, or
+   * when the combined discount is zero, the original price is returned
+   * untouched. The
+   * voucher path stacks on top of this (handled by the caller).
    */
   private async computeOrderPricing(
     scheduledAt: Date,
@@ -1267,22 +1291,27 @@ export class OrderService {
     discountPercent: number;
     discountReason?: string;
   }> {
-    if (tier.discount_percent <= 0) {
-      return { amount: originalAmount, discountAmount: 0, discountPercent: 0 };
-    }
     const window = await this.goldenHourService.findActiveAt(scheduledAt);
     if (!window) {
       return { amount: originalAmount, discountAmount: 0, discountPercent: 0 };
     }
-    const discountAmount = Math.round(
-      (originalAmount * tier.discount_percent) / 100,
+    const capPercent =
+      await this.pricingPolicyService.getMaxStackedDiscountPercent();
+    const discountPercent = stackedDiscountPercent(
+      window.discount_percent ?? 0,
+      tier.discount_percent,
+      capPercent,
     );
+    if (discountPercent <= 0) {
+      return { amount: originalAmount, discountAmount: 0, discountPercent: 0 };
+    }
+    const discountAmount = Math.round((originalAmount * discountPercent) / 100);
     const amount = Math.max(0, originalAmount - discountAmount);
     return {
       amount,
       discountAmount,
-      discountPercent: tier.discount_percent,
-      discountReason: `golden_hour:${tier.tier_name}`,
+      discountPercent,
+      discountReason: `golden_hour:${window.name}+tier:${tier.tier_name}`,
     };
   }
 

@@ -71,4 +71,21 @@ export class CreateGoldenHourDto {
   @IsString()
   @IsNotEmpty()
   timezone?: string;
+
+  @ApiPropertyOptional({
+    example: 10,
+    default: 0,
+    minimum: 0,
+    maximum: 100,
+    description:
+      'Discount percent this window grants, stacked on top of the tier ' +
+      'discount (total capped at 50% before vouchers). 0 = window only gates ' +
+      'the tier discount.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  discountPercent?: number;
 }

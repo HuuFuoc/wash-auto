@@ -81,11 +81,25 @@ describe('GoldenHourService admin CRUD', () => {
         startMinute: 480,
         endMinute: 600,
         timezone: 'Asia/Ho_Chi_Minh',
+        discountPercent: 0,
         isActive: true,
       });
       expect(res.startTime).toBe('08:00');
       expect(res.endTime).toBe('10:00');
       expect(res.isActive).toBe(true);
+      expect(res.discountPercent).toBe(0);
+    });
+
+    it('threads discountPercent through to the repository and response', async () => {
+      repo.existsByNameExcept.mockResolvedValue(false);
+      repo.create.mockResolvedValue(doc({ name: 'X', discount_percent: 15 }));
+
+      const res = await service.create({ ...base, discountPercent: 15 });
+
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ discountPercent: 15 }),
+      );
+      expect(res.discountPercent).toBe(15);
     });
   });
 
