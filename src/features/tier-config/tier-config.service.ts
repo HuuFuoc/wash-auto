@@ -22,20 +22,22 @@ interface IDefaultTier {
 }
 
 // 4-tier loyalty ladder driven by accumulated loyalty points.
-//   None   - <   200  điểm,  0% giảm
+//   None   - <   200  điểm,  2% giảm
 //   Bronze - >=  200  điểm,  5% giảm
-//   Silver - >=  500  điểm, 10% giảm
-//   Gold   - >= 1500  điểm, 10% giảm (raised from 1000 + dropped from 15%)
+//   Silver - >=  500  điểm,  8% giảm
+//   Gold   - >= 1500  điểm, 10% giảm
 //
 // Tier discount only applies when the booking falls inside a configured
-// golden hour (see GoldenHourConfigService). Gold was tuned from
-// "1000 điểm / 15%" to "1500 điểm / 10%" after the economic audit
-// (docs/ECONOMIC_GUARDRAILS.md §3) - the previous combination
-// produced a worst-case margin of ~1% on a Detailing order in
-// golden hour with a voucher applied, which is too close to the
-// break-even line for any cost overrun (water price hike, washer
-// overtime). The new combination keeps gross margin ≥ 10% on the
-// same worst case while still rewarding loyal customers.
+// golden hour (see GoldenHourConfigService).
+//
+// 2026-06-15 (product decision): every tier - including the base "None"
+// (new member) - now carries a golden-hour discount, each rank distinct
+// and ascending (2 / 5 / 8 / 10). Previously None was 0% (no discount for
+// new members) and Silver/Gold were both 10% (indistinct). Giving None a
+// 2% golden-hour discount lowers the worst-case margin vs the prior audit
+// (docs/ECONOMIC_GUARDRAILS.md §3, which assumed None = 0%); Gold is kept
+// at 10% so the loyal-customer worst case is unchanged. Revisit the
+// guardrails doc if cost assumptions (water price, washer overtime) move.
 const DEFAULT_TIERS: IDefaultTier[] = [
   {
     tierName: TierNameEnum.NONE,
@@ -43,7 +45,7 @@ const DEFAULT_TIERS: IDefaultTier[] = [
     bookingWindowDays: 7,
     priorityLevel: 0,
     pointsPer1000Vnd: 1,
-    discountPercent: 0,
+    discountPercent: 2,
   },
   {
     tierName: TierNameEnum.BRONZE,
@@ -59,7 +61,7 @@ const DEFAULT_TIERS: IDefaultTier[] = [
     bookingWindowDays: 12,
     priorityLevel: 2,
     pointsPer1000Vnd: 2,
-    discountPercent: 10,
+    discountPercent: 8,
   },
   {
     tierName: TierNameEnum.GOLD,
