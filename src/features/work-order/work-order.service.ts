@@ -108,9 +108,6 @@ export class WorkOrderService {
       vehicleTypeId: vehicle.vehicle_type_id,
       scheduledAt: order.scheduled_at,
       preferredWasherId: shift?.staff_id,
-      // Checklist ticking was removed from the washer flow (Start → Finish →
-      // QC). Kept as an empty array for schema/response compatibility.
-      checklist: [],
       checkinPhotos,
       // Duration was snapshotted on the order at booking (varies by vehicle
       // type); fall back to the service default for legacy orders only.
@@ -308,18 +305,29 @@ export class WorkOrderService {
     return WorkOrderResponseDto.fromDocument(updated);
   }
 
-  /** Washer finishes the wash. IN_PROGRESS → QUALITY_CHECK. */
-  async finish(washerId: string, id: string): Promise<WorkOrderResponseDto> {
+  /** Washer finishes the wash. IN_PROGRESS → QUALITY_CHECK. The washer must
+   *  attach at least one post-wash photo so the cashier has evidence at QC. */
+  async finish(
+    washerId: string,
+    id: string,
+    checkoutPhotos: string[],
+  ): Promise<WorkOrderResponseDto> {
     const wo = await this.requireAssignedToWasher(id, washerId);
     if (wo.status !== WorkOrderStatusEnum.IN_PROGRESS) {
       throw new BadRequestException(
         `Cannot finish a work order in status ${wo.status}`,
       );
     }
+    if (!checkoutPhotos || checkoutPhotos.length === 0) {
+      throw new BadRequestException(
+        'At least one post-wash photo is required to finish the wash',
+      );
+    }
 
     const updated = await this.repository.updateById(id, {
       status: WorkOrderStatusEnum.QUALITY_CHECK,
       finishedAt: new Date(),
+      checkoutPhotos,
     });
     if (!updated) throw new NotFoundException('Work order not found');
     this.logger.log(

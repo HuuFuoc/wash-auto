@@ -14,17 +14,6 @@ class VehicleSnapshotDto {
   color?: string;
 }
 
-class ChecklistItemDto {
-  @ApiProperty({ example: 'Rửa thân xe' })
-  label: string;
-
-  @ApiProperty({ example: false })
-  done: boolean;
-
-  @ApiPropertyOptional({ example: '2026-05-22T09:15:00.000Z' })
-  doneAt?: Date;
-}
-
 export class WorkOrderResponseDto {
   @ApiProperty({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
   id: string;
@@ -54,15 +43,21 @@ export class WorkOrderResponseDto {
   })
   preferredWasherId?: string;
 
-  @ApiProperty({ type: ChecklistItemDto, isArray: true })
-  checklist: ChecklistItemDto[];
-
   @ApiProperty({
     type: [String],
     example: ['https://cdn.example.com/checkin/abc-front.jpg'],
     description: 'Vehicle photos the cashier captured at check-in.',
   })
   checkinPhotos: string[];
+
+  @ApiProperty({
+    type: [String],
+    example: ['https://cdn.example.com/checkout/abc-front.jpg'],
+    description:
+      'Post-wash photos the washer uploaded at finish. The cashier reviews ' +
+      'these during quality check.',
+  })
+  checkoutPhotos: string[];
 
   @ApiProperty({
     enum: WorkOrderStatusEnum,
@@ -129,12 +124,8 @@ export class WorkOrderResponseDto {
     dto.serviceName = doc.service_name;
     dto.scheduledAt = doc.scheduled_at;
     dto.preferredWasherId = doc.preferred_washer_id?.toString();
-    dto.checklist = doc.checklist.map((item) => ({
-      label: item.label,
-      done: item.done,
-      doneAt: item.done_at,
-    }));
     dto.checkinPhotos = doc.checkin_photos ?? [];
+    dto.checkoutPhotos = doc.checkout_photos ?? [];
     dto.status = doc.status;
     // assigned_washer_id may be a raw ObjectId or a populated user sub-doc.
     const washer: unknown = doc.assigned_washer_id;

@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import {
-  IChecklistItem,
   IVehicleSnapshot,
   WorkOrder,
   WorkOrderDocument,
@@ -18,7 +17,6 @@ export interface ICreateWorkOrderInput {
   vehicleTypeId: Types.ObjectId;
   scheduledAt: Date;
   preferredWasherId?: Types.ObjectId;
-  checklist: IChecklistItem[];
   checkinPhotos?: string[];
   estimatedMinutes: number;
   stationName?: string;
@@ -37,7 +35,7 @@ export interface IUpdateWorkOrderInput {
   status?: WorkOrderStatusEnum;
   assignedWasherId?: Types.ObjectId;
   assignedBy?: Types.ObjectId;
-  checklist?: IChecklistItem[];
+  checkoutPhotos?: string[];
   startedAt?: Date;
   finishedAt?: Date;
   qcBy?: Types.ObjectId;
@@ -74,7 +72,6 @@ export class WorkOrderRepository {
       vehicle_type_id: input.vehicleTypeId,
       scheduled_at: input.scheduledAt,
       preferred_washer_id: input.preferredWasherId,
-      checklist: input.checklist,
       checkin_photos: input.checkinPhotos ?? [],
       status: WorkOrderStatusEnum.WAITING,
       estimated_minutes: input.estimatedMinutes,
@@ -244,7 +241,8 @@ export class WorkOrderRepository {
     if (input.assignedWasherId !== undefined)
       update.assigned_washer_id = input.assignedWasherId;
     if (input.assignedBy !== undefined) update.assigned_by = input.assignedBy;
-    if (input.checklist !== undefined) update.checklist = input.checklist;
+    if (input.checkoutPhotos !== undefined)
+      update.checkout_photos = input.checkoutPhotos;
     if (input.startedAt !== undefined) update.started_at = input.startedAt;
     if (input.finishedAt !== undefined) update.finished_at = input.finishedAt;
     if (input.qcBy !== undefined) update.qc_by = input.qcBy;

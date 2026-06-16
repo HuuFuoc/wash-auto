@@ -12,13 +12,6 @@ export interface IVehicleSnapshot {
   color?: string;
 }
 
-/** One step the washer ticks off. Built from the service `checklist_template`. */
-export interface IChecklistItem {
-  label: string;
-  done: boolean;
-  done_at?: Date;
-}
-
 @Schema({
   timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
   collection: 'work_orders',
@@ -69,16 +62,15 @@ export class WorkOrder {
   @Prop({ type: Types.ObjectId, ref: 'User' })
   preferred_washer_id?: Types.ObjectId;
 
-  @Prop({
-    type: [{ label: String, done: Boolean, done_at: Date }],
-    default: [],
-  })
-  checklist: IChecklistItem[];
-
   /** Photos the cashier captures of the vehicle at check-in. Stored as
    *  FE-uploaded URLs — the customer's record of the car's pre-wash state. */
   @Prop({ type: [String], default: [] })
   checkin_photos: string[];
+
+  /** Photos the washer uploads when finishing the wash — the post-wash state
+   *  the cashier reviews at quality check. FE-uploaded URLs, like check-in. */
+  @Prop({ type: [String], default: [] })
+  checkout_photos: string[];
 
   @Prop({
     type: String,

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -11,6 +11,7 @@ import { JwtAuthGuard } from '../../shared/guards/jwt-auth.guard';
 import { RolesGuard } from '../../shared/guards/roles.guard';
 import type { IAuthPayload } from '../../shared/types/auth-payload.type';
 import { RoleEnum } from '../auth/types/role.enum';
+import { FinishWorkOrderDto } from './dto/finish-work-order.dto';
 import { WorkOrderResponseDto } from './dto/work-order-response.dto';
 import { WorkOrderService } from './work-order.service';
 
@@ -59,15 +60,21 @@ export class WasherWorkOrderController {
   @Patch(':id/finish')
   @ApiOperation({
     summary: 'Finish the wash',
-    description: 'IN_PROGRESS → QUALITY_CHECK. Awaits cashier/manager QC.',
+    description:
+      'IN_PROGRESS → QUALITY_CHECK. Awaits cashier/manager QC. The washer must ' +
+      'attach at least one post-wash photo (checkoutPhotos) for QC to review.',
   })
   @ApiResponse({ status: 200, type: WorkOrderResponseDto })
-  @ApiResponse({ status: 400, description: 'Work order is not in progress' })
+  @ApiResponse({
+    status: 400,
+    description: 'Work order is not in progress, or no photos attached',
+  })
   @ApiResponse({ status: 404, description: 'Work order not found' })
   finish(
     @CurrentUser() user: IAuthPayload,
     @Param('id') id: string,
+    @Body() dto: FinishWorkOrderDto,
   ): Promise<WorkOrderResponseDto> {
-    return this.service.finish(user.sub, id);
+    return this.service.finish(user.sub, id, dto.checkoutPhotos);
   }
 }
