@@ -42,6 +42,7 @@ export interface IOrderListFilter {
   customerId?: Types.ObjectId;
   customerIds?: Types.ObjectId[];
   vehicleIds?: Types.ObjectId[];
+  staffShiftIds?: Types.ObjectId[];
   status?: OrderStatusEnum;
   paymentMethod?: PaymentMethodEnum;
   paymentStatus?: PaymentStatusEnum;
@@ -53,6 +54,7 @@ type Query = {
   _id?: Types.ObjectId | string;
   customer_id?: Types.ObjectId | { $in: Types.ObjectId[] };
   vehicle_id?: Types.ObjectId | { $in: Types.ObjectId[] };
+  staff_shift_id?: { $in: Types.ObjectId[] };
   status?: OrderStatusEnum | { $in: OrderStatusEnum[] };
   payment_method?: PaymentMethodEnum;
   payment_status?: PaymentStatusEnum;
@@ -235,6 +237,25 @@ export class OrderRepository {
     return this.model.countDocuments(this.buildQuery(filter)).exec();
   }
 
+  /**
+   * A washer's schedule: bookings sitting on the given (booked-shift) ids,
+   * narrowed by the date/status filter, earliest appointment first. Refs are
+   * populated so the schedule carries customer, vehicle, service and station
+   * without extra round-trips. Returns [] when no shift ids are supplied (the
+   * washer owns no shifts) so the caller never leaks an unfiltered list.
+   */
+  async findWasherSchedule(filter: IOrderListFilter): Promise<OrderDocument[]> {
+    if (!filter.staffShiftIds || filter.staffShiftIds.length === 0) return [];
+    return this.model
+      .find(this.buildQuery(filter))
+      .sort({ scheduled_at: 1 })
+      .populate('customer_id', 'name phone')
+      .populate('vehicle_id', 'license_plate')
+      .populate('service_type_id', 'name')
+      .populate('staff_shift_id', 'station_name')
+      .exec();
+  }
+
   private buildQuery(filter: IOrderListFilter): Query {
     const q: Query = {};
     if (filter.customerId) q.customer_id = filter.customerId;
@@ -243,6 +264,9 @@ export class OrderRepository {
     }
     if (filter.vehicleIds && filter.vehicleIds.length > 0) {
       q.vehicle_id = { $in: filter.vehicleIds };
+    }
+    if (filter.staffShiftIds && filter.staffShiftIds.length > 0) {
+      q.staff_shift_id = { $in: filter.staffShiftIds };
     }
     if (filter.status) q.status = filter.status;
     if (filter.paymentMethod) q.payment_method = filter.paymentMethod;

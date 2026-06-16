@@ -166,6 +166,21 @@ export class StaffShiftRepository {
     return this.model.findById(id).exec();
   }
 
+  /**
+   * The `_id`s of every shift this staff member is rostered on. Backs the
+   * washer schedule: a booking belongs to a washer when it sits on one of
+   * their shifts (Order.staff_shift_id). Empty when they have no shifts.
+   */
+  async findShiftIdsByStaff(
+    staffId: Types.ObjectId | string,
+  ): Promise<Types.ObjectId[]> {
+    if (!Types.ObjectId.isValid(staffId)) return [];
+    const ids = await this.model
+      .distinct('_id', { staff_id: new Types.ObjectId(staffId) })
+      .exec();
+    return ids;
+  }
+
   async findPaginated(
     filter: IShiftListFilter,
     page: number,

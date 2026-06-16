@@ -26,6 +26,7 @@ import { OrderRepository } from './repositories/order.repository';
 import { PaymentTransactionRepository } from './repositories/payment-transaction.repository';
 import { OrderService } from './services/order.service';
 import { PayosService } from './services/payos.service';
+import { WasherScheduleController } from './washer-schedule.controller';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { PayosService } from './services/payos.service';
     OrderController,
     PaymentWebhookController,
     AdminOrderController,
+    WasherScheduleController,
   ],
   providers: [
     OrderService,

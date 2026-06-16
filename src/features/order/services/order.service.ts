@@ -29,6 +29,7 @@ import { VoucherService } from '../../voucher/voucher.service';
 import { AvailableSlotDto } from '../dto/available-slot.dto';
 import { CancelOrderDto } from '../dto/cancel-order.dto';
 import { CreateOrderDto } from '../dto/create-order.dto';
+import { GetWasherScheduleQueryDto } from '../dto/get-washer-schedule-query.dto';
 import {
   OrderListResponseDto,
   OrderResponseDto,
@@ -41,6 +42,7 @@ import { QueryAvailableSlotsDto } from '../dto/query-available-slots.dto';
 import { QueryOrderDto } from '../dto/query-order.dto';
 import { RescheduleOrderDto } from '../dto/reschedule-order.dto';
 import { UpdateOrderStatusDto } from '../dto/update-order-status.dto';
+import { WasherScheduleItemDto } from '../dto/washer-schedule-item.dto';
 import { OrderDocument } from '../entities/order.entity';
 import {
   isCancellableByOwner,
@@ -69,6 +71,46 @@ function stackedDiscountPercent(
   capPercent: number,
 ): number {
   return Math.min(windowDiscountPercent + tierDiscountPercent, capPercent);
+}
+
+/** First instant of a YYYY-MM-DD calendar day, in UTC. */
+function startOfUtcDay(dateStr: string): Date {
+  return new Date(`${dateStr}T00:00:00.000Z`);
+}
+
+/** Last instant of a YYYY-MM-DD calendar day, in UTC. */
+function endOfUtcDay(dateStr: string): Date {
+  return new Date(`${dateStr}T23:59:59.999Z`);
+}
+
+/**
+ * Resolves a washer-schedule query into a scheduled_at window. A `from`/`to`
+ * range overrides a single `date`; with neither, the window opens at the start
+ * of today (UTC) and stays open-ended. `from`/`to` are validated YYYY-MM-DD, so
+ * a lexical compare is also a chronological one. Throws if `from` is after `to`.
+ */
+function resolveScheduleRange(query: GetWasherScheduleQueryDto): {
+  scheduledFrom?: Date;
+  scheduledTo?: Date;
+} {
+  const { date, from, to } = query;
+  if (from || to) {
+    if (from && to && from > to) {
+      throw new BadRequestException('`from` must not be after `to`');
+    }
+    return {
+      scheduledFrom: from ? startOfUtcDay(from) : undefined,
+      scheduledTo: to ? endOfUtcDay(to) : undefined,
+    };
+  }
+  if (date) {
+    return {
+      scheduledFrom: startOfUtcDay(date),
+      scheduledTo: endOfUtcDay(date),
+    };
+  }
+  const todayStr = new Date().toISOString().slice(0, 10);
+  return { scheduledFrom: startOfUtcDay(todayStr) };
 }
 
 // Office hours the shop offers bookings for, in Vietnam local time (UTC+7):
@@ -1018,6 +1060,36 @@ export class OrderService {
     const doc = await this.orderRepository.findById(id);
     if (!doc) throw new NotFoundException('Order not found');
     return OrderResponseDto.fromDocument(doc);
+  }
+
+  // ---------- WASHER ----------
+
+  /**
+   * A washer's own schedule: the bookings sitting on the shifts they are
+   * rostered for, earliest appointment first. `washerId` comes from the access
+   * token (never the client) so one washer cannot read another's schedule.
+   *
+   * Date precedence: a `from`/`to` range overrides a single `date`; with none
+   * supplied the schedule runs from the start of today onwards. Day bounds are
+   * resolved in UTC. A washer with no shifts gets an empty array.
+   */
+  async getWasherSchedule(
+    washerId: string,
+    query: GetWasherScheduleQueryDto,
+  ): Promise<WasherScheduleItemDto[]> {
+    const { scheduledFrom, scheduledTo } = resolveScheduleRange(query);
+
+    const shiftIds =
+      await this.staffShiftRepository.findShiftIdsByStaff(washerId);
+    if (shiftIds.length === 0) return [];
+
+    const docs = await this.orderRepository.findWasherSchedule({
+      staffShiftIds: shiftIds,
+      status: query.status,
+      scheduledFrom,
+      scheduledTo,
+    });
+    return docs.map((d) => WasherScheduleItemDto.fromDocument(d));
   }
 
   async adminUpdateStatus(
