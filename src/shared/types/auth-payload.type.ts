@@ -1,4 +1,4 @@
-import { RoleEnum } from '../../features/auth/types/role.enum';
+import { RoleEnum } from '../auth/types/role.enum';
 
 export interface IAuthPayload {
   sub: string;
