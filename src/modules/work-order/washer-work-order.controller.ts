@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { IdParam } from '../../common/params';
-import { FinishWorkOrderDto } from '../../features/work-order/dto/finish-work-order.dto';
+import { FinishWorkOrderDto } from '../../shared/work-order/dto/finish-work-order.dto';
 import { AuthRequest } from '../../middlewares/auth.middleware';
 import { WorkOrderService } from './work-order.service';
 

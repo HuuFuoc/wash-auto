@@ -8,15 +8,15 @@ import {
   NotFoundException,
 } from '../../common/exceptions';
 import { config } from '../../config';
-import { UserResponseDto } from '../../features/auth/dto/user-response.dto';
-import { RoleEnum } from '../../features/auth/types/role.enum';
-import { ChangeUserRoleDto } from '../../features/user/dto/change-user-role.dto';
-import { CreateUserAdminDto } from '../../features/user/dto/create-user-admin.dto';
-import { QueryUserDto } from '../../features/user/dto/query-user.dto';
-import { ResetUserPasswordDto } from '../../features/user/dto/reset-user-password.dto';
-import { SetUserStatusDto } from '../../features/user/dto/set-user-status.dto';
-import { UpdateUserDto } from '../../features/user/dto/update-user.dto';
-import { UserListResponseDto } from '../../features/user/dto/user-list-response.dto';
+import { UserResponseDto } from '../../shared/auth/dto/user-response.dto';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { ChangeUserRoleDto } from '../../shared/user/dto/change-user-role.dto';
+import { CreateUserAdminDto } from '../../shared/user/dto/create-user-admin.dto';
+import { QueryUserDto } from '../../shared/user/dto/query-user.dto';
+import { ResetUserPasswordDto } from '../../shared/user/dto/reset-user-password.dto';
+import { SetUserStatusDto } from '../../shared/user/dto/set-user-status.dto';
+import { UpdateUserDto } from '../../shared/user/dto/update-user.dto';
+import { UserListResponseDto } from '../../shared/user/dto/user-list-response.dto';
 import { RoleRepository } from '../auth/role.repository';
 import { UserDocument } from '../auth/user.model';
 import { IUserListFilter, UserRepository } from '../auth/user.repository';

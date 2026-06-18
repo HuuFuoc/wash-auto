@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { IdParam } from '../../common/params';
-import { QueryAvailableSlotsDto } from '../../features/order/dto/query-available-slots.dto';
+import { QueryAvailableSlotsDto } from '../../shared/order/dto/query-available-slots.dto';
 import { AuthRequest } from '../../middlewares/auth.middleware';
 import { OrderService } from './order.service';
 

@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import { WorkOrderStatusEnum } from '../../features/work-order/types/work-order-status.enum';
+import { WorkOrderStatusEnum } from '../../shared/work-order/types/work-order-status.enum';
 import {
   IVehicleSnapshot,
   WorkOrderDocument,

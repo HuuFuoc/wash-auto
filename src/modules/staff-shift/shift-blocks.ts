@@ -1,6 +1,6 @@
 import { BadRequestException } from '../../common/exceptions';
-import { ShiftBlockEnum } from '../../features/staff-shift/types/shift-block.enum';
-import { ShiftScheduleEnum } from '../../features/staff-shift/types/shift-schedule.enum';
+import { ShiftBlockEnum } from '../../shared/staff-shift/types/shift-block.enum';
+import { ShiftScheduleEnum } from '../../shared/staff-shift/types/shift-schedule.enum';
 
 const VN_UTC_OFFSET_MS = 7 * 60 * 60 * 1000;
 

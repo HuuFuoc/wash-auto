@@ -1,5 +1,5 @@
 import { HydratedDocument, Schema, Types, model } from 'mongoose';
-import { WorkOrderStatusEnum } from '../../features/work-order/types/work-order-status.enum';
+import { WorkOrderStatusEnum } from '../../shared/work-order/types/work-order-status.enum';
 
 /** Vehicle details copied at check-in so the ticket is stable. */
 export interface IVehicleSnapshot {

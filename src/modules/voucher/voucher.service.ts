@@ -6,13 +6,13 @@ import {
   NotFoundException,
 } from '../../common/exceptions';
 import { redisClient } from '../../core/redis';
-import { GrantVoucherAdminDto } from '../../features/voucher/dto/grant-voucher-admin.dto';
-import { QueryVoucherDto } from '../../features/voucher/dto/query-voucher.dto';
-import { VoucherListResponseDto } from '../../features/voucher/dto/voucher-list-response.dto';
-import { VoucherResponseDto } from '../../features/voucher/dto/voucher-response.dto';
-import { VoucherStatusEnum } from '../../features/voucher/types/voucher-status.enum';
-import { VoucherTypeEnum } from '../../features/voucher/types/voucher-type.enum';
-import { RoleEnum } from '../../features/auth/types/role.enum';
+import { GrantVoucherAdminDto } from '../../shared/voucher/dto/grant-voucher-admin.dto';
+import { QueryVoucherDto } from '../../shared/voucher/dto/query-voucher.dto';
+import { VoucherListResponseDto } from '../../shared/voucher/dto/voucher-list-response.dto';
+import { VoucherResponseDto } from '../../shared/voucher/dto/voucher-response.dto';
+import { VoucherStatusEnum } from '../../shared/voucher/types/voucher-status.enum';
+import { VoucherTypeEnum } from '../../shared/voucher/types/voucher-type.enum';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { RoleRepository } from '../auth/role.repository';
 import { UserRepository } from '../auth/user.repository';
 import { VoucherDocument } from './voucher.model';

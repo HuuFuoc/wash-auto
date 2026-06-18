@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../common/async-handler';
-import { RoleEnum } from '../../features/auth/types/role.enum';
-import { AssignWasherDto } from '../../features/work-order/dto/assign-washer.dto';
-import { CreateWorkOrderDto } from '../../features/work-order/dto/create-work-order.dto';
-import { FinishWorkOrderDto } from '../../features/work-order/dto/finish-work-order.dto';
-import { QcWorkOrderDto } from '../../features/work-order/dto/qc-work-order.dto';
-import { QueryWorkOrderDto } from '../../features/work-order/dto/query-work-order.dto';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { AssignWasherDto } from '../../shared/work-order/dto/assign-washer.dto';
+import { CreateWorkOrderDto } from '../../shared/work-order/dto/create-work-order.dto';
+import { FinishWorkOrderDto } from '../../shared/work-order/dto/finish-work-order.dto';
+import { QcWorkOrderDto } from '../../shared/work-order/dto/qc-work-order.dto';
+import { QueryWorkOrderDto } from '../../shared/work-order/dto/query-work-order.dto';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/roles.middleware';
 import { validateDto } from '../../middlewares/validate.middleware';

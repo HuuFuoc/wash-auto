@@ -1,5 +1,5 @@
 import { HydratedDocument, Schema, Types, model } from 'mongoose';
-import { LoyaltyTransactionTypeEnum } from '../../features/loyalty/types/loyalty-transaction-type.enum';
+import { LoyaltyTransactionTypeEnum } from '../../shared/loyalty/types/loyalty-transaction-type.enum';
 
 // Plain-Mongoose rewrite of
 // features/loyalty/entities/loyalty-transaction.entity.ts.

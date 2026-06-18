@@ -1,5 +1,5 @@
 import { HydratedDocument, Schema, model } from 'mongoose';
-import { TierNameEnum } from '../../features/tier-config/types/tier-name.enum';
+import { TierNameEnum } from '../../shared/tier-config/types/tier-name.enum';
 
 // Plain-Mongoose rewrite of
 // features/tier-config/entities/tier-config.entity.ts.

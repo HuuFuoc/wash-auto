@@ -5,11 +5,11 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '../../common/exceptions';
-import { CreateVehicleDto } from '../../features/vehicle/dto/create-vehicle.dto';
-import { QueryVehicleDto } from '../../features/vehicle/dto/query-vehicle.dto';
-import { UpdateVehicleDto } from '../../features/vehicle/dto/update-vehicle.dto';
-import { VehicleListResponseDto } from '../../features/vehicle/dto/vehicle-list-response.dto';
-import { VehicleResponseDto } from '../../features/vehicle/dto/vehicle-response.dto';
+import { CreateVehicleDto } from '../../shared/vehicle/dto/create-vehicle.dto';
+import { QueryVehicleDto } from '../../shared/vehicle/dto/query-vehicle.dto';
+import { UpdateVehicleDto } from '../../shared/vehicle/dto/update-vehicle.dto';
+import { VehicleListResponseDto } from '../../shared/vehicle/dto/vehicle-list-response.dto';
+import { VehicleResponseDto } from '../../shared/vehicle/dto/vehicle-response.dto';
 import { VehicleTypeRepository } from '../vehicle-type/vehicle-type.repository';
 import { VehicleDocument } from './vehicle.model';
 import {

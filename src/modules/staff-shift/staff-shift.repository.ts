@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
-import { ShiftStatusEnum } from '../../features/staff-shift/types/shift-status.enum';
-import { ShiftTypeEnum } from '../../features/staff-shift/types/shift-type.enum';
+import { ShiftStatusEnum } from '../../shared/staff-shift/types/shift-status.enum';
+import { ShiftTypeEnum } from '../../shared/staff-shift/types/shift-type.enum';
 import { StaffShiftDocument, StaffShiftModel } from './staff-shift.model';
 
 type ShiftQuery = {

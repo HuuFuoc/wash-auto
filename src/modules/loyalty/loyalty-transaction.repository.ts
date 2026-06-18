@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import { LoyaltyTransactionTypeEnum } from '../../features/loyalty/types/loyalty-transaction-type.enum';
+import { LoyaltyTransactionTypeEnum } from '../../shared/loyalty/types/loyalty-transaction-type.enum';
 import {
   LoyaltyTransactionDocument,
   LoyaltyTransactionModel,

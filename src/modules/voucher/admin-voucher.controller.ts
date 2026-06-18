@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { IdParam } from '../../common/params';
-import { QueryVoucherDto } from '../../features/voucher/dto/query-voucher.dto';
-import { RevokeVoucherDto } from '../../features/voucher/dto/revoke-voucher.dto';
+import { QueryVoucherDto } from '../../shared/voucher/dto/query-voucher.dto';
+import { RevokeVoucherDto } from '../../shared/voucher/dto/revoke-voucher.dto';
 import { VoucherService } from './voucher.service';
 
 // Admin endpoints — was features/voucher/admin-voucher.controller.ts

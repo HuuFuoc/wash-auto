@@ -1,7 +1,7 @@
 import { ConflictException, NotFoundException } from '../../common/exceptions';
-import { ChatKnowledgeResponseDto } from '../../features/chat/dto/chat-knowledge-response.dto';
-import { CreateChatKnowledgeDto } from '../../features/chat/dto/create-chat-knowledge.dto';
-import { UpdateChatKnowledgeDto } from '../../features/chat/dto/update-chat-knowledge.dto';
+import { ChatKnowledgeResponseDto } from '../../shared/chat/dto/chat-knowledge-response.dto';
+import { CreateChatKnowledgeDto } from '../../shared/chat/dto/create-chat-knowledge.dto';
+import { UpdateChatKnowledgeDto } from '../../shared/chat/dto/update-chat-knowledge.dto';
 import { ChatKnowledgeRepository } from './chat-knowledge.repository';
 
 const MAX_SEARCH_HITS = 5;

@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { IdParam } from '../../common/params';
-import { QueryOrderDto } from '../../features/order/dto/query-order.dto';
+import { QueryOrderDto } from '../../shared/order/dto/query-order.dto';
 import { OrderService } from './order.service';
 
 // Admin endpoints — was features/order/admin-order.controller.ts

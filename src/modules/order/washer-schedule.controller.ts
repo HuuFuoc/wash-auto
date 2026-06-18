@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { GetWasherScheduleQueryDto } from '../../features/order/dto/get-washer-schedule-query.dto';
+import { GetWasherScheduleQueryDto } from '../../shared/order/dto/get-washer-schedule-query.dto';
 import { AuthRequest } from '../../middlewares/auth.middleware';
 import { OrderService } from './order.service';
 

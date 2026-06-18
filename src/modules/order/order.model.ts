@@ -1,7 +1,7 @@
 import { HydratedDocument, Schema, Types, model } from 'mongoose';
-import { OrderStatusEnum } from '../../features/order/types/order-status.enum';
-import { PaymentMethodEnum } from '../../features/order/types/payment-method.enum';
-import { PaymentStatusEnum } from '../../features/order/types/payment-status.enum';
+import { OrderStatusEnum } from '../../shared/order/types/order-status.enum';
+import { PaymentMethodEnum } from '../../shared/order/types/payment-method.enum';
+import { PaymentStatusEnum } from '../../shared/order/types/payment-status.enum';
 
 // Plain-Mongoose rewrite of features/order/entities/order.entity.ts.
 export interface Order {

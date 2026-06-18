@@ -3,13 +3,13 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '../../common/exceptions';
-import { LoyaltyAccountResponseDto } from '../../features/loyalty/dto/loyalty-account-response.dto';
+import { LoyaltyAccountResponseDto } from '../../shared/loyalty/dto/loyalty-account-response.dto';
 import {
   LoyaltyTransactionListResponseDto,
   LoyaltyTransactionResponseDto,
-} from '../../features/loyalty/dto/loyalty-transaction-response.dto';
-import { LoyaltyTransactionTypeEnum } from '../../features/loyalty/types/loyalty-transaction-type.enum';
-import { TierNameEnum } from '../../features/tier-config/types/tier-name.enum';
+} from '../../shared/loyalty/dto/loyalty-transaction-response.dto';
+import { LoyaltyTransactionTypeEnum } from '../../shared/loyalty/types/loyalty-transaction-type.enum';
+import { TierNameEnum } from '../../shared/tier-config/types/tier-name.enum';
 import { TierConfigDocument } from '../tier-config/tier-config.model';
 import { TierConfigRepository } from '../tier-config/tier-config.repository';
 import { VoucherService } from '../voucher/voucher.service';

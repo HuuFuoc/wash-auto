@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { QueryDashboardDto } from '../../features/dashboard/dto/query-dashboard.dto';
+import { QueryDashboardDto } from '../../shared/dashboard/dto/query-dashboard.dto';
 import { AuthRequest } from '../../middlewares/auth.middleware';
 import { DashboardService } from './dashboard.service';
 

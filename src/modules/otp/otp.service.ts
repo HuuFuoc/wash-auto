@@ -7,7 +7,7 @@ import { redisClient } from '../../core/redis';
 import {
   IOtpSendResult,
   IStoredOtp,
-} from '../../features/otp/types/otp.types';
+} from '../../shared/otp/types/otp.types';
 import { EmailService, getEmailService } from '../email/email.service';
 
 /** HTTP 429 — Nest used `new HttpException(msg, HttpStatus.TOO_MANY_REQUESTS)`. */

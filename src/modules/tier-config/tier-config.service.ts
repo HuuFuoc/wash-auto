@@ -4,10 +4,10 @@ import {
   ConflictException,
   NotFoundException,
 } from '../../common/exceptions';
-import { SetTierConfigStatusDto } from '../../features/tier-config/dto/set-tier-config-status.dto';
-import { TierConfigResponseDto } from '../../features/tier-config/dto/tier-config-response.dto';
-import { UpdateTierConfigDto } from '../../features/tier-config/dto/update-tier-config.dto';
-import { TierNameEnum } from '../../features/tier-config/types/tier-name.enum';
+import { SetTierConfigStatusDto } from '../../shared/tier-config/dto/set-tier-config-status.dto';
+import { TierConfigResponseDto } from '../../shared/tier-config/dto/tier-config-response.dto';
+import { UpdateTierConfigDto } from '../../shared/tier-config/dto/update-tier-config.dto';
+import { TierNameEnum } from '../../shared/tier-config/types/tier-name.enum';
 import { TierConfigRepository } from './tier-config.repository';
 
 interface IDefaultTier {

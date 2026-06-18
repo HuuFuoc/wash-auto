@@ -1,5 +1,5 @@
 import { HydratedDocument, Schema, model } from 'mongoose';
-import { RoleEnum } from '../../features/auth/types/role.enum';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
 
 // Plain-Mongoose rewrite of features/auth/entities/role.entity.ts.
 export interface Role {

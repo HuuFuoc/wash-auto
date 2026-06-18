@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { IdParam } from '../../common/params';
 import { AuthRequest } from '../../middlewares/auth.middleware';
-import { VoucherStatusEnum } from '../../features/voucher/types/voucher-status.enum';
+import { VoucherStatusEnum } from '../../shared/voucher/types/voucher-status.enum';
 import { VoucherService } from './voucher.service';
 
 // Customer endpoints — was features/voucher/voucher.controller.ts

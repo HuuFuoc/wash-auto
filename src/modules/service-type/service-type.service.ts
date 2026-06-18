@@ -7,9 +7,9 @@ import {
 import {
   CreateServiceTypeDto,
   VehiclePricingDto,
-} from '../../features/service-type/dto/create-service-type.dto';
-import { ServiceTypeResponseDto } from '../../features/service-type/dto/service-type-response.dto';
-import { UpdateServiceTypeDto } from '../../features/service-type/dto/update-service-type.dto';
+} from '../../shared/service-type/dto/create-service-type.dto';
+import { ServiceTypeResponseDto } from '../../shared/service-type/dto/service-type-response.dto';
+import { UpdateServiceTypeDto } from '../../shared/service-type/dto/update-service-type.dto';
 import { VehicleTypeRepository } from '../vehicle-type/vehicle-type.repository';
 import {
   IVehiclePricingInput,

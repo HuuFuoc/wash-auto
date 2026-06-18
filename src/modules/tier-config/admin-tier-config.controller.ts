@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { IdParam } from '../../common/params';
-import { SetTierConfigStatusDto } from '../../features/tier-config/dto/set-tier-config-status.dto';
+import { SetTierConfigStatusDto } from '../../shared/tier-config/dto/set-tier-config-status.dto';
 import { TierConfigService } from './tier-config.service';
 
 // Admin endpoints — was features/tier-config/admin-tier-config.controller.ts

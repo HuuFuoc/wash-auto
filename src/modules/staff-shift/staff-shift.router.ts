@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../common/async-handler';
-import { RoleEnum } from '../../features/auth/types/role.enum';
-import { CreateStaffShiftDto } from '../../features/staff-shift/dto/create-staff-shift.dto';
-import { QueryAvailableShiftDto } from '../../features/staff-shift/dto/query-available-shift.dto';
-import { QueryStaffShiftDto } from '../../features/staff-shift/dto/query-staff-shift.dto';
-import { SetStaffShiftStatusDto } from '../../features/staff-shift/dto/set-staff-shift-status.dto';
-import { UpdateStaffShiftDto } from '../../features/staff-shift/dto/update-staff-shift.dto';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { CreateStaffShiftDto } from '../../shared/staff-shift/dto/create-staff-shift.dto';
+import { QueryAvailableShiftDto } from '../../shared/staff-shift/dto/query-available-shift.dto';
+import { QueryStaffShiftDto } from '../../shared/staff-shift/dto/query-staff-shift.dto';
+import { SetStaffShiftStatusDto } from '../../shared/staff-shift/dto/set-staff-shift-status.dto';
+import { UpdateStaffShiftDto } from '../../shared/staff-shift/dto/update-staff-shift.dto';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/roles.middleware';
 import { validateDto } from '../../middlewares/validate.middleware';

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../common/async-handler';
-import { RoleEnum } from '../../features/auth/types/role.enum';
-import { QueryDashboardDto } from '../../features/dashboard/dto/query-dashboard.dto';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { QueryDashboardDto } from '../../shared/dashboard/dto/query-dashboard.dto';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/roles.middleware';
 import { validateDto } from '../../middlewares/validate.middleware';

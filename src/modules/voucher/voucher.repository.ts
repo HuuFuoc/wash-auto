@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
-import { VoucherStatusEnum } from '../../features/voucher/types/voucher-status.enum';
-import { VoucherTypeEnum } from '../../features/voucher/types/voucher-type.enum';
+import { VoucherStatusEnum } from '../../shared/voucher/types/voucher-status.enum';
+import { VoucherTypeEnum } from '../../shared/voucher/types/voucher-type.enum';
 import { VoucherDocument, VoucherModel } from './voucher.model';
 
 export interface ICreateVoucherInput {

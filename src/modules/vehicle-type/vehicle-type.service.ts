@@ -1,7 +1,7 @@
 import { ConflictException, NotFoundException } from '../../common/exceptions';
-import { CreateVehicleTypeDto } from '../../features/vehicle-type/dto/create-vehicle-type.dto';
-import { UpdateVehicleTypeDto } from '../../features/vehicle-type/dto/update-vehicle-type.dto';
-import { VehicleTypeResponseDto } from '../../features/vehicle-type/dto/vehicle-type-response.dto';
+import { CreateVehicleTypeDto } from '../../shared/vehicle-type/dto/create-vehicle-type.dto';
+import { UpdateVehicleTypeDto } from '../../shared/vehicle-type/dto/update-vehicle-type.dto';
+import { VehicleTypeResponseDto } from '../../shared/vehicle-type/dto/vehicle-type-response.dto';
 import { VehicleTypeRepository } from './vehicle-type.repository';
 
 // Business logic copied verbatim from features/vehicle-type/vehicle-type.service.ts;

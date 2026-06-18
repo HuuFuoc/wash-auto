@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../common/async-handler';
-import { LoginDto } from '../../features/auth/dto/login.dto';
-import { OtpSendDto } from '../../features/auth/dto/otp-send.dto';
-import { OtpVerifyDto } from '../../features/auth/dto/otp-verify.dto';
-import { RefreshTokenDto } from '../../features/auth/dto/refresh-token.dto';
-import { RegisterDto } from '../../features/auth/dto/register.dto';
-import { RoleEnum } from '../../features/auth/types/role.enum';
+import { LoginDto } from '../../shared/auth/dto/login.dto';
+import { OtpSendDto } from '../../shared/auth/dto/otp-send.dto';
+import { OtpVerifyDto } from '../../shared/auth/dto/otp-verify.dto';
+import { RefreshTokenDto } from '../../shared/auth/dto/refresh-token.dto';
+import { RegisterDto } from '../../shared/auth/dto/register.dto';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/roles.middleware';
 import { validateDto } from '../../middlewares/validate.middleware';

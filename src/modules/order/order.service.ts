@@ -6,32 +6,32 @@ import {
 } from '../../common/exceptions';
 import { config } from '../../config';
 import { redisClient } from '../../core/redis';
-import { AvailableSlotDto } from '../../features/order/dto/available-slot.dto';
-import { CancelOrderDto } from '../../features/order/dto/cancel-order.dto';
-import { CreateOrderDto } from '../../features/order/dto/create-order.dto';
-import { GetWasherScheduleQueryDto } from '../../features/order/dto/get-washer-schedule-query.dto';
+import { AvailableSlotDto } from '../../shared/order/dto/available-slot.dto';
+import { CancelOrderDto } from '../../shared/order/dto/cancel-order.dto';
+import { CreateOrderDto } from '../../shared/order/dto/create-order.dto';
+import { GetWasherScheduleQueryDto } from '../../shared/order/dto/get-washer-schedule-query.dto';
 import {
   OrderListResponseDto,
   OrderResponseDto,
-} from '../../features/order/dto/order-response.dto';
+} from '../../shared/order/dto/order-response.dto';
 import {
   PreviewOrderDto,
   PreviewOrderResponseDto,
-} from '../../features/order/dto/preview-order.dto';
-import { QueryAvailableSlotsDto } from '../../features/order/dto/query-available-slots.dto';
-import { QueryOrderDto } from '../../features/order/dto/query-order.dto';
-import { RescheduleOrderDto } from '../../features/order/dto/reschedule-order.dto';
-import { UpdateOrderStatusDto } from '../../features/order/dto/update-order-status.dto';
-import { WasherScheduleItemDto } from '../../features/order/dto/washer-schedule-item.dto';
+} from '../../shared/order/dto/preview-order.dto';
+import { QueryAvailableSlotsDto } from '../../shared/order/dto/query-available-slots.dto';
+import { QueryOrderDto } from '../../shared/order/dto/query-order.dto';
+import { RescheduleOrderDto } from '../../shared/order/dto/reschedule-order.dto';
+import { UpdateOrderStatusDto } from '../../shared/order/dto/update-order-status.dto';
+import { WasherScheduleItemDto } from '../../shared/order/dto/washer-schedule-item.dto';
 import {
   isCancellableByOwner,
   isValidOrderTransition,
-} from '../../features/order/order.state-machine';
-import { OrderStatusEnum } from '../../features/order/types/order-status.enum';
-import { PaymentMethodEnum } from '../../features/order/types/payment-method.enum';
-import { PaymentStatusEnum } from '../../features/order/types/payment-status.enum';
-import { ShiftStatusEnum } from '../../features/staff-shift/types/shift-status.enum';
-import { ShiftTypeEnum } from '../../features/staff-shift/types/shift-type.enum';
+} from '../../shared/order/order.state-machine';
+import { OrderStatusEnum } from '../../shared/order/types/order-status.enum';
+import { PaymentMethodEnum } from '../../shared/order/types/payment-method.enum';
+import { PaymentStatusEnum } from '../../shared/order/types/payment-status.enum';
+import { ShiftStatusEnum } from '../../shared/staff-shift/types/shift-status.enum';
+import { ShiftTypeEnum } from '../../shared/staff-shift/types/shift-type.enum';
 import { UserRepository } from '../auth/user.repository';
 import { EmailService } from '../email/email.service';
 import { GoldenHourService } from '../golden-hour/golden-hour.service';

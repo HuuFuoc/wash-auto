@@ -1,7 +1,7 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from './auth.middleware';
 import { HttpException } from '../common/http-exception';
-import { RoleEnum } from '../features/auth/types/role.enum';
+import { RoleEnum } from '../shared/auth/types/role.enum';
 
 /**
  * Equivalent of `RolesGuard` — a ROLE guard, NOT an auth guard. It assumes

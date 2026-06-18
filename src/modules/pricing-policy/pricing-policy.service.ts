@@ -1,5 +1,5 @@
-import { PricingPolicyResponseDto } from '../../features/pricing-policy/dto/pricing-policy-response.dto';
-import { UpdatePricingPolicyDto } from '../../features/pricing-policy/dto/update-pricing-policy.dto';
+import { PricingPolicyResponseDto } from '../../shared/pricing-policy/dto/pricing-policy-response.dto';
+import { UpdatePricingPolicyDto } from '../../shared/pricing-policy/dto/update-pricing-policy.dto';
 import { PricingPolicyRepository } from './pricing-policy.repository';
 
 /** Fallback cap used only if the singleton has somehow not been seeded. */

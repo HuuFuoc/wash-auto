@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../common/async-handler';
-import { RoleEnum } from '../../features/auth/types/role.enum';
-import { SetTierConfigStatusDto } from '../../features/tier-config/dto/set-tier-config-status.dto';
-import { UpdateTierConfigDto } from '../../features/tier-config/dto/update-tier-config.dto';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { SetTierConfigStatusDto } from '../../shared/tier-config/dto/set-tier-config-status.dto';
+import { UpdateTierConfigDto } from '../../shared/tier-config/dto/update-tier-config.dto';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/roles.middleware';
 import { validateDto } from '../../middlewares/validate.middleware';

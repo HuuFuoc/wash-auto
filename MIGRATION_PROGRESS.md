@@ -3,8 +3,9 @@
 > File theo dõi tiến độ chuyển đổi. **Agent cập nhật file này sau khi migrate xong mỗi module.**
 > Quy ước: `[ ]` chưa làm · `[~]` đang làm dở · `[x]` xong & test pass.
 
-**Cập nhật lần cuối:** 2026-06-16
-**Tiến độ:** 18 / 18 module hoàn thành 🎉 (Phase 4 HOÀN TẤT)
+**Cập nhật lần cuối:** 2026-06-18
+**Tiến độ:** 18 / 18 module hoàn thành · **Phase 5 cutover XONG** (branch `phase5-express-cutover`,
+chờ review/preview — CHƯA merge, CHƯA deploy prod) 🎉
 
 ---
 
@@ -192,7 +193,36 @@ _(chưa có)_
     `req.validated[source]` (augment `Express.Request.validated`), KHÔNG gán đè. body thì `req.body = dto`.
   - Nâng `HttpException` mang `response: string | string[]`; viết lại `error.middleware` render
     `{ statusCode, message, error? }` đúng shape Nest. `pnpm run build` PASS.
-- [ ] Phase 5 — Cleanup (gỡ package Nest, sửa CI/CD, README)
+- [x] Phase 5 — Cutover Express + gỡ Nest — 2026-06-18 (branch `phase5-express-cutover`, CHƯA merge)
+  - **AUDIT:** Express path chỉ tham chiếu `src/features` ở 3 dạng: DTO (class-validator),
+    enum/type, và `order.state-machine`. KHÔNG ref `*.module.ts`/`main.ts`/`serverless.ts`.
+  - **RELOCATE:** `git mv` toàn bộ `features/<m>/{dto,types}` + `order.state-machine.ts` →
+    `src/shared/<m>/...` (giữ layout, đổi import `features/`→`shared/` đồng loạt). `src/shared`
+    đã có sẵn `types/` (Express dùng) — gộp chung.
+  - **swagger-shim** (`src/common/swagger-shim.ts`): no-op `ApiProperty`/`ApiPropertyOptional` +
+    `PartialType` THẬT (subclass + `@IsOptional` mỗi field, kế thừa metadata class-validator/
+    transformer). Mọi DTO `@nestjs/swagger` → shim. **Verify runtime:** partial hợp lệ 0 lỗi,
+    `{}` 0 lỗi (mọi field optional), sai kiểu vẫn 1 lỗi → parity `@nestjs/mapped-types`.
+  - **Response DTO ↔ model:** ~17 response DTO đổi import `*Document` từ `features/*/entities`
+    (Nest @nestjs/mongoose) sang Express model `modules/<m>/<m>.model` (cùng tên Document).
+  - **XOÁ Nest-only:** `src/features`, mọi `*.module.ts`, `main.ts`, `serverless.ts`, `nest-cli.json`,
+    `src/redis`, `src/upload`, `src/shared/{decorators,guards,interceptors}`, `src/core/{cache,database}`,
+    `src/app.{module,controller,service,controller.spec}.ts`, `src/config/*.config.ts` +
+    `validation.schema.ts` (orphan ConfigModule). Giữ `src/app.ts`/`server.ts`/`serverless.express.ts`/
+    `core/redis.ts`/`config/{index,database}.ts`.
+  - **SWAP entry/build:** `vercel.json` → `serverless.express.ts`; `build` `nest build`→`tsc -p
+    tsconfig.build.json`; scripts start/dev trỏ `dist/server.js` / `src/server.ts` (bỏ `nest start`).
+  - **GỠ DEPS (0-ref):** `@nestjs/*` (common/config/core/jwt/mongoose/passport/platform-express/
+    schedule/swagger/throttler), `passport`, `passport-jwt`, `rxjs`, `joi`; dev: `@nestjs/{cli,
+    schematics,testing}`, `@types/passport-jwt`, `ts-loader`. **GIỮ** `reflect-metadata`
+    (class-validator/transformer cần). `grep @nestjs/features = 0`. `pnpm install` PASS.
+  - **BUILD `tsc` PASS** (Nest đã gỡ khỏi node_modules). **Local smoke wdp301_test (gate
+    `CONNECTED_DB=wdp301_test`):** health 200 · connectDB 1 lần · 401 · 404-JSON · PayOS không
+    register lúc boot · 429 ThrottlerException — **ALL PASS**, residual 0.
+  - **CHƯA merge / CHƯA deploy prod.** 🔴 TRƯỚC khi merge: set `ENABLE_PAYOS_WEBHOOK=true` ở
+    **prod scope** (nếu không prod ngừng register webhook → đơn online kẹt UNPAID).
+  - ⚠️ Swagger BỎ hẳn (vốn đã không port sang Express). `vercel.preview.json` giờ trùng `vercel.json`
+    (cùng trỏ `serverless.express.ts`) — có thể xoá sau khi merge.
 
 ---
 

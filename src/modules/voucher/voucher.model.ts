@@ -1,6 +1,6 @@
 import { HydratedDocument, Schema, Types, model } from 'mongoose';
-import { VoucherStatusEnum } from '../../features/voucher/types/voucher-status.enum';
-import { VoucherTypeEnum } from '../../features/voucher/types/voucher-type.enum';
+import { VoucherStatusEnum } from '../../shared/voucher/types/voucher-status.enum';
+import { VoucherTypeEnum } from '../../shared/voucher/types/voucher-type.enum';
 
 // Plain-Mongoose rewrite of features/voucher/entities/voucher.entity.ts.
 export interface Voucher {

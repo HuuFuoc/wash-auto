@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import { RoleEnum } from '../../features/auth/types/role.enum';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { RoleDocument, RoleModel } from './role.model';
 
 export interface IUpsertRoleInput {

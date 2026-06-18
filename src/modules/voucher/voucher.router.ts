@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../common/async-handler';
-import { RoleEnum } from '../../features/auth/types/role.enum';
-import { GrantVoucherAdminDto } from '../../features/voucher/dto/grant-voucher-admin.dto';
-import { QueryVoucherDto } from '../../features/voucher/dto/query-voucher.dto';
-import { RevokeVoucherDto } from '../../features/voucher/dto/revoke-voucher.dto';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { GrantVoucherAdminDto } from '../../shared/voucher/dto/grant-voucher-admin.dto';
+import { QueryVoucherDto } from '../../shared/voucher/dto/query-voucher.dto';
+import { RevokeVoucherDto } from '../../shared/voucher/dto/revoke-voucher.dto';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/roles.middleware';
 import { validateDto } from '../../middlewares/validate.middleware';

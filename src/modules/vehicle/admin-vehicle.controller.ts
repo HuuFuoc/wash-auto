@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { IdParam } from '../../common/params';
-import { QueryVehicleDto } from '../../features/vehicle/dto/query-vehicle.dto';
+import { QueryVehicleDto } from '../../shared/vehicle/dto/query-vehicle.dto';
 import { VehicleService } from './vehicle.service';
 
 // Admin endpoints — was features/vehicle/admin-vehicle.controller.ts

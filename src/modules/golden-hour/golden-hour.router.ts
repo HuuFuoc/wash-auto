@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../common/async-handler';
-import { RoleEnum } from '../../features/auth/types/role.enum';
-import { CreateGoldenHourDto } from '../../features/golden-hour/dto/create-golden-hour.dto';
-import { UpdateGoldenHourDto } from '../../features/golden-hour/dto/update-golden-hour.dto';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { CreateGoldenHourDto } from '../../shared/golden-hour/dto/create-golden-hour.dto';
+import { UpdateGoldenHourDto } from '../../shared/golden-hour/dto/update-golden-hour.dto';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/roles.middleware';
 import { validateDto } from '../../middlewares/validate.middleware';

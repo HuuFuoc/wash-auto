@@ -1,9 +1,9 @@
 import { PipelineStage, Types } from 'mongoose';
 import { BadRequestException } from '../../common/exceptions';
-import { RoleEnum } from '../../features/auth/types/role.enum';
-import { OrderStatusEnum } from '../../features/order/types/order-status.enum';
-import { VoucherStatusEnum } from '../../features/voucher/types/voucher-status.enum';
-import { QueryDashboardDto } from '../../features/dashboard/dto/query-dashboard.dto';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { OrderStatusEnum } from '../../shared/order/types/order-status.enum';
+import { VoucherStatusEnum } from '../../shared/voucher/types/voucher-status.enum';
+import { QueryDashboardDto } from '../../shared/dashboard/dto/query-dashboard.dto';
 import {
   CustomerRiskRow,
   DashboardReport,
@@ -11,7 +11,7 @@ import {
   NamedCount,
   NamedRevenue,
   RankRow,
-} from '../../features/dashboard/types/dashboard-report.type';
+} from '../../shared/dashboard/types/dashboard-report.type';
 import { RoleModel } from '../auth/role.model';
 import { UserModel } from '../auth/user.model';
 import { LoyaltyAccountModel } from '../loyalty/loyalty-account.model';

@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { SendMessageDto } from '../../features/chat/dto/send-message.dto';
+import { SendMessageDto } from '../../shared/chat/dto/send-message.dto';
 import { AuthRequest } from '../../middlewares/auth.middleware';
 import { ChatService } from './chat.service';
 

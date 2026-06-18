@@ -1,7 +1,7 @@
 import { Content } from '@google/genai';
 import { randomUUID } from 'crypto';
-import { ChatResponseDto } from '../../features/chat/dto/chat-response.dto';
-import { SendMessageDto } from '../../features/chat/dto/send-message.dto';
+import { ChatResponseDto } from '../../shared/chat/dto/chat-response.dto';
+import { SendMessageDto } from '../../shared/chat/dto/send-message.dto';
 import { ChatSessionDocument, IChatMessage } from './chat-session.model';
 import { ChatSessionRepository } from './chat-session.repository';
 import { GeminiService } from './gemini.service';

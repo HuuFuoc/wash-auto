@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { IdParam } from '../../common/params';
-import { SetServiceTypeStatusDto } from '../../features/service-type/dto/set-service-type-status.dto';
+import { SetServiceTypeStatusDto } from '../../shared/service-type/dto/set-service-type-status.dto';
 import { ServiceTypeService } from './service-type.service';
 
 // Admin endpoints — was features/service-type/admin-service-type.controller.ts

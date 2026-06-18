@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../common/async-handler';
-import { RoleEnum } from '../../features/auth/types/role.enum';
-import { CreateChatKnowledgeDto } from '../../features/chat/dto/create-chat-knowledge.dto';
-import { SendMessageDto } from '../../features/chat/dto/send-message.dto';
-import { UpdateChatKnowledgeDto } from '../../features/chat/dto/update-chat-knowledge.dto';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { CreateChatKnowledgeDto } from '../../shared/chat/dto/create-chat-knowledge.dto';
+import { SendMessageDto } from '../../shared/chat/dto/send-message.dto';
+import { UpdateChatKnowledgeDto } from '../../shared/chat/dto/update-chat-knowledge.dto';
 import {
   authMiddleware,
   optionalAuthMiddleware,

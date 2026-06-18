@@ -2,9 +2,9 @@ import { Types } from 'mongoose';
 import {
   ACTIVE_ORDER_STATUSES,
   OrderStatusEnum,
-} from '../../features/order/types/order-status.enum';
-import { PaymentMethodEnum } from '../../features/order/types/payment-method.enum';
-import { PaymentStatusEnum } from '../../features/order/types/payment-status.enum';
+} from '../../shared/order/types/order-status.enum';
+import { PaymentMethodEnum } from '../../shared/order/types/payment-method.enum';
+import { PaymentStatusEnum } from '../../shared/order/types/payment-status.enum';
 import { OrderDocument, OrderModel } from './order.model';
 
 export interface ICreateOrderInput {

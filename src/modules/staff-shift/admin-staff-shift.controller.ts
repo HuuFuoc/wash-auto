@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { IdParam } from '../../common/params';
-import { QueryStaffShiftDto } from '../../features/staff-shift/dto/query-staff-shift.dto';
+import { QueryStaffShiftDto } from '../../shared/staff-shift/dto/query-staff-shift.dto';
 import { StaffShiftService } from './staff-shift.service';
 
 // Admin endpoints — was features/staff-shift/admin-staff-shift.controller.ts

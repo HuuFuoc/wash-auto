@@ -3,9 +3,9 @@ import {
   ConflictException,
   NotFoundException,
 } from '../../common/exceptions';
-import { CreateGoldenHourDto } from '../../features/golden-hour/dto/create-golden-hour.dto';
-import { GoldenHourResponseDto } from '../../features/golden-hour/dto/golden-hour-response.dto';
-import { UpdateGoldenHourDto } from '../../features/golden-hour/dto/update-golden-hour.dto';
+import { CreateGoldenHourDto } from '../../shared/golden-hour/dto/create-golden-hour.dto';
+import { GoldenHourResponseDto } from '../../shared/golden-hour/dto/golden-hour-response.dto';
+import { UpdateGoldenHourDto } from '../../shared/golden-hour/dto/update-golden-hour.dto';
 import { GoldenHourConfigDocument } from './golden-hour.model';
 import { GoldenHourConfigRepository } from './golden-hour.repository';
 

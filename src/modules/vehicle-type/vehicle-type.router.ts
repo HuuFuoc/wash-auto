@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../common/async-handler';
-import { CreateVehicleTypeDto } from '../../features/vehicle-type/dto/create-vehicle-type.dto';
-import { SetVehicleTypeStatusDto } from '../../features/vehicle-type/dto/set-vehicle-type-status.dto';
-import { UpdateVehicleTypeDto } from '../../features/vehicle-type/dto/update-vehicle-type.dto';
-import { RoleEnum } from '../../features/auth/types/role.enum';
+import { CreateVehicleTypeDto } from '../../shared/vehicle-type/dto/create-vehicle-type.dto';
+import { SetVehicleTypeStatusDto } from '../../shared/vehicle-type/dto/set-vehicle-type-status.dto';
+import { UpdateVehicleTypeDto } from '../../shared/vehicle-type/dto/update-vehicle-type.dto';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/roles.middleware';
 import { validateDto } from '../../middlewares/validate.middleware';

@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { IdParam } from '../../common/params';
 import { AuthRequest } from '../../middlewares/auth.middleware';
-import { QueryUserDto } from '../../features/user/dto/query-user.dto';
+import { QueryUserDto } from '../../shared/user/dto/query-user.dto';
 import { UserService } from './user.service';
 
 // Admin endpoints — was features/user/admin-user.controller.ts

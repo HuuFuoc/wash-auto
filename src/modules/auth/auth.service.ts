@@ -6,11 +6,11 @@ import {
   UnauthorizedException,
 } from '../../common/exceptions';
 import { config } from '../../config';
-import { AuthResponseDto } from '../../features/auth/dto/auth-response.dto';
-import { LoginDto } from '../../features/auth/dto/login.dto';
-import { RegisterDto } from '../../features/auth/dto/register.dto';
-import { UserResponseDto } from '../../features/auth/dto/user-response.dto';
-import { RoleEnum } from '../../features/auth/types/role.enum';
+import { AuthResponseDto } from '../../shared/auth/dto/auth-response.dto';
+import { LoginDto } from '../../shared/auth/dto/login.dto';
+import { RegisterDto } from '../../shared/auth/dto/register.dto';
+import { UserResponseDto } from '../../shared/auth/dto/user-response.dto';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { IAuthPayload } from '../../shared/types/auth-payload.type';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { OtpService } from '../otp/otp.service';

@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import { TierNameEnum } from '../../features/tier-config/types/tier-name.enum';
+import { TierNameEnum } from '../../shared/tier-config/types/tier-name.enum';
 import { TierConfigDocument, TierConfigModel } from './tier-config.model';
 
 export interface IUpsertTierInput {

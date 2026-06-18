@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../common/async-handler';
-import { RoleEnum } from '../../features/auth/types/role.enum';
-import { CreateServiceTypeDto } from '../../features/service-type/dto/create-service-type.dto';
-import { SetServiceTypeStatusDto } from '../../features/service-type/dto/set-service-type-status.dto';
-import { UpdateServiceTypeDto } from '../../features/service-type/dto/update-service-type.dto';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { CreateServiceTypeDto } from '../../shared/service-type/dto/create-service-type.dto';
+import { SetServiceTypeStatusDto } from '../../shared/service-type/dto/set-service-type-status.dto';
+import { UpdateServiceTypeDto } from '../../shared/service-type/dto/update-service-type.dto';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/roles.middleware';
 import { validateDto } from '../../middlewares/validate.middleware';

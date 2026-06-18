@@ -1,9 +1,9 @@
 import { Request, Response } from 'express';
 import { IdParam } from '../../common/params';
-import { AssignWasherDto } from '../../features/work-order/dto/assign-washer.dto';
-import { CreateWorkOrderDto } from '../../features/work-order/dto/create-work-order.dto';
-import { QcWorkOrderDto } from '../../features/work-order/dto/qc-work-order.dto';
-import { QueryWorkOrderDto } from '../../features/work-order/dto/query-work-order.dto';
+import { AssignWasherDto } from '../../shared/work-order/dto/assign-washer.dto';
+import { CreateWorkOrderDto } from '../../shared/work-order/dto/create-work-order.dto';
+import { QcWorkOrderDto } from '../../shared/work-order/dto/qc-work-order.dto';
+import { QueryWorkOrderDto } from '../../shared/work-order/dto/query-work-order.dto';
 import { AuthRequest } from '../../middlewares/auth.middleware';
 import { WorkOrderService } from './work-order.service';
 
