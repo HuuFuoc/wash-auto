@@ -18,9 +18,7 @@ export class VehicleController {
   };
 
   create = async (req: AuthRequest, res: Response): Promise<void> => {
-    res
-      .status(201)
-      .json(await this.service.createOwn(req.user!.sub, req.body));
+    res.status(201).json(await this.service.createOwn(req.user!.sub, req.body));
   };
 
   update = async (req: AuthRequest<IdParam>, res: Response): Promise<void> => {

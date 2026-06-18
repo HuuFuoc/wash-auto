@@ -5,7 +5,10 @@ import {
 } from 'cloudinary';
 import { Readable } from 'node:stream';
 import { InternalServerErrorException } from '../../common/exceptions';
-import { cloudinary as defaultCloudinary, CloudinaryInstance } from './cloudinary';
+import {
+  cloudinary as defaultCloudinary,
+  CloudinaryInstance,
+} from './cloudinary';
 
 // Business logic copied verbatim from features upload.service.ts; the
 // @Inject(CLOUDINARY) dependency is now a constructor default.

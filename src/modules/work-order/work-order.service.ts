@@ -123,7 +123,9 @@ export class WorkOrderService {
       finalWo = (await this.repository.findById(created._id)) ?? created;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`Auto-assign on check-in failed for ${created.code}: ${msg}`);
+      console.error(
+        `Auto-assign on check-in failed for ${created.code}: ${msg}`,
+      );
     }
     return WorkOrderResponseDto.fromDocument(finalWo);
   }

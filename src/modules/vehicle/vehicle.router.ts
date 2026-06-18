@@ -36,7 +36,10 @@ meVehicleRouter.patch(
   validateDto(UpdateVehicleDto),
   asyncHandler(meController.update),
 );
-meVehicleRouter.patch('/:id/set-default', asyncHandler(meController.setDefault));
+meVehicleRouter.patch(
+  '/:id/set-default',
+  asyncHandler(meController.setDefault),
+);
 meVehicleRouter.delete('/:id', asyncHandler(meController.remove));
 
 // Admin router — mounted at /admin/vehicles. Equivalent of

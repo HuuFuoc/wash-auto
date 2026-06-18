@@ -13,7 +13,13 @@ export type VehicleTypeDocument = HydratedDocument<VehicleType>;
 
 const vehicleTypeSchema = new Schema<VehicleType>(
   {
-    name: { type: String, required: true, unique: true, trim: true, index: true },
+    name: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      index: true,
+    },
     description: { type: String, trim: true },
     is_active: { type: Boolean, default: true, index: true },
   },

@@ -42,7 +42,6 @@ async function bootstrap(): Promise<void> {
   registerCrons();
   const app = createApp();
   app.listen(config.app.port, () => {
-    // eslint-disable-next-line no-console
     console.log(
       `🚀 Server on http://localhost:${config.app.port}/${config.app.globalPrefix}`,
     );

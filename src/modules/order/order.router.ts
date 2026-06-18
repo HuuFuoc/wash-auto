@@ -18,20 +18,13 @@ import { getEmailService } from '../email/email.service';
 import { goldenHourService } from '../golden-hour/golden-hour.router';
 import { loyaltyService } from '../loyalty/loyalty.router';
 import { pricingPolicyService } from '../pricing-policy/pricing-policy.router';
-import {
-  serviceTypeRepository,
-} from '../service-type/service-type.router';
+import { serviceTypeRepository } from '../service-type/service-type.router';
 import { staffShiftRepository } from '../staff-shift/staff-shift.router';
 import { tierConfigRepository } from '../tier-config/tier-config.router';
 import { vehicleRepository, vehicleService } from '../vehicle/vehicle.router';
 import { voucherService } from '../voucher/voucher.router';
-import {
-  AdminOrderController,
-} from './admin-order.controller';
-import {
-  OrderController,
-  PaymentWebhookController,
-} from './order.controller';
+import { AdminOrderController } from './admin-order.controller';
+import { OrderController, PaymentWebhookController } from './order.controller';
 import { registerOrderCrons } from './order.crons';
 import { OrderRepository } from './order.repository';
 import { OrderService } from './order.service';
@@ -121,7 +114,10 @@ adminOrderRouter.patch(
   validateDto(UpdateOrderStatusDto),
   asyncHandler(adminController.updateStatus),
 );
-adminOrderRouter.post('/:id/mark-paid', asyncHandler(adminController.markCashPaid));
+adminOrderRouter.post(
+  '/:id/mark-paid',
+  asyncHandler(adminController.markCashPaid),
+);
 
 // Washer router — mounted at /washers/me. @Roles(WASHER).
 export const washerScheduleRouter = Router();

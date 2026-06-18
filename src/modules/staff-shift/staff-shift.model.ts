@@ -51,4 +51,7 @@ const staffShiftSchema = new Schema<StaffShift>(
 staffShiftSchema.index({ staff_id: 1, start_at: -1 });
 staffShiftSchema.index({ shift_type: 1, status: 1 });
 
-export const StaffShiftModel = model<StaffShift>('StaffShift', staffShiftSchema);
+export const StaffShiftModel = model<StaffShift>(
+  'StaffShift',
+  staffShiftSchema,
+);

@@ -4,10 +4,7 @@ import { BadRequestException } from '../../common/exceptions';
 import { HttpException } from '../../common/http-exception';
 import { config } from '../../config';
 import { redisClient } from '../../core/redis';
-import {
-  IOtpSendResult,
-  IStoredOtp,
-} from '../../shared/otp/types/otp.types';
+import { IOtpSendResult, IStoredOtp } from '../../shared/otp/types/otp.types';
 import { EmailService, getEmailService } from '../email/email.service';
 
 /** HTTP 429 — Nest used `new HttpException(msg, HttpStatus.TOO_MANY_REQUESTS)`. */

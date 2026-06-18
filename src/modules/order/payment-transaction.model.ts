@@ -12,8 +12,7 @@ export interface PaymentTransaction {
   transaction_datetime?: Date;
 }
 
-export type PaymentTransactionDocument =
-  HydratedDocument<PaymentTransaction>;
+export type PaymentTransactionDocument = HydratedDocument<PaymentTransaction>;
 
 const paymentTransactionSchema = new Schema<PaymentTransaction>(
   {

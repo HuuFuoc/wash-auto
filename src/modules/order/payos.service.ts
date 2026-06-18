@@ -50,7 +50,9 @@ export class PayosService {
     }
     try {
       const result = await this.client.webhooks.confirm(webhookUrl);
-      console.log(`[PayosService] PayOS webhook registered: ${result.webhookUrl}`);
+      console.log(
+        `[PayosService] PayOS webhook registered: ${result.webhookUrl}`,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(

@@ -1,5 +1,8 @@
 import { Types } from 'mongoose';
-import { BadRequestException, NotFoundException } from '../../common/exceptions';
+import {
+  BadRequestException,
+  NotFoundException,
+} from '../../common/exceptions';
 import { CreateStaffShiftDto } from '../../shared/staff-shift/dto/create-staff-shift.dto';
 import { QueryAvailableShiftDto } from '../../shared/staff-shift/dto/query-available-shift.dto';
 import { QueryStaffShiftDto } from '../../shared/staff-shift/dto/query-staff-shift.dto';

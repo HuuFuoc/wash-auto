@@ -22,7 +22,13 @@ const goldenHourConfigSchema = new Schema<GoldenHourConfig>(
     start_minute: { type: Number, required: true, min: 0, max: 1439 },
     end_minute: { type: Number, required: true, min: 1, max: 1440 },
     timezone: { type: String, required: true, default: 'Asia/Ho_Chi_Minh' },
-    discount_percent: { type: Number, required: true, default: 0, min: 0, max: 100 },
+    discount_percent: {
+      type: Number,
+      required: true,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
     is_active: { type: Boolean, default: true, index: true },
   },
   {

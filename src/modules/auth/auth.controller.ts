@@ -17,27 +17,25 @@ export class AuthController {
   };
 
   refresh = async (req: Request, res: Response): Promise<void> => {
-    res.json(await this.authService.refresh(req.body.refreshToken));
+    const { refreshToken } = req.body as { refreshToken: string };
+    res.json(await this.authService.refresh(refreshToken));
   };
 
   // @HttpCode(NO_CONTENT) → 204.
   logout = async (req: Request, res: Response): Promise<void> => {
-    await this.authService.logout(req.body.refreshToken);
+    const { refreshToken } = req.body as { refreshToken: string };
+    await this.authService.logout(refreshToken);
     res.status(204).send();
   };
 
   sendOtp = async (req: Request, res: Response): Promise<void> => {
-    res.json(await this.authService.requestEmailOtp(req.body.email, req.ip ?? ''));
+    const { email } = req.body as { email: string };
+    res.json(await this.authService.requestEmailOtp(email, req.ip ?? ''));
   };
 
   verifyOtp = async (req: Request, res: Response): Promise<void> => {
-    res.json(
-      await this.authService.verifyEmailOtp(
-        req.body.email,
-        req.body.code,
-        req.ip ?? '',
-      ),
-    );
+    const { email, code } = req.body as { email: string; code: string };
+    res.json(await this.authService.verifyEmailOtp(email, code, req.ip ?? ''));
   };
 
   getMe = (req: AuthRequest, res: Response): void => {

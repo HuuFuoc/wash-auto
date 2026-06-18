@@ -12,12 +12,15 @@ export class LoyaltyController {
   };
 
   // page/limit were @Query + DefaultValuePipe + ParseIntPipe; clamp identically.
-  listTransactions = async (
-    req: AuthRequest,
-    res: Response,
-  ): Promise<void> => {
-    const rawPage = parseInt(String(req.query.page ?? '1'), 10);
-    const rawLimit = parseInt(String(req.query.limit ?? '20'), 10);
+  listTransactions = async (req: AuthRequest, res: Response): Promise<void> => {
+    const rawPage = parseInt(
+      typeof req.query.page === 'string' ? req.query.page : '1',
+      10,
+    );
+    const rawLimit = parseInt(
+      typeof req.query.limit === 'string' ? req.query.limit : '20',
+      10,
+    );
     const safePage = Math.max(1, Number.isNaN(rawPage) ? 1 : rawPage);
     const safeLimit = Math.min(
       100,

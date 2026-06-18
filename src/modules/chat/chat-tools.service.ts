@@ -137,7 +137,9 @@ export class ChatToolsService {
     args: Record<string, unknown>,
     ctx: IChatToolContext,
   ): Promise<IChatToolResult> {
-    console.log(`Tool call name=${name} customerId=${ctx.customerId ?? 'guest'}`);
+    console.log(
+      `Tool call name=${name} customerId=${ctx.customerId ?? 'guest'}`,
+    );
     try {
       switch (name) {
         case 'list_services':

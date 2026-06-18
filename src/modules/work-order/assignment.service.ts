@@ -68,9 +68,10 @@ export class AssignmentService {
       const busy = await this.workOrderRepository.findBusyWasherIds([idStr]);
       if (busy.has(idStr)) return false;
       const onShift =
-        await this.staffShiftRepository.findOnShiftWasherStaffIdsAt(new Date(), [
-          new Types.ObjectId(idStr),
-        ]);
+        await this.staffShiftRepository.findOnShiftWasherStaffIdsAt(
+          new Date(),
+          [new Types.ObjectId(idStr)],
+        );
       if (onShift.length === 0) return false;
 
       const [next] = await this.workOrderRepository.findWaitingQueue(1);
@@ -81,7 +82,9 @@ export class AssignmentService {
         idStr,
       );
       if (claimed) {
-        console.log(`Pulled ${claimed.code} → washer ${idStr} (washer freed up)`);
+        console.log(
+          `Pulled ${claimed.code} → washer ${idStr} (washer freed up)`,
+        );
       }
       return !!claimed;
     } finally {

@@ -24,7 +24,11 @@ export class WasherWorkOrderController {
   finish = async (req: AuthRequest<IdParam>, res: Response): Promise<void> => {
     const dto = req.body as FinishWorkOrderDto;
     res.json(
-      await this.service.finish(req.user!.sub, req.params.id, dto.checkoutPhotos),
+      await this.service.finish(
+        req.user!.sub,
+        req.params.id,
+        dto.checkoutPhotos,
+      ),
     );
   };
 }

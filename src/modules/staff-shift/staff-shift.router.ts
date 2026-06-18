@@ -20,7 +20,11 @@ import { StaffShiftService } from './staff-shift.service';
 const repository = new StaffShiftRepository();
 const userRepository = new UserRepository();
 const roleRepository = new RoleRepository();
-const service = new StaffShiftService(repository, userRepository, roleRepository);
+const service = new StaffShiftService(
+  repository,
+  userRepository,
+  roleRepository,
+);
 const publicController = new StaffShiftController(service);
 const adminController = new AdminStaffShiftController(service);
 

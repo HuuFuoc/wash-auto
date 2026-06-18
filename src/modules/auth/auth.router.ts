@@ -41,7 +41,11 @@ authRouter.post(
   validateDto(RegisterDto),
   asyncHandler(controller.register),
 );
-authRouter.post('/login', validateDto(LoginDto), asyncHandler(controller.login));
+authRouter.post(
+  '/login',
+  validateDto(LoginDto),
+  asyncHandler(controller.login),
+);
 authRouter.post(
   '/refresh',
   validateDto(RefreshTokenDto),

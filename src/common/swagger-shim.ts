@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Framework-free stand-in for the `@nestjs/swagger` symbols the DTOs used, so
  * Phase 5 can drop every `@nestjs/*` dependency. Swagger was OPTIONAL and never
@@ -30,18 +29,18 @@ export function PartialType<T>(
 ): Constructor<Partial<T>> {
   class PartialClass extends (BaseClass as Constructor<object>) {}
 
-  const storage = getMetadataStorage() as any;
-  const metadatas: any[] = storage.getTargetValidationMetadatas(
+  const storage = getMetadataStorage();
+  const metadatas = storage.getTargetValidationMetadatas(
     BaseClass,
-    null as any,
+    '',
     false,
     false,
   );
   const properties = new Set<string>(
-    metadatas.map((meta) => meta.propertyName as string),
+    metadatas.map((meta) => meta.propertyName),
   );
   for (const property of properties) {
     IsOptional()(PartialClass.prototype, property);
   }
-  return PartialClass as Constructor<Partial<T>>;
+  return PartialClass;
 }

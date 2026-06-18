@@ -38,7 +38,10 @@ export const config = {
   otp: {
     ttlSeconds: toInt(process.env.OTP_TTL_SECONDS, 300),
     maxVerifyAttempts: toInt(process.env.OTP_MAX_VERIFY_ATTEMPTS, 5),
-    perEmailCooldownSeconds: toInt(process.env.OTP_PER_EMAIL_COOLDOWN_SECONDS, 60),
+    perEmailCooldownSeconds: toInt(
+      process.env.OTP_PER_EMAIL_COOLDOWN_SECONDS,
+      60,
+    ),
     perEmailHourlyLimit: toInt(process.env.OTP_PER_EMAIL_HOURLY_LIMIT, 5),
     verifiedEmailSkipDays: toInt(process.env.OTP_VERIFIED_EMAIL_SKIP_DAYS, 7),
     verifiedEmailSecret: process.env.JWT_VERIFIED_EMAIL_SECRET ?? '',
@@ -65,9 +68,15 @@ export const config = {
   },
   // Maps src/config/booking.config.ts (order/booking rules).
   booking: {
-    maxActivePerCustomer: toInt(process.env.MAX_ACTIVE_BOOKINGS_PER_CUSTOMER, 3),
+    maxActivePerCustomer: toInt(
+      process.env.MAX_ACTIVE_BOOKINGS_PER_CUSTOMER,
+      3,
+    ),
     maxReschedules: toInt(process.env.MAX_RESCHEDULES, 2),
-    paymentTimeoutMinutes: toInt(process.env.BOOKING_PAYMENT_TIMEOUT_MINUTES, 15),
+    paymentTimeoutMinutes: toInt(
+      process.env.BOOKING_PAYMENT_TIMEOUT_MINUTES,
+      15,
+    ),
     cashArrivalGraceMinutes: toInt(process.env.CASH_ARRIVAL_GRACE_MINUTES, 30),
     idempotencyTtlSeconds: toInt(process.env.IDEMPOTENCY_TTL_SECONDS, 86400),
     slotIntervalMinutes: toInt(process.env.BOOKING_SLOT_INTERVAL_MINUTES, 30),

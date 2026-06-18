@@ -40,7 +40,13 @@ const vehiclePricingSchema = new Schema<VehiclePricing>(
 
 const serviceTypeSchema = new Schema<ServiceType>(
   {
-    name: { type: String, required: true, unique: true, trim: true, index: true },
+    name: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      index: true,
+    },
     description: { type: String, trim: true },
     base_price: { type: Schema.Types.Decimal128, required: true },
     estimated_minutes: { type: Number, required: true, min: 1 },

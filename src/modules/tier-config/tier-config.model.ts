@@ -28,7 +28,13 @@ const tierConfigSchema = new Schema<TierConfig>(
     booking_window_days: { type: Number, required: true, min: 0 },
     priority_level: { type: Number, required: true, unique: true, min: 0 },
     points_per_1000_vnd: { type: Number, required: true, min: 0 },
-    discount_percent: { type: Number, required: true, default: 0, min: 0, max: 100 },
+    discount_percent: {
+      type: Number,
+      required: true,
+      default: 0,
+      min: 0,
+      max: 100,
+    },
     is_active: { type: Boolean, default: true, index: true },
   },
   {
@@ -37,4 +43,7 @@ const tierConfigSchema = new Schema<TierConfig>(
   },
 );
 
-export const TierConfigModel = model<TierConfig>('TierConfig', tierConfigSchema);
+export const TierConfigModel = model<TierConfig>(
+  'TierConfig',
+  tierConfigSchema,
+);

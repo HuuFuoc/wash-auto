@@ -15,7 +15,11 @@ abstract class BaseHttpException extends HttpException {
     phrase: string,
     message?: string | string[],
   ) {
-    super(status, message ?? phrase, message === undefined ? undefined : phrase);
+    super(
+      status,
+      message ?? phrase,
+      message === undefined ? undefined : phrase,
+    );
   }
 }
 

@@ -22,19 +22,18 @@ export class RefreshTokenService {
 
   constructor(private readonly redis: Redis = redisClient) {}
 
-  async sign(userId: string): Promise<ISignedRefreshToken> {
+  sign(userId: string): Promise<ISignedRefreshToken> {
     const jti = randomUUID();
     const token = jwt.sign({ sub: userId, jti }, config.auth.refreshSecret, {
       expiresIn: config.auth.refreshTtl as SignOptions['expiresIn'],
     });
-    return { token, jti };
+    return Promise.resolve({ token, jti });
   }
 
-  async verify(token: string): Promise<IRefreshTokenPayload> {
-    return jwt.verify(
-      token,
-      config.auth.refreshSecret,
-    ) as IRefreshTokenPayload;
+  verify(token: string): Promise<IRefreshTokenPayload> {
+    return Promise.resolve(
+      jwt.verify(token, config.auth.refreshSecret) as IRefreshTokenPayload,
+    );
   }
 
   async isBlacklisted(jti: string): Promise<boolean> {

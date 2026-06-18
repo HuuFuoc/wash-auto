@@ -43,7 +43,11 @@ export class AdminWorkOrderController {
   assign = async (req: AuthRequest<IdParam>, res: Response): Promise<void> => {
     const dto = req.body as AssignWasherDto;
     res.json(
-      await this.service.assignWasher(req.params.id, dto.washerId, req.user!.sub),
+      await this.service.assignWasher(
+        req.params.id,
+        dto.washerId,
+        req.user!.sub,
+      ),
     );
   };
 

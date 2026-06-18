@@ -47,10 +47,7 @@ import { VehicleRepository } from '../vehicle/vehicle.repository';
 import { VehicleService } from '../vehicle/vehicle.service';
 import { VoucherService } from '../voucher/voucher.service';
 import { OrderDocument } from './order.model';
-import {
-  IOrderListFilter,
-  OrderRepository,
-} from './order.repository';
+import { IOrderListFilter, OrderRepository } from './order.repository';
 import { PaymentTransactionRepository } from './payment-transaction.repository';
 import { PayosService } from './payos.service';
 

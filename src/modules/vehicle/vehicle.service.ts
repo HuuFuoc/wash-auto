@@ -12,10 +12,7 @@ import { VehicleListResponseDto } from '../../shared/vehicle/dto/vehicle-list-re
 import { VehicleResponseDto } from '../../shared/vehicle/dto/vehicle-response.dto';
 import { VehicleTypeRepository } from '../vehicle-type/vehicle-type.repository';
 import { VehicleDocument } from './vehicle.model';
-import {
-  IVehicleListFilter,
-  VehicleRepository,
-} from './vehicle.repository';
+import { IVehicleListFilter, VehicleRepository } from './vehicle.repository';
 
 // Business logic copied verbatim from features/vehicle/vehicle.service.ts;
 // only DI + Nest exceptions + Logger were swapped out.

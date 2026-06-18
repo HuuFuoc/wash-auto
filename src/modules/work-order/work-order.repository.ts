@@ -90,7 +90,9 @@ export class WorkOrderRepository {
         $set: {
           status: WorkOrderStatusEnum.ASSIGNED,
           assigned_washer_id: new Types.ObjectId(washerId),
-          ...(assignedBy ? { assigned_by: new Types.ObjectId(assignedBy) } : {}),
+          ...(assignedBy
+            ? { assigned_by: new Types.ObjectId(assignedBy) }
+            : {}),
         },
       },
       { returnDocument: 'after' },
@@ -106,7 +108,7 @@ export class WorkOrderRepository {
       assigned_washer_id: { $in: washerIds.map((w) => new Types.ObjectId(w)) },
       status: { $in: BUSY_WASHER_STATUSES },
     }).exec();
-    return new Set((ids as Types.ObjectId[]).map((id) => id.toString()));
+    return new Set(ids.map((id) => id.toString()));
   }
 
   /** Most recent `finished_at` per washer, for the idle-longest tiebreak. */
@@ -213,7 +215,8 @@ export class WorkOrderRepository {
     if (input.qcAt !== undefined) update.qc_at = input.qcAt;
     if (input.qcPassed !== undefined) update.qc_passed = input.qcPassed;
     if (input.qcNote !== undefined) update.qc_note = input.qcNote;
-    if (input.returnCount !== undefined) update.return_count = input.returnCount;
+    if (input.returnCount !== undefined)
+      update.return_count = input.returnCount;
 
     return WorkOrderModel.findByIdAndUpdate(
       id,

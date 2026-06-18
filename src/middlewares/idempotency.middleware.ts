@@ -50,7 +50,7 @@ export function idempotencyMiddleware(
         }
       }
 
-      const originalJson = res.json.bind(res);
+      const originalJson = res.json.bind(res) as Response['json'];
       res.json = ((body: unknown): Response => {
         const payload: ICachedResponse = { status: res.statusCode, body };
         void redisClient

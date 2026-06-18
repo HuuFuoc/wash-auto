@@ -66,7 +66,9 @@ export class EmailService {
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[EmailService] SMTP send failed (otp) to=${to} reason=${msg}`);
+      console.error(
+        `[EmailService] SMTP send failed (otp) to=${to} reason=${msg}`,
+      );
       throw err;
     }
   }

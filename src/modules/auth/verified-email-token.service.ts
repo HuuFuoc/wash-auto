@@ -6,14 +6,16 @@ import { IVerifiedEmailPayload } from '../../shared/types/verified-email-payload
 // Was features/auth/services/verified-email-token.service.ts. Signs the
 // short-lived scope=email_verified JWT (different secret than the access token).
 export class VerifiedEmailTokenService {
-  async sign(userId: string, email: string): Promise<string> {
+  sign(userId: string, email: string): Promise<string> {
     const payload: IVerifiedEmailPayload = {
       sub: userId,
       email,
       scope: JwtScope.EMAIL_VERIFIED,
     };
-    return jwt.sign(payload, config.otp.verifiedEmailSecret, {
-      expiresIn: config.otp.verifiedEmailTtl as SignOptions['expiresIn'],
-    });
+    return Promise.resolve(
+      jwt.sign(payload, config.otp.verifiedEmailSecret, {
+        expiresIn: config.otp.verifiedEmailTtl as SignOptions['expiresIn'],
+      }),
+    );
   }
 }

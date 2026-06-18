@@ -30,7 +30,10 @@ export class AdminUserController {
     res.json(await this.userService.changeRole(req.params.id, req.body));
   };
 
-  setStatus = async (req: AuthRequest<IdParam>, res: Response): Promise<void> => {
+  setStatus = async (
+    req: AuthRequest<IdParam>,
+    res: Response,
+  ): Promise<void> => {
     res.json(
       await this.userService.setStatus(req.user!.sub, req.params.id, req.body),
     );
