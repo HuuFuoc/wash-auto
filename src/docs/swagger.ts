@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { randomBytes } from 'crypto';
 import { parse } from 'yaml';
 import type { Express, Request, Response } from 'express';
 import { config } from '../config';
@@ -24,12 +25,11 @@ export function loadOpenApiSpec(): Record<string, unknown> | null {
 
 // Swagger UI assets load from a CDN. swagger-ui-dist's static files are NOT
 // bundled into the Vercel serverless function, so swagger-ui-express's default
-// page (which references local ./swagger-ui-bundle.js + runs init before any
-// CDN fallback) renders blank. This self-contained page loads the CDN bundle
-// FIRST, then initialises against the spec served at /<prefix>/docs.json.
+// page renders blank. This self-contained page loads the CDN bundle FIRST, then
+// initialises against the spec served at /<prefix>/docs.json.
 const CDN = 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.6';
 
-function docsHtml(specUrl: string): string {
+function docsHtml(specUrl: string, nonce: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -42,7 +42,7 @@ function docsHtml(specUrl: string): string {
   <div id="swagger-ui"></div>
   <script src="${CDN}/swagger-ui-bundle.js"></script>
   <script src="${CDN}/swagger-ui-standalone-preset.js"></script>
-  <script>
+  <script nonce="${nonce}">
     window.ui = SwaggerUIBundle({
       url: '${specUrl}',
       dom_id: '#swagger-ui',
@@ -69,7 +69,22 @@ export function mountSwagger(app: Express): void {
   app.get(
     [`/${prefix}/docs`, `/${prefix}/docs/`],
     (_req: Request, res: Response) => {
-      res.type('html').send(docsHtml(specUrl));
+      // Override Helmet's strict default CSP for THIS page only so the CDN
+      // assets + the nonce'd inline init script are allowed. swagger-ui injects
+      // its own <style> at runtime, hence style-src 'unsafe-inline'.
+      const nonce = randomBytes(16).toString('base64');
+      res.setHeader(
+        'Content-Security-Policy',
+        [
+          "default-src 'self'",
+          `script-src 'self' ${CDN.split('/npm/')[0]} 'nonce-${nonce}'`,
+          `style-src 'self' ${CDN.split('/npm/')[0]} 'unsafe-inline'`,
+          `img-src 'self' data: ${CDN.split('/npm/')[0]}`,
+          "worker-src 'self' blob:",
+          "connect-src 'self'",
+        ].join('; '),
+      );
+      res.type('html').send(docsHtml(specUrl, nonce));
     },
   );
 }
