@@ -9,6 +9,8 @@ servers:
 tags:
   - name: health
     description: Service health
+  - name: auth
+    description: Registration, login, token refresh, email OTP
   - name: service-types
     description: Wash service catalogue (public read, admin manage)
 components:
@@ -34,6 +36,70 @@ components:
         error:
           type: string
           example: Bad Request
+    Register:
+      type: object
+      required: [name, phone, email, password]
+      properties:
+        name: { type: string, maxLength: 100, example: 'Nguyen Van A' }
+        phone: { type: string, maxLength: 20, example: '0901234567' }
+        email: { type: string, format: email, maxLength: 255, example: 'customer@example.com' }
+        password: { type: string, minLength: 8, maxLength: 72, example: 'P@ssw0rd123' }
+        dateOfBirth: { type: string, format: date, example: '1995-01-15' }
+    Login:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, example: 'customer@example.com' }
+        password: { type: string, maxLength: 72, example: 'P@ssw0rd123' }
+    RefreshToken:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string, example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6...' }
+    OtpSend:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email, example: 'customer@example.com' }
+    OtpVerify:
+      type: object
+      required: [email, code]
+      properties:
+        email: { type: string, format: email, example: 'customer@example.com' }
+        code: { type: string, minLength: 6, maxLength: 6, example: '123456' }
+    UserResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        role: { type: string, enum: [customer, cashier, washer, manager, admin], example: customer }
+        name: { type: string, example: 'Nguyen Van A' }
+        phone: { type: string, example: '0901234567' }
+        email: { type: string, format: email, example: 'customer@example.com' }
+        avatarUrl: { type: string, example: 'https://cdn.example.com/avatar.jpg' }
+        dateOfBirth: { type: string, format: date-time, example: '1995-01-15T00:00:00.000Z' }
+        isActive: { type: boolean, example: true }
+    AuthResponse:
+      type: object
+      properties:
+        accessToken: { type: string, example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6...' }
+        refreshToken: { type: string, example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6...' }
+        user: { $ref: '#/components/schemas/UserResponse' }
+    AuthPayload:
+      type: object
+      description: JWT access-token payload attached to req.user.
+      properties:
+        sub: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        email: { type: string, format: email, example: 'customer@example.com' }
+        role: { type: string, enum: [customer, cashier, washer, manager, admin], example: customer }
+    OtpSendResponse:
+      type: object
+      properties:
+        message: { type: string, example: 'OTP sent if account exists' }
+        token: { type: string, description: 'Present only if already verified within window', example: 'eyJhbGciOi...' }
+    OtpVerifyResponse:
+      type: object
+      properties:
+        token: { type: string, description: 'JWT scope=email_verified, 15m TTL', example: 'eyJhbGciOi...' }
     VehiclePricing:
       type: object
       required: [vehicleTypeId, price, estimatedMinutes]
@@ -103,6 +169,149 @@ components:
           items: { $ref: '#/components/schemas/VehiclePricingResponse' }
         isActive: { type: boolean, example: true }
 paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register a customer account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Register' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Log in with email + password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Login' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Exchange a refresh token for new tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshToken' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401':
+          description: Invalid/expired refresh token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke a refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshToken' }
+      responses:
+        '204':
+          description: No Content
+  /auth/otp/send:
+    post:
+      tags: [auth]
+      summary: Send an email verification OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpSend' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OtpSendResponse' }
+  /auth/otp/verify:
+    post:
+      tags: [auth]
+      summary: Verify an email OTP code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpVerify' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OtpVerifyResponse' }
+        '400':
+          description: Invalid/expired code
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Current token payload
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthPayload' }
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/admin-only:
+    get:
+      tags: [auth]
+      summary: Admin-only probe (role guard demo)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  user: { $ref: '#/components/schemas/AuthPayload' }
+        '403':
+          description: Forbidden (not admin)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /health:
     get:
       tags: [health]
