@@ -10,7 +10,7 @@
     "node": ">=22.0.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && copyfiles -u 1 \"src/docs/**/*.yaml\" dist",
     "dev": "ts-node src/server.ts",
     "dev:express": "ts-node src/server.ts",
     "start": "node dist/server.js",
@@ -43,9 +43,12 @@
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.7",
     "rate-limit-redis": "^5.0.0",
-    "reflect-metadata": "^0.2.2"
+    "reflect-metadata": "^0.2.2",
+    "swagger-ui-express": "^5.0.1",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@apidevtools/swagger-parser": "^12.1.0",
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.18.0",
     "@types/bcrypt": "^6.0.0",
@@ -61,6 +64,8 @@
     "@types/node-cron": "^3.0.11",
     "@types/nodemailer": "^8.0.0",
     "@types/supertest": "^7.0.0",
+    "@types/swagger-ui-express": "^4.1.8",
+    "copyfiles": "^2.4.1",
     "dotenv": "^17.4.2",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",

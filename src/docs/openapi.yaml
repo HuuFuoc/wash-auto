@@ -1,0 +1,50 @@
+openapi: 3.0.3
+info:
+  title: WAVE / AutoWash Pro API
+  version: 0.0.1
+  description: REST API for the WAVE car-wash platform (Express backend).
+servers:
+  - url: /api
+    description: Global API prefix
+tags:
+  - name: health
+    description: Service health
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          example: 400
+        message:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+          example: Validation failed
+        error:
+          type: string
+          example: Bad Request
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
