@@ -23,6 +23,10 @@ tags:
     description: Customer vehicles (self-manage) + admin lookup
   - name: loyalty
     description: Customer loyalty account + point transactions
+  - name: vouchers
+    description: Customer vouchers (self-view) + admin grant/revoke
+  - name: shifts
+    description: Staff shifts (availability + admin scheduling)
 components:
   securitySchemes:
     bearerAuth:
@@ -241,6 +245,85 @@ components:
         data:
           type: array
           items: { $ref: '#/components/schemas/LoyaltyTransactionResponse' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    GrantVoucherAdmin:
+      type: object
+      required: [customerId]
+      properties:
+        customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        code: { type: string, pattern: '^[A-Z0-9-]{3,30}$', example: 'FREEWASH-KHOI' }
+        discountCapVnd: { type: integer, minimum: 1, maximum: 200000, default: 100000, example: 100000 }
+        expiresAt: { type: string, format: date-time, example: '2026-08-27T00:00:00.000Z' }
+    RevokeVoucher:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 5, maxLength: 500, example: 'Granted to wrong customer by mistake' }
+    VoucherResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        customerName: { type: string, description: 'Present on admin list', example: 'Nguyễn Văn A' }
+        customerEmail: { type: string, example: 'a@example.com' }
+        code: { type: string, example: 'FREEWASH-20260527-001' }
+        type: { type: string, description: 'VoucherTypeEnum', example: 'free_wash' }
+        status: { type: string, description: 'VoucherStatusEnum', example: 'unused' }
+        discountCapVnd: { type: integer, example: 100000 }
+        expiresAt: { type: string, format: date-time, example: '2026-08-25T00:00:00.000Z' }
+        grantedReason: { type: string, example: 'Reward for 10 completed washes' }
+        usedAt: { type: string, format: date-time, example: '2026-06-01T08:00:00.000Z' }
+        usedOrderId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        createdAt: { type: string, format: date-time }
+    VoucherListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/VoucherResponse' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateStaffShift:
+      type: object
+      required: [staffId, shiftType, date, block]
+      properties:
+        staffId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        shiftType: { type: string, description: 'ShiftTypeEnum', example: 'washer' }
+        stationName: { type: string, maxLength: 80, example: 'Bay 1' }
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', example: '2026-06-01' }
+        block: { type: string, description: 'morning | afternoon | fullday', example: 'morning' }
+        note: { type: string, maxLength: 500, example: 'Morning shift' }
+    UpdateStaffShift:
+      description: All optional. Provide date + block together to reschedule.
+      type: object
+      properties:
+        staffId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        shiftType: { type: string, example: 'washer' }
+        stationName: { type: string, maxLength: 80, example: 'Bay 1' }
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', example: '2026-06-01' }
+        block: { type: string, example: 'morning' }
+        note: { type: string, maxLength: 500 }
+    SetStaffShiftStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, description: 'scheduled|active|completed|cancelled', example: 'active' }
+    StaffShiftResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        staffId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        shiftType: { type: string, example: 'washer' }
+        stationName: { type: string, example: 'Bay 1' }
+        startAt: { type: string, format: date-time, example: '2026-06-01T08:00:00.000Z' }
+        endAt: { type: string, format: date-time, example: '2026-06-01T12:00:00.000Z' }
+        status: { type: string, example: 'scheduled' }
+        note: { type: string, example: 'Morning shift' }
+    StaffShiftListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/StaffShiftResponse' }
         meta: { $ref: '#/components/schemas/PaginationMeta' }
     VehiclePricing:
       type: object
@@ -469,6 +552,242 @@ paths:
                   status:
                     type: string
                     example: ok
+  /me/vouchers:
+    get:
+      tags: [vouchers]
+      summary: List my vouchers
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string }, description: 'Filter by VoucherStatusEnum' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VoucherResponse' }
+  /me/vouchers/{id}:
+    get:
+      tags: [vouchers]
+      summary: Get one of my vouchers
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherResponse' }
+        '404':
+          description: Not found (or not owned)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/vouchers:
+    post:
+      tags: [vouchers]
+      summary: Grant a voucher to a customer (admin/manager)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GrantVoucherAdmin' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    get:
+      tags: [vouchers]
+      summary: List all vouchers (admin/manager, paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: status, in: query, schema: { type: string }, description: 'VoucherStatusEnum' }
+        - { name: customerId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherListResponse' }
+  /admin/vouchers/{id}:
+    get:
+      tags: [vouchers]
+      summary: Get one voucher (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/vouchers/{id}/revoke:
+    patch:
+      tags: [vouchers]
+      summary: Revoke an unused voucher (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RevokeVoucher' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherResponse' }
+  /shifts/available:
+    get:
+      tags: [shifts]
+      summary: List available shifts in a date range
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: shiftType, in: query, schema: { type: string }, description: 'ShiftTypeEnum' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StaffShiftResponse' }
+  /admin/shifts:
+    get:
+      tags: [shifts]
+      summary: List staff shifts (admin/manager, paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: staffId, in: query, schema: { type: string } }
+        - { name: shiftType, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: startFrom, in: query, schema: { type: string, format: date-time } }
+        - { name: startTo, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffShiftListResponse' }
+    post:
+      tags: [shifts]
+      summary: Create a staff shift (admin/manager). fullday returns two shifts.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateStaffShift' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/StaffShiftResponse' }
+                  - type: array
+                    items: { $ref: '#/components/schemas/StaffShiftResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/shifts/staff:
+    get:
+      tags: [shifts]
+      summary: List staff assignable to shifts (admin/manager)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+                    name: { type: string, example: 'Tran Van B' }
+                    role: { type: string, example: 'washer' }
+  /admin/shifts/{id}:
+    get:
+      tags: [shifts]
+      summary: Get one staff shift (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffShiftResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      tags: [shifts]
+      summary: Update a staff shift (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateStaffShift' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffShiftResponse' }
+  /admin/shifts/{id}/status:
+    patch:
+      tags: [shifts]
+      summary: Change a staff shift status (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetStaffShiftStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffShiftResponse' }
   /upload/image:
     post:
       tags: [upload]
