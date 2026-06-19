@@ -31,6 +31,16 @@ tags:
     description: Bookings/orders (customer, cashier/admin, washer schedule, PayOS webhook)
   - name: work-orders
     description: Wash job tickets (cashier check-in/QC, washer execution)
+  - name: users
+    description: Staff/customer account management (admin)
+  - name: golden-hours
+    description: Golden-hour discount windows (admin)
+  - name: pricing-policy
+    description: Global pricing policy (admin)
+  - name: dashboard
+    description: Management reporting / analytics (manager/admin)
+  - name: chat
+    description: AI chat assistant (public) + chat knowledge base (admin)
 components:
   securitySchemes:
     bearerAuth:
@@ -524,6 +534,139 @@ components:
           type: array
           items: { $ref: '#/components/schemas/WorkOrderResponse' }
         meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateUserAdmin:
+      type: object
+      required: [name, phone, email, password, role]
+      properties:
+        name: { type: string, maxLength: 100, example: 'Nguyen Van A' }
+        phone: { type: string, maxLength: 20, example: '0901234567' }
+        email: { type: string, format: email, maxLength: 255, example: 'cashier1@washauto.local' }
+        password: { type: string, minLength: 8, maxLength: 72, example: 'StrongP@ssw0rd!' }
+        role: { type: string, enum: [customer, cashier, washer, manager, admin], example: cashier }
+        avatarUrl: { type: string, maxLength: 500, example: 'https://cdn.example.com/avatar.jpg' }
+        dateOfBirth: { type: string, format: date, example: '1995-01-15' }
+    UpdateUser:
+      description: All optional.
+      type: object
+      properties:
+        name: { type: string, maxLength: 100 }
+        phone: { type: string, maxLength: 20 }
+        avatarUrl: { type: string, maxLength: 500 }
+        dateOfBirth: { type: string, format: date }
+    ChangeUserRole:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [customer, cashier, washer, manager, admin], example: manager }
+    SetUserStatus:
+      type: object
+      required: [isActive]
+      properties:
+        isActive: { type: boolean, example: true }
+    ResetUserPassword:
+      type: object
+      required: [newPassword]
+      properties:
+        newPassword: { type: string, minLength: 8, maxLength: 72, example: 'NewStrongP@ss123' }
+    UserListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/UserResponse' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateGoldenHour:
+      type: object
+      required: [name, startMinute, endMinute]
+      properties:
+        name: { type: string, example: 'Morning quiet hours' }
+        daysOfWeek:
+          type: array
+          items: { type: integer, minimum: 0, maximum: 6 }
+          description: '0=Sun … 6=Sat. Empty = every day.'
+          example: [1, 2, 3, 4, 5]
+        startMinute: { type: integer, minimum: 0, maximum: 1439, example: 480 }
+        endMinute: { type: integer, minimum: 1, maximum: 1440, example: 600 }
+        timezone: { type: string, default: 'Asia/Ho_Chi_Minh', example: 'Asia/Ho_Chi_Minh' }
+        discountPercent: { type: integer, minimum: 0, maximum: 100, default: 0, example: 10 }
+    UpdateGoldenHour:
+      description: All CreateGoldenHour fields optional, plus isActive.
+      type: object
+      properties:
+        name: { type: string }
+        daysOfWeek: { type: array, items: { type: integer } }
+        startMinute: { type: integer, minimum: 0, maximum: 1439 }
+        endMinute: { type: integer, minimum: 1, maximum: 1440 }
+        timezone: { type: string }
+        discountPercent: { type: integer, minimum: 0, maximum: 100 }
+        isActive: { type: boolean, example: true }
+    GoldenHourResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        name: { type: string, example: 'Morning quiet hours' }
+        daysOfWeek: { type: array, items: { type: integer }, example: [1, 2, 3, 4, 5] }
+        startMinute: { type: integer, example: 480 }
+        endMinute: { type: integer, example: 600 }
+        startTime: { type: string, example: '08:00' }
+        endTime: { type: string, example: '10:00' }
+        timezone: { type: string, example: 'Asia/Ho_Chi_Minh' }
+        discountPercent: { type: integer, example: 10 }
+        isActive: { type: boolean, example: true }
+    UpdatePricingPolicy:
+      type: object
+      required: [maxStackedDiscountPercent]
+      properties:
+        maxStackedDiscountPercent: { type: integer, minimum: 0, maximum: 100, example: 50 }
+    PricingPolicyResponse:
+      type: object
+      properties:
+        maxStackedDiscountPercent: { type: integer, example: 50 }
+        updatedAt: { type: string, format: date-time }
+    SendMessage:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 1000, example: 'Cho tôi xem danh sách dịch vụ rửa xe đang có' }
+        sessionId: { type: string, maxLength: 64, example: 'b3c7e0f4-9e6e-4c2d-aab2-08d3c1c0b1a2' }
+    ChatResponse:
+      type: object
+      properties:
+        sessionId: { type: string, example: 'b3c7e0f4-9e6e-4c2d-aab2-08d3c1c0b1a2' }
+        reply: { type: string, example: 'Cửa hàng đang có 3 gói: Rửa cơ bản, Premium, Detailing.' }
+        toolsCalled: { type: array, items: { type: string }, example: ['list_services'] }
+    CreateChatKnowledge:
+      type: object
+      required: [question, answer]
+      properties:
+        question: { type: string, minLength: 3, maxLength: 300, example: 'Cửa hàng mở cửa lúc mấy giờ?' }
+        answer: { type: string, minLength: 3, maxLength: 2000, example: 'Wash-Auto mở cửa 07:00 - 21:00 mỗi ngày.' }
+        keywords:
+          type: array
+          maxItems: 20
+          items: { type: string }
+          example: ['giờ mở cửa', 'opening hours']
+        category: { type: string, maxLength: 50, example: 'policy' }
+    UpdateChatKnowledge:
+      description: All CreateChatKnowledge fields optional, plus isActive.
+      type: object
+      properties:
+        question: { type: string, minLength: 3, maxLength: 300 }
+        answer: { type: string, minLength: 3, maxLength: 2000 }
+        keywords: { type: array, items: { type: string } }
+        category: { type: string, maxLength: 50 }
+        isActive: { type: boolean, example: true }
+    ChatKnowledgeResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        question: { type: string, example: 'Cửa hàng mở cửa lúc mấy giờ?' }
+        answer: { type: string, example: 'Wash-Auto mở cửa 07:00 - 21:00 mỗi ngày.' }
+        keywords: { type: array, items: { type: string }, example: ['giờ mở cửa'] }
+        category: { type: string, example: 'policy' }
+        isActive: { type: boolean, example: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     VehiclePricing:
       type: object
       required: [vehicleTypeId, price, estimatedMinutes]
@@ -751,6 +894,363 @@ paths:
                   status:
                     type: string
                     example: ok
+  /admin/users:
+    get:
+      tags: [users]
+      summary: List users (admin, paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: role, in: query, schema: { type: string } }
+        - { name: isActive, in: query, schema: { type: boolean } }
+        - { name: search, in: query, schema: { type: string }, description: 'name/email/phone' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserListResponse' }
+    post:
+      tags: [users]
+      summary: Create a staff/customer account (admin)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateUserAdmin' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/users/{id}:
+    get:
+      tags: [users]
+      summary: Get one user (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      tags: [users]
+      summary: Update a user (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUser' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+    delete:
+      tags: [users]
+      summary: Soft-delete a user (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204':
+          description: No Content
+  /admin/users/{id}/role:
+    patch:
+      tags: [users]
+      summary: Change a user's role (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeUserRole' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+  /admin/users/{id}/status:
+    patch:
+      tags: [users]
+      summary: Activate/deactivate a user (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetUserStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+  /admin/users/{id}/reset-password:
+    post:
+      tags: [users]
+      summary: Reset a user's password (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetUserPassword' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: 'Password reset' }
+  /admin/golden-hours:
+    get:
+      tags: [golden-hours]
+      summary: List golden-hour windows (manager/admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GoldenHourResponse' }
+    post:
+      tags: [golden-hours]
+      summary: Create a golden-hour window (manager/admin)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateGoldenHour' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoldenHourResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/golden-hours/{id}:
+    patch:
+      tags: [golden-hours]
+      summary: Update a golden-hour window (manager/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateGoldenHour' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoldenHourResponse' }
+    delete:
+      tags: [golden-hours]
+      summary: Delete a golden-hour window (manager/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204':
+          description: No Content
+  /admin/pricing-policy:
+    get:
+      tags: [pricing-policy]
+      summary: Get the pricing policy (admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PricingPolicyResponse' }
+    patch:
+      tags: [pricing-policy]
+      summary: Update the pricing policy (admin)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdatePricingPolicy' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PricingPolicyResponse' }
+  /admin/dashboard:
+    get:
+      tags: [dashboard]
+      summary: Management reporting / analytics (manager/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: fromDate, in: query, schema: { type: string }, description: 'YYYY-MM-DD' }
+        - { name: toDate, in: query, schema: { type: string }, description: 'YYYY-MM-DD' }
+        - { name: period, in: query, schema: { type: string } }
+        - { name: serviceId, in: query, schema: { type: string } }
+        - { name: topN, in: query, schema: { type: integer, default: 5, maximum: 20 } }
+      responses:
+        '200':
+          description: OK — aggregated report (shape varies by caller role)
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Dashboard report (revenue, counts, top-N rankings, etc.)
+  /chat/message:
+    post:
+      tags: [chat]
+      summary: Send a message to the AI assistant (optional auth)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendMessage' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatResponse' }
+  /chat/sessions/{sessionId}:
+    get:
+      tags: [chat]
+      summary: Get a chat session's message history (optional auth)
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId: { type: string, example: 'b3c7e0f4-9e6e-4c2d-aab2-08d3c1c0b1a2' }
+                  messages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        role: { type: string, example: 'user' }
+                        content: { type: string, example: 'Cho tôi xem dịch vụ' }
+  /admin/chat-knowledge:
+    get:
+      tags: [chat]
+      summary: List chat knowledge entries (admin/manager)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ChatKnowledgeResponse' }
+    post:
+      tags: [chat]
+      summary: Create a chat knowledge entry (admin/manager)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateChatKnowledge' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatKnowledgeResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/chat-knowledge/{id}:
+    get:
+      tags: [chat]
+      summary: Get one chat knowledge entry (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatKnowledgeResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      tags: [chat]
+      summary: Update a chat knowledge entry (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateChatKnowledge' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatKnowledgeResponse' }
+    delete:
+      tags: [chat]
+      summary: Delete a chat knowledge entry (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204':
+          description: No Content
   /admin/work-orders:
     post:
       tags: [work-orders]
