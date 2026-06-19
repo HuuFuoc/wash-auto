@@ -9,6 +9,8 @@ servers:
 tags:
   - name: health
     description: Service health
+  - name: service-types
+    description: Wash service catalogue (public read, admin manage)
 components:
   securitySchemes:
     bearerAuth:
@@ -32,6 +34,74 @@ components:
         error:
           type: string
           example: Bad Request
+    VehiclePricing:
+      type: object
+      required: [vehicleTypeId, price, estimatedMinutes]
+      properties:
+        vehicleTypeId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        price: { type: number, example: 60000 }
+        estimatedMinutes: { type: integer, example: 30 }
+        isActive: { type: boolean, default: true, example: true }
+    CreateServiceType:
+      type: object
+      required: [name, basePrice, estimatedMinutes, pointsMultiplier]
+      properties:
+        name: { type: string, maxLength: 120, example: 'Premium Wash' }
+        description:
+          { type: string, maxLength: 500, example: 'Exterior + interior + tire shine' }
+        basePrice: { type: number, example: 80000 }
+        estimatedMinutes: { type: integer, example: 30 }
+        pointsMultiplier: { type: number, example: 1.5 }
+        checklistTemplate:
+          type: array
+          items: { type: string }
+          example: ['Rửa thân xe', 'Hút bụi nội thất']
+        isVoucherEligible: { type: boolean, default: true, example: true }
+        vehiclePricing:
+          type: array
+          items: { $ref: '#/components/schemas/VehiclePricing' }
+    UpdateServiceType:
+      description: All CreateServiceType fields, all optional (PartialType).
+      type: object
+      properties:
+        name: { type: string, maxLength: 120 }
+        description: { type: string, maxLength: 500 }
+        basePrice: { type: number }
+        estimatedMinutes: { type: integer }
+        pointsMultiplier: { type: number }
+        checklistTemplate: { type: array, items: { type: string } }
+        isVoucherEligible: { type: boolean }
+        vehiclePricing:
+          type: array
+          items: { $ref: '#/components/schemas/VehiclePricing' }
+    SetServiceTypeStatus:
+      type: object
+      required: [isActive]
+      properties:
+        isActive: { type: boolean, example: true }
+    VehiclePricingResponse:
+      type: object
+      properties:
+        vehicleTypeId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        vehicleTypeName: { type: string, example: 'Sedan 4 chỗ' }
+        price: { type: string, example: '60000' }
+        estimatedMinutes: { type: integer, example: 30 }
+        isActive: { type: boolean, example: true }
+    ServiceTypeResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        name: { type: string, example: 'Premium Wash' }
+        description: { type: string, example: 'Exterior + interior + tire shine' }
+        basePrice: { type: string, example: '80000' }
+        estimatedMinutes: { type: integer, example: 30 }
+        pointsMultiplier: { type: number, example: 1.5 }
+        checklistTemplate: { type: array, items: { type: string } }
+        isVoucherEligible: { type: boolean, example: true }
+        vehiclePricing:
+          type: array
+          items: { $ref: '#/components/schemas/VehiclePricingResponse' }
+        isActive: { type: boolean, example: true }
 paths:
   /health:
     get:
@@ -48,3 +118,101 @@ paths:
                   status:
                     type: string
                     example: ok
+  /service-types:
+    get:
+      tags: [service-types]
+      summary: List active service types (public)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServiceTypeResponse' }
+  /service-types/{id}:
+    get:
+      tags: [service-types]
+      summary: Get one active service type (public)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceTypeResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/service-types:
+    get:
+      tags: [service-types]
+      summary: List all service types (admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServiceTypeResponse' }
+    post:
+      tags: [service-types]
+      summary: Create a service type (admin)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateServiceType' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceTypeResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/service-types/{id}:
+    patch:
+      tags: [service-types]
+      summary: Update a service type (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateServiceType' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceTypeResponse' }
+  /admin/service-types/{id}/status:
+    patch:
+      tags: [service-types]
+      summary: Activate/deactivate a service type (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetServiceTypeStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceTypeResponse' }
