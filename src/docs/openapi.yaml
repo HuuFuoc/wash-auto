@@ -17,6 +17,12 @@ tags:
     description: Vehicle type catalogue (public read, admin manage)
   - name: tier-configs
     description: Loyalty tier configuration (public read, admin manage)
+  - name: upload
+    description: Image upload (Cloudinary)
+  - name: vehicles
+    description: Customer vehicles (self-manage) + admin lookup
+  - name: loyalty
+    description: Customer loyalty account + point transactions
 components:
   securitySchemes:
     bearerAuth:
@@ -153,6 +159,89 @@ components:
         pointsPer1000Vnd: { type: number, example: 1.5 }
         discountPercent: { type: number, example: 5 }
         isActive: { type: boolean, example: true }
+    PaginationMeta:
+      type: object
+      properties:
+        page: { type: integer, example: 1 }
+        limit: { type: integer, example: 20 }
+        total: { type: integer, example: 42 }
+        totalPages: { type: integer, example: 3 }
+    CreateVehicle:
+      type: object
+      required: [vehicleTypeId, licensePlate]
+      properties:
+        vehicleTypeId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        licensePlate: { type: string, maxLength: 20, example: '51A-12345' }
+        nickname: { type: string, maxLength: 60, example: 'My city ride' }
+        brand: { type: string, maxLength: 60, example: 'Honda' }
+        model: { type: string, maxLength: 60, example: 'Wave Alpha' }
+        color: { type: string, maxLength: 40, example: 'Red' }
+        isDefault: { type: boolean, example: false }
+    UpdateVehicle:
+      description: All optional. (Cannot change isDefault here; use set-default.)
+      type: object
+      properties:
+        vehicleTypeId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        licensePlate: { type: string, maxLength: 20, example: '51A-12345' }
+        nickname: { type: string, maxLength: 60 }
+        brand: { type: string, maxLength: 60 }
+        model: { type: string, maxLength: 60 }
+        color: { type: string, maxLength: 40 }
+    VehicleResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        ownerName: { type: string, description: 'Present only on admin list', example: 'Nguyễn Văn A' }
+        ownerPhone: { type: string, example: '0901234567' }
+        vehicleTypeId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        vehicleTypeName: { type: string, description: 'Present only when populated', example: 'Motorbike' }
+        licensePlate: { type: string, example: '51A-12345' }
+        nickname: { type: string, example: 'My city ride' }
+        brand: { type: string, example: 'Honda' }
+        model: { type: string, example: 'Wave Alpha' }
+        color: { type: string, example: 'Red' }
+        isDefault: { type: boolean, example: true }
+        isActive: { type: boolean, example: true }
+    VehicleListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/VehicleResponse' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    LoyaltyAccountResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        tierConfigId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        tierName: { type: string, enum: [None, Bronze, Silver, Gold], example: None }
+        pointsBalance: { type: integer, example: 0 }
+        successfulWashesTowardVoucher: { type: integer, example: 3 }
+        totalSuccessfulWashes: { type: integer, example: 13 }
+        lastAnnualResetAt: { type: string, format: date-time, example: '2026-01-01T00:00:00.000Z' }
+    LoyaltyTransactionResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        type: { type: string, example: 'earn_completed', description: 'Loyalty transaction type' }
+        pointsDelta: { type: integer, example: 150 }
+        balanceAfter: { type: integer, example: 350 }
+        orderId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        voucherId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        previousTierConfigId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        newTierConfigId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        reason: { type: string, example: 'Earned from order 6601...' }
+        createdAt: { type: string, format: date-time }
+    LoyaltyTransactionListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/LoyaltyTransactionResponse' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
     VehiclePricing:
       type: object
       required: [vehicleTypeId, price, estimatedMinutes]
@@ -380,6 +469,203 @@ paths:
                   status:
                     type: string
                     example: ok
+  /upload/image:
+    post:
+      tags: [upload]
+      summary: Upload a single image
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, example: 'https://res.cloudinary.com/.../img.jpg' }
+  /upload/images:
+    post:
+      tags: [upload]
+      summary: Upload multiple images
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items: { type: string, format: binary }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  urls:
+                    type: array
+                    items: { type: string }
+  /me/vehicles:
+    get:
+      tags: [vehicles]
+      summary: List my vehicles
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VehicleResponse' }
+    post:
+      tags: [vehicles]
+      summary: Add a vehicle
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateVehicle' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /me/vehicles/{id}:
+    get:
+      tags: [vehicles]
+      summary: Get one of my vehicles
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleResponse' }
+        '404':
+          description: Not found (or not owned)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      tags: [vehicles]
+      summary: Update one of my vehicles
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateVehicle' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleResponse' }
+    delete:
+      tags: [vehicles]
+      summary: Soft-delete one of my vehicles
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204':
+          description: No Content
+  /me/vehicles/{id}/set-default:
+    patch:
+      tags: [vehicles]
+      summary: Set a vehicle as default
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleResponse' }
+  /admin/vehicles:
+    get:
+      tags: [vehicles]
+      summary: List all vehicles (admin/manager, paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: customerId, in: query, schema: { type: string } }
+        - { name: vehicleTypeId, in: query, schema: { type: string } }
+        - { name: licensePlate, in: query, schema: { type: string } }
+        - { name: isActive, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleListResponse' }
+  /admin/vehicles/{id}:
+    get:
+      tags: [vehicles]
+      summary: Get one vehicle (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /me/loyalty:
+    get:
+      tags: [loyalty]
+      summary: My loyalty account
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoyaltyAccountResponse' }
+  /me/loyalty/transactions:
+    get:
+      tags: [loyalty]
+      summary: My loyalty point transactions (paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoyaltyTransactionListResponse' }
   /vehicle-types:
     get:
       tags: [vehicle-types]
