@@ -1,0 +1,2355 @@
+openapi: 3.0.3
+info:
+  title: WAVE / AutoWash Pro API
+  version: 0.0.1
+  description: REST API for the WAVE car-wash platform (Express backend).
+servers:
+  - url: /api
+    description: Global API prefix
+tags:
+  - name: health
+    description: Service health
+  - name: auth
+    description: Registration, login, token refresh, email OTP
+  - name: service-types
+    description: Wash service catalogue (public read, admin manage)
+  - name: vehicle-types
+    description: Vehicle type catalogue (public read, admin manage)
+  - name: tier-configs
+    description: Loyalty tier configuration (public read, admin manage)
+  - name: upload
+    description: Image upload (Cloudinary)
+  - name: vehicles
+    description: Customer vehicles (self-manage) + admin lookup
+  - name: loyalty
+    description: Customer loyalty account + point transactions
+  - name: vouchers
+    description: Customer vouchers (self-view) + admin grant/revoke
+  - name: shifts
+    description: Staff shifts (availability + admin scheduling)
+  - name: orders
+    description: Bookings/orders (customer, cashier/admin, washer schedule, PayOS webhook)
+  - name: work-orders
+    description: Wash job tickets (cashier check-in/QC, washer execution)
+  - name: users
+    description: Staff/customer account management (admin)
+  - name: golden-hours
+    description: Golden-hour discount windows (admin)
+  - name: pricing-policy
+    description: Global pricing policy (admin)
+  - name: dashboard
+    description: Management reporting / analytics (manager/admin)
+  - name: chat
+    description: AI chat assistant (public) + chat knowledge base (admin)
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          example: 400
+        message:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+          example: Validation failed
+        error:
+          type: string
+          example: Bad Request
+    Register:
+      type: object
+      required: [name, phone, email, password]
+      properties:
+        name: { type: string, maxLength: 100, example: 'Nguyen Van A' }
+        phone: { type: string, maxLength: 20, example: '0901234567' }
+        email: { type: string, format: email, maxLength: 255, example: 'customer@example.com' }
+        password: { type: string, minLength: 8, maxLength: 72, example: 'P@ssw0rd123' }
+        dateOfBirth: { type: string, format: date, example: '1995-01-15' }
+    Login:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, example: 'customer@example.com' }
+        password: { type: string, maxLength: 72, example: 'P@ssw0rd123' }
+    RefreshToken:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string, example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6...' }
+    OtpSend:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email, example: 'customer@example.com' }
+    OtpVerify:
+      type: object
+      required: [email, code]
+      properties:
+        email: { type: string, format: email, example: 'customer@example.com' }
+        code: { type: string, minLength: 6, maxLength: 6, example: '123456' }
+    UserResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        role: { type: string, enum: [customer, cashier, washer, manager, admin], example: customer }
+        name: { type: string, example: 'Nguyen Van A' }
+        phone: { type: string, example: '0901234567' }
+        email: { type: string, format: email, example: 'customer@example.com' }
+        avatarUrl: { type: string, example: 'https://cdn.example.com/avatar.jpg' }
+        dateOfBirth: { type: string, format: date-time, example: '1995-01-15T00:00:00.000Z' }
+        isActive: { type: boolean, example: true }
+    AuthResponse:
+      type: object
+      properties:
+        accessToken: { type: string, example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6...' }
+        refreshToken: { type: string, example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6...' }
+        user: { $ref: '#/components/schemas/UserResponse' }
+    AuthPayload:
+      type: object
+      description: JWT access-token payload attached to req.user.
+      properties:
+        sub: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        email: { type: string, format: email, example: 'customer@example.com' }
+        role: { type: string, enum: [customer, cashier, washer, manager, admin], example: customer }
+    OtpSendResponse:
+      type: object
+      properties:
+        message: { type: string, example: 'OTP sent if account exists' }
+        token: { type: string, description: 'Present only if already verified within window', example: 'eyJhbGciOi...' }
+    OtpVerifyResponse:
+      type: object
+      properties:
+        token: { type: string, description: 'JWT scope=email_verified, 15m TTL', example: 'eyJhbGciOi...' }
+    CreateVehicleType:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 80, example: 'Motorbike' }
+        description: { type: string, maxLength: 500, example: '2-wheel motor vehicles' }
+    UpdateVehicleType:
+      description: All CreateVehicleType fields, all optional (PartialType).
+      type: object
+      properties:
+        name: { type: string, maxLength: 80 }
+        description: { type: string, maxLength: 500 }
+    SetVehicleTypeStatus:
+      type: object
+      required: [isActive]
+      properties:
+        isActive: { type: boolean, example: true }
+    VehicleTypeResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        name: { type: string, example: 'Motorbike' }
+        description: { type: string, example: '2-wheel motor vehicles' }
+        isActive: { type: boolean, example: true }
+    UpdateTierConfig:
+      description: Admin-tunable tier fields, all optional.
+      type: object
+      properties:
+        minLoyaltyPoints: { type: integer, minimum: 0, example: 200 }
+        bookingWindowDays: { type: integer, minimum: 0, example: 10 }
+        priorityLevel: { type: integer, minimum: 0, example: 1 }
+        pointsPer1000Vnd: { type: number, minimum: 0, example: 1.5 }
+        discountPercent: { type: number, minimum: 0, maximum: 100, example: 5 }
+    SetTierConfigStatus:
+      type: object
+      required: [isActive]
+      properties:
+        isActive: { type: boolean, example: true }
+    TierConfigResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        tierName: { type: string, enum: [None, Bronze, Silver, Gold], example: None }
+        minLoyaltyPoints: { type: integer, example: 200 }
+        bookingWindowDays: { type: integer, example: 10 }
+        priorityLevel: { type: integer, example: 1 }
+        pointsPer1000Vnd: { type: number, example: 1.5 }
+        discountPercent: { type: number, example: 5 }
+        isActive: { type: boolean, example: true }
+    PaginationMeta:
+      type: object
+      properties:
+        page: { type: integer, example: 1 }
+        limit: { type: integer, example: 20 }
+        total: { type: integer, example: 42 }
+        totalPages: { type: integer, example: 3 }
+    CreateVehicle:
+      type: object
+      required: [vehicleTypeId, licensePlate]
+      properties:
+        vehicleTypeId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        licensePlate: { type: string, maxLength: 20, example: '51A-12345' }
+        nickname: { type: string, maxLength: 60, example: 'My city ride' }
+        brand: { type: string, maxLength: 60, example: 'Honda' }
+        model: { type: string, maxLength: 60, example: 'Wave Alpha' }
+        color: { type: string, maxLength: 40, example: 'Red' }
+        isDefault: { type: boolean, example: false }
+    UpdateVehicle:
+      description: All optional. (Cannot change isDefault here; use set-default.)
+      type: object
+      properties:
+        vehicleTypeId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        licensePlate: { type: string, maxLength: 20, example: '51A-12345' }
+        nickname: { type: string, maxLength: 60 }
+        brand: { type: string, maxLength: 60 }
+        model: { type: string, maxLength: 60 }
+        color: { type: string, maxLength: 40 }
+    VehicleResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        ownerName: { type: string, description: 'Present only on admin list', example: 'Nguyễn Văn A' }
+        ownerPhone: { type: string, example: '0901234567' }
+        vehicleTypeId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        vehicleTypeName: { type: string, description: 'Present only when populated', example: 'Motorbike' }
+        licensePlate: { type: string, example: '51A-12345' }
+        nickname: { type: string, example: 'My city ride' }
+        brand: { type: string, example: 'Honda' }
+        model: { type: string, example: 'Wave Alpha' }
+        color: { type: string, example: 'Red' }
+        isDefault: { type: boolean, example: true }
+        isActive: { type: boolean, example: true }
+    VehicleListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/VehicleResponse' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    LoyaltyAccountResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        tierConfigId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        tierName: { type: string, enum: [None, Bronze, Silver, Gold], example: None }
+        pointsBalance: { type: integer, example: 0 }
+        successfulWashesTowardVoucher: { type: integer, example: 3 }
+        totalSuccessfulWashes: { type: integer, example: 13 }
+        lastAnnualResetAt: { type: string, format: date-time, example: '2026-01-01T00:00:00.000Z' }
+    LoyaltyTransactionResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        type: { type: string, example: 'earn_completed', description: 'Loyalty transaction type' }
+        pointsDelta: { type: integer, example: 150 }
+        balanceAfter: { type: integer, example: 350 }
+        orderId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        voucherId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        previousTierConfigId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        newTierConfigId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        reason: { type: string, example: 'Earned from order 6601...' }
+        createdAt: { type: string, format: date-time }
+    LoyaltyTransactionListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/LoyaltyTransactionResponse' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    GrantVoucherAdmin:
+      type: object
+      required: [customerId]
+      properties:
+        customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        code: { type: string, pattern: '^[A-Z0-9-]{3,30}$', example: 'FREEWASH-KHOI' }
+        discountCapVnd: { type: integer, minimum: 1, maximum: 200000, default: 100000, example: 100000 }
+        expiresAt: { type: string, format: date-time, example: '2026-08-27T00:00:00.000Z' }
+    RevokeVoucher:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 5, maxLength: 500, example: 'Granted to wrong customer by mistake' }
+    VoucherResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        customerName: { type: string, description: 'Present on admin list', example: 'Nguyễn Văn A' }
+        customerEmail: { type: string, example: 'a@example.com' }
+        code: { type: string, example: 'FREEWASH-20260527-001' }
+        type: { type: string, description: 'VoucherTypeEnum', example: 'free_wash' }
+        status: { type: string, description: 'VoucherStatusEnum', example: 'unused' }
+        discountCapVnd: { type: integer, example: 100000 }
+        expiresAt: { type: string, format: date-time, example: '2026-08-25T00:00:00.000Z' }
+        grantedReason: { type: string, example: 'Reward for 10 completed washes' }
+        usedAt: { type: string, format: date-time, example: '2026-06-01T08:00:00.000Z' }
+        usedOrderId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        createdAt: { type: string, format: date-time }
+    VoucherListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/VoucherResponse' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateStaffShift:
+      type: object
+      required: [staffId, shiftType, date, block]
+      properties:
+        staffId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        shiftType: { type: string, description: 'ShiftTypeEnum', example: 'washer' }
+        stationName: { type: string, maxLength: 80, example: 'Bay 1' }
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', example: '2026-06-01' }
+        block: { type: string, description: 'morning | afternoon | fullday', example: 'morning' }
+        note: { type: string, maxLength: 500, example: 'Morning shift' }
+    UpdateStaffShift:
+      description: All optional. Provide date + block together to reschedule.
+      type: object
+      properties:
+        staffId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        shiftType: { type: string, example: 'washer' }
+        stationName: { type: string, maxLength: 80, example: 'Bay 1' }
+        date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', example: '2026-06-01' }
+        block: { type: string, example: 'morning' }
+        note: { type: string, maxLength: 500 }
+    SetStaffShiftStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, description: 'scheduled|active|completed|cancelled', example: 'active' }
+    StaffShiftResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        staffId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        shiftType: { type: string, example: 'washer' }
+        stationName: { type: string, example: 'Bay 1' }
+        startAt: { type: string, format: date-time, example: '2026-06-01T08:00:00.000Z' }
+        endAt: { type: string, format: date-time, example: '2026-06-01T12:00:00.000Z' }
+        status: { type: string, example: 'scheduled' }
+        note: { type: string, example: 'Morning shift' }
+    StaffShiftListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/StaffShiftResponse' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateOrder:
+      type: object
+      required: [serviceTypeId, scheduledAt, paymentMethod]
+      properties:
+        vehicleId: { type: string, description: 'Existing vehicle. Provide this OR vehicle.', example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        vehicle: { $ref: '#/components/schemas/CreateVehicle' }
+        serviceTypeId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        scheduledAt: { type: string, format: date-time, example: '2026-05-18T01:30:00.000Z' }
+        paymentMethod: { type: string, enum: [online, cash], example: online }
+        note: { type: string, maxLength: 500, example: 'Hut bui ky phan ghe sau.' }
+        voucherId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+    PreviewOrder:
+      type: object
+      required: [serviceTypeId, vehicleTypeId, scheduledAt]
+      properties:
+        serviceTypeId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        vehicleTypeId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        scheduledAt: { type: string, format: date-time, example: '2026-06-01T01:30:00.000Z' }
+        voucherId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+    PreviewOrderResponse:
+      type: object
+      properties:
+        originalAmount: { type: integer, example: 150000 }
+        estimatedMinutes: { type: integer, example: 30 }
+        discountAmount: { type: integer, example: 15000 }
+        discountPercent: { type: integer, example: 10 }
+        discountReason: { type: string, example: 'golden_hour:Bronze+voucher:FREEWASH-...' }
+        amount: { type: integer, example: 135000 }
+        isGoldenHour: { type: boolean, example: true }
+        tierName: { type: string, example: Bronze }
+        tierDiscountPercent: { type: integer, example: 5 }
+        voucherDiscountCapVnd: { type: integer, example: 100000 }
+        voucherError: { type: string, example: 'Voucher is expired' }
+    AvailableSlot:
+      type: object
+      properties:
+        scheduledAt: { type: string, format: date-time, example: '2026-06-01T09:00:00.000Z' }
+        remainingCapacity: { type: integer, example: 3 }
+        isGoldenHour: { type: boolean, example: true }
+        discountPercent: { type: integer, example: 5 }
+    RescheduleOrder:
+      type: object
+      required: [staffShiftId, scheduledAt]
+      properties:
+        staffShiftId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        scheduledAt: { type: string, format: date-time, example: '2026-06-02T10:00:00.000Z' }
+    CancelOrder:
+      type: object
+      properties:
+        reason: { type: string, maxLength: 500, example: 'Khach ban dot xuat' }
+    UpdateOrderStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [pending_payment, confirmed, checked_in, in_progress, completed, cancelled, no_show]
+          example: checked_in
+        reason: { type: string, maxLength: 500, description: 'Required for cancelled/no_show', example: 'Customer no longer interested' }
+    OrderResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        vehicleId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        serviceTypeId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        customerName: { type: string, description: 'Present only when populated', example: 'Nguyễn Văn A' }
+        customerEmail: { type: string, example: 'a@example.com' }
+        licensePlate: { type: string, example: '51T-56019' }
+        serviceName: { type: string, example: 'Premium Wash' }
+        staffShiftId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        scheduledAt: { type: string, format: date-time, example: '2026-06-01T09:00:00.000Z' }
+        estimatedMinutes: { type: integer, example: 30 }
+        status:
+          type: string
+          enum: [pending_payment, confirmed, checked_in, in_progress, completed, cancelled, no_show]
+          example: confirmed
+        paymentMethod: { type: string, enum: [online, cash], example: online }
+        paymentStatus: { type: string, enum: [unpaid, paid, refunded], example: paid }
+        amount: { type: integer, example: 150000 }
+        originalAmount: { type: integer, example: 150000 }
+        discountAmount: { type: integer, example: 15000 }
+        discountPercent: { type: integer, example: 10 }
+        discountReason: { type: string, example: 'golden_hour:Bronze' }
+        voucherId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        priorityLevel: { type: integer, example: 0 }
+        rescheduleCount: { type: integer, example: 0 }
+        cancelReason: { type: string, example: 'Khach ban dot xuat' }
+        note: { type: string, example: 'Hut bui ky phan ghe sau.' }
+        payosCheckoutUrl: { type: string, example: 'https://pay.payos.vn/web/...' }
+        payosOrderCode: { type: integer, example: 1716800000001 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    OrderListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/OrderResponse' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    WasherScheduleItem:
+      type: object
+      properties:
+        bookingId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        scheduledAt: { type: string, format: date-time, example: '2026-06-16T09:00:00.000Z' }
+        status:
+          type: string
+          enum: [pending_payment, confirmed, checked_in, in_progress, completed, cancelled, no_show]
+          example: confirmed
+        service:
+          type: object
+          properties:
+            name: { type: string, example: 'Premium Wash' }
+            durationMinutes: { type: integer, example: 30 }
+        customer:
+          type: object
+          properties:
+            name: { type: string, example: 'Nguyễn Văn A' }
+            phone: { type: string, example: '0901234567' }
+        vehicle:
+          type: object
+          properties:
+            licensePlate: { type: string, example: '51T-56019' }
+        location: { type: string, example: 'Bay 2' }
+        paymentStatus: { type: string, enum: [unpaid, paid, refunded], example: paid }
+    CreateWorkOrder:
+      type: object
+      required: [orderId]
+      properties:
+        orderId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        checkinPhotos:
+          type: array
+          maxItems: 10
+          items: { type: string, format: uri }
+          example: ['https://cdn.example.com/checkin/abc-front.jpg']
+    AssignWasher:
+      type: object
+      required: [washerId]
+      properties:
+        washerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+    QcWorkOrder:
+      type: object
+      required: [passed]
+      properties:
+        passed: { type: boolean, description: 'true=DONE, false=RETURNED', example: true }
+        note: { type: string, maxLength: 500, example: 'Còn vết nước ở kính sau, làm lại.' }
+    FinishWorkOrder:
+      type: object
+      required: [checkoutPhotos]
+      properties:
+        checkoutPhotos:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: { type: string, format: uri }
+          example: ['https://cdn.example.com/checkout/abc-front.jpg']
+    WorkOrderResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        orderId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        code: { type: string, example: 'WO-20260522-001' }
+        vehicleSnapshot:
+          type: object
+          properties:
+            plate: { type: string, example: '51A-12345' }
+            vehicleTypeName: { type: string, example: 'Motorbike' }
+            color: { type: string, example: 'Red' }
+        serviceName: { type: string, example: 'Standard Wash' }
+        scheduledAt: { type: string, format: date-time, example: '2026-05-22T09:00:00.000Z' }
+        preferredWasherId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        checkinPhotos: { type: array, items: { type: string, format: uri } }
+        checkoutPhotos: { type: array, items: { type: string, format: uri } }
+        status: { type: string, description: 'WorkOrderStatusEnum', example: 'waiting' }
+        assignedWasherId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        assignedWasherName: { type: string, example: 'Trần Văn B' }
+        assignedBy: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        estimatedMinutes: { type: integer, example: 30 }
+        stationName: { type: string, example: 'Bay 1' }
+        startedAt: { type: string, format: date-time, example: '2026-05-22T09:00:00.000Z' }
+        finishedAt: { type: string, format: date-time, example: '2026-05-22T09:25:00.000Z' }
+        qcBy: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        qcAt: { type: string, format: date-time, example: '2026-05-22T09:30:00.000Z' }
+        qcPassed: { type: boolean, example: true }
+        qcNote: { type: string, example: 'Còn vết nước ở kính sau.' }
+        returnCount: { type: integer, example: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    WorkOrderListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/WorkOrderResponse' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateUserAdmin:
+      type: object
+      required: [name, phone, email, password, role]
+      properties:
+        name: { type: string, maxLength: 100, example: 'Nguyen Van A' }
+        phone: { type: string, maxLength: 20, example: '0901234567' }
+        email: { type: string, format: email, maxLength: 255, example: 'cashier1@washauto.local' }
+        password: { type: string, minLength: 8, maxLength: 72, example: 'StrongP@ssw0rd!' }
+        role: { type: string, enum: [customer, cashier, washer, manager, admin], example: cashier }
+        avatarUrl: { type: string, maxLength: 500, example: 'https://cdn.example.com/avatar.jpg' }
+        dateOfBirth: { type: string, format: date, example: '1995-01-15' }
+    UpdateUser:
+      description: All optional.
+      type: object
+      properties:
+        name: { type: string, maxLength: 100 }
+        phone: { type: string, maxLength: 20 }
+        avatarUrl: { type: string, maxLength: 500 }
+        dateOfBirth: { type: string, format: date }
+    ChangeUserRole:
+      type: object
+      required: [role]
+      properties:
+        role: { type: string, enum: [customer, cashier, washer, manager, admin], example: manager }
+    SetUserStatus:
+      type: object
+      required: [isActive]
+      properties:
+        isActive: { type: boolean, example: true }
+    ResetUserPassword:
+      type: object
+      required: [newPassword]
+      properties:
+        newPassword: { type: string, minLength: 8, maxLength: 72, example: 'NewStrongP@ss123' }
+    UserListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/UserResponse' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    CreateGoldenHour:
+      type: object
+      required: [name, startMinute, endMinute]
+      properties:
+        name: { type: string, example: 'Morning quiet hours' }
+        daysOfWeek:
+          type: array
+          items: { type: integer, minimum: 0, maximum: 6 }
+          description: '0=Sun … 6=Sat. Empty = every day.'
+          example: [1, 2, 3, 4, 5]
+        startMinute: { type: integer, minimum: 0, maximum: 1439, example: 480 }
+        endMinute: { type: integer, minimum: 1, maximum: 1440, example: 600 }
+        timezone: { type: string, default: 'Asia/Ho_Chi_Minh', example: 'Asia/Ho_Chi_Minh' }
+        discountPercent: { type: integer, minimum: 0, maximum: 100, default: 0, example: 10 }
+    UpdateGoldenHour:
+      description: All CreateGoldenHour fields optional, plus isActive.
+      type: object
+      properties:
+        name: { type: string }
+        daysOfWeek: { type: array, items: { type: integer } }
+        startMinute: { type: integer, minimum: 0, maximum: 1439 }
+        endMinute: { type: integer, minimum: 1, maximum: 1440 }
+        timezone: { type: string }
+        discountPercent: { type: integer, minimum: 0, maximum: 100 }
+        isActive: { type: boolean, example: true }
+    GoldenHourResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        name: { type: string, example: 'Morning quiet hours' }
+        daysOfWeek: { type: array, items: { type: integer }, example: [1, 2, 3, 4, 5] }
+        startMinute: { type: integer, example: 480 }
+        endMinute: { type: integer, example: 600 }
+        startTime: { type: string, example: '08:00' }
+        endTime: { type: string, example: '10:00' }
+        timezone: { type: string, example: 'Asia/Ho_Chi_Minh' }
+        discountPercent: { type: integer, example: 10 }
+        isActive: { type: boolean, example: true }
+    UpdatePricingPolicy:
+      type: object
+      required: [maxStackedDiscountPercent]
+      properties:
+        maxStackedDiscountPercent: { type: integer, minimum: 0, maximum: 100, example: 50 }
+    PricingPolicyResponse:
+      type: object
+      properties:
+        maxStackedDiscountPercent: { type: integer, example: 50 }
+        updatedAt: { type: string, format: date-time }
+    SendMessage:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 1000, example: 'Cho tôi xem danh sách dịch vụ rửa xe đang có' }
+        sessionId: { type: string, maxLength: 64, example: 'b3c7e0f4-9e6e-4c2d-aab2-08d3c1c0b1a2' }
+    ChatResponse:
+      type: object
+      properties:
+        sessionId: { type: string, example: 'b3c7e0f4-9e6e-4c2d-aab2-08d3c1c0b1a2' }
+        reply: { type: string, example: 'Cửa hàng đang có 3 gói: Rửa cơ bản, Premium, Detailing.' }
+        toolsCalled: { type: array, items: { type: string }, example: ['list_services'] }
+    CreateChatKnowledge:
+      type: object
+      required: [question, answer]
+      properties:
+        question: { type: string, minLength: 3, maxLength: 300, example: 'Cửa hàng mở cửa lúc mấy giờ?' }
+        answer: { type: string, minLength: 3, maxLength: 2000, example: 'Wash-Auto mở cửa 07:00 - 21:00 mỗi ngày.' }
+        keywords:
+          type: array
+          maxItems: 20
+          items: { type: string }
+          example: ['giờ mở cửa', 'opening hours']
+        category: { type: string, maxLength: 50, example: 'policy' }
+    UpdateChatKnowledge:
+      description: All CreateChatKnowledge fields optional, plus isActive.
+      type: object
+      properties:
+        question: { type: string, minLength: 3, maxLength: 300 }
+        answer: { type: string, minLength: 3, maxLength: 2000 }
+        keywords: { type: array, items: { type: string } }
+        category: { type: string, maxLength: 50 }
+        isActive: { type: boolean, example: true }
+    ChatKnowledgeResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        question: { type: string, example: 'Cửa hàng mở cửa lúc mấy giờ?' }
+        answer: { type: string, example: 'Wash-Auto mở cửa 07:00 - 21:00 mỗi ngày.' }
+        keywords: { type: array, items: { type: string }, example: ['giờ mở cửa'] }
+        category: { type: string, example: 'policy' }
+        isActive: { type: boolean, example: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    VehiclePricing:
+      type: object
+      required: [vehicleTypeId, price, estimatedMinutes]
+      properties:
+        vehicleTypeId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        price: { type: number, example: 60000 }
+        estimatedMinutes: { type: integer, example: 30 }
+        isActive: { type: boolean, default: true, example: true }
+    CreateServiceType:
+      type: object
+      required: [name, basePrice, estimatedMinutes, pointsMultiplier]
+      properties:
+        name: { type: string, maxLength: 120, example: 'Premium Wash' }
+        description:
+          { type: string, maxLength: 500, example: 'Exterior + interior + tire shine' }
+        basePrice: { type: number, example: 80000 }
+        estimatedMinutes: { type: integer, example: 30 }
+        pointsMultiplier: { type: number, example: 1.5 }
+        checklistTemplate:
+          type: array
+          items: { type: string }
+          example: ['Rửa thân xe', 'Hút bụi nội thất']
+        isVoucherEligible: { type: boolean, default: true, example: true }
+        vehiclePricing:
+          type: array
+          items: { $ref: '#/components/schemas/VehiclePricing' }
+    UpdateServiceType:
+      description: All CreateServiceType fields, all optional (PartialType).
+      type: object
+      properties:
+        name: { type: string, maxLength: 120 }
+        description: { type: string, maxLength: 500 }
+        basePrice: { type: number }
+        estimatedMinutes: { type: integer }
+        pointsMultiplier: { type: number }
+        checklistTemplate: { type: array, items: { type: string } }
+        isVoucherEligible: { type: boolean }
+        vehiclePricing:
+          type: array
+          items: { $ref: '#/components/schemas/VehiclePricing' }
+    SetServiceTypeStatus:
+      type: object
+      required: [isActive]
+      properties:
+        isActive: { type: boolean, example: true }
+    VehiclePricingResponse:
+      type: object
+      properties:
+        vehicleTypeId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        vehicleTypeName: { type: string, example: 'Sedan 4 chỗ' }
+        price: { type: string, example: '60000' }
+        estimatedMinutes: { type: integer, example: 30 }
+        isActive: { type: boolean, example: true }
+    ServiceTypeResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        name: { type: string, example: 'Premium Wash' }
+        description: { type: string, example: 'Exterior + interior + tire shine' }
+        basePrice: { type: string, example: '80000' }
+        estimatedMinutes: { type: integer, example: 30 }
+        pointsMultiplier: { type: number, example: 1.5 }
+        checklistTemplate: { type: array, items: { type: string } }
+        isVoucherEligible: { type: boolean, example: true }
+        vehiclePricing:
+          type: array
+          items: { $ref: '#/components/schemas/VehiclePricingResponse' }
+        isActive: { type: boolean, example: true }
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Register a customer account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Register' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Log in with email + password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Login' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Exchange a refresh token for new tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshToken' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401':
+          description: Invalid/expired refresh token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke a refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshToken' }
+      responses:
+        '204':
+          description: No Content
+  /auth/otp/send:
+    post:
+      tags: [auth]
+      summary: Send an email verification OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpSend' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OtpSendResponse' }
+  /auth/otp/verify:
+    post:
+      tags: [auth]
+      summary: Verify an email OTP code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpVerify' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OtpVerifyResponse' }
+        '400':
+          description: Invalid/expired code
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Current token payload
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthPayload' }
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/admin-only:
+    get:
+      tags: [auth]
+      summary: Admin-only probe (role guard demo)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  user: { $ref: '#/components/schemas/AuthPayload' }
+        '403':
+          description: Forbidden (not admin)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /health:
+    get:
+      tags: [health]
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+  /admin/users:
+    get:
+      tags: [users]
+      summary: List users (admin, paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: role, in: query, schema: { type: string } }
+        - { name: isActive, in: query, schema: { type: boolean } }
+        - { name: search, in: query, schema: { type: string }, description: 'name/email/phone' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserListResponse' }
+    post:
+      tags: [users]
+      summary: Create a staff/customer account (admin)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateUserAdmin' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/users/{id}:
+    get:
+      tags: [users]
+      summary: Get one user (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      tags: [users]
+      summary: Update a user (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUser' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+    delete:
+      tags: [users]
+      summary: Soft-delete a user (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204':
+          description: No Content
+  /admin/users/{id}/role:
+    patch:
+      tags: [users]
+      summary: Change a user's role (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeUserRole' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+  /admin/users/{id}/status:
+    patch:
+      tags: [users]
+      summary: Activate/deactivate a user (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetUserStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+  /admin/users/{id}/reset-password:
+    post:
+      tags: [users]
+      summary: Reset a user's password (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetUserPassword' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: 'Password reset' }
+  /admin/golden-hours:
+    get:
+      tags: [golden-hours]
+      summary: List golden-hour windows (manager/admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/GoldenHourResponse' }
+    post:
+      tags: [golden-hours]
+      summary: Create a golden-hour window (manager/admin)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateGoldenHour' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoldenHourResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/golden-hours/{id}:
+    patch:
+      tags: [golden-hours]
+      summary: Update a golden-hour window (manager/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateGoldenHour' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoldenHourResponse' }
+    delete:
+      tags: [golden-hours]
+      summary: Delete a golden-hour window (manager/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204':
+          description: No Content
+  /admin/pricing-policy:
+    get:
+      tags: [pricing-policy]
+      summary: Get the pricing policy (admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PricingPolicyResponse' }
+    patch:
+      tags: [pricing-policy]
+      summary: Update the pricing policy (admin)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdatePricingPolicy' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PricingPolicyResponse' }
+  /admin/dashboard:
+    get:
+      tags: [dashboard]
+      summary: Management reporting / analytics (manager/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: fromDate, in: query, schema: { type: string }, description: 'YYYY-MM-DD' }
+        - { name: toDate, in: query, schema: { type: string }, description: 'YYYY-MM-DD' }
+        - { name: period, in: query, schema: { type: string } }
+        - { name: serviceId, in: query, schema: { type: string } }
+        - { name: topN, in: query, schema: { type: integer, default: 5, maximum: 20 } }
+      responses:
+        '200':
+          description: OK — aggregated report (shape varies by caller role)
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Dashboard report (revenue, counts, top-N rankings, etc.)
+  /chat/message:
+    post:
+      tags: [chat]
+      summary: Send a message to the AI assistant (optional auth)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendMessage' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatResponse' }
+  /chat/sessions/{sessionId}:
+    get:
+      tags: [chat]
+      summary: Get a chat session's message history (optional auth)
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessionId: { type: string, example: 'b3c7e0f4-9e6e-4c2d-aab2-08d3c1c0b1a2' }
+                  messages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        role: { type: string, example: 'user' }
+                        content: { type: string, example: 'Cho tôi xem dịch vụ' }
+  /admin/chat-knowledge:
+    get:
+      tags: [chat]
+      summary: List chat knowledge entries (admin/manager)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ChatKnowledgeResponse' }
+    post:
+      tags: [chat]
+      summary: Create a chat knowledge entry (admin/manager)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateChatKnowledge' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatKnowledgeResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/chat-knowledge/{id}:
+    get:
+      tags: [chat]
+      summary: Get one chat knowledge entry (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatKnowledgeResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      tags: [chat]
+      summary: Update a chat knowledge entry (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateChatKnowledge' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatKnowledgeResponse' }
+    delete:
+      tags: [chat]
+      summary: Delete a chat knowledge entry (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204':
+          description: No Content
+  /admin/work-orders:
+    post:
+      tags: [work-orders]
+      summary: Check in an order — create a work order (cashier/manager/admin)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateWorkOrder' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkOrderResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    get:
+      tags: [work-orders]
+      summary: List work orders (cashier/manager/admin, paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string } }
+        - { name: washerId, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkOrderListResponse' }
+  /admin/work-orders/queue:
+    get:
+      tags: [work-orders]
+      summary: FIFO waiting queue (cashier/manager/admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WorkOrderResponse' }
+  /admin/work-orders/{id}:
+    get:
+      tags: [work-orders]
+      summary: Get one work order (cashier/manager/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkOrderResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/work-orders/{id}/assign:
+    patch:
+      tags: [work-orders]
+      summary: Assign a washer (cashier/manager/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignWasher' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkOrderResponse' }
+  /admin/work-orders/{id}/qc:
+    patch:
+      tags: [work-orders]
+      summary: Quality-check a work order (cashier/manager/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/QcWorkOrder' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkOrderResponse' }
+  /me/work-orders:
+    get:
+      tags: [work-orders]
+      summary: List my assigned work orders (washer)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WorkOrderResponse' }
+  /me/work-orders/{id}:
+    get:
+      tags: [work-orders]
+      summary: Get one of my work orders (washer)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkOrderResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /me/work-orders/{id}/start:
+    patch:
+      tags: [work-orders]
+      summary: Start a wash (washer)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkOrderResponse' }
+  /me/work-orders/{id}/finish:
+    patch:
+      tags: [work-orders]
+      summary: Finish a wash with photos (washer)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FinishWorkOrder' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WorkOrderResponse' }
+  /me/orders:
+    post:
+      tags: [orders]
+      summary: Create an order (booking). Idempotency-Key header supported.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrder' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    get:
+      tags: [orders]
+      summary: List my orders
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/OrderResponse' }
+  /me/orders/preview:
+    post:
+      tags: [orders]
+      summary: Preview price for a booking (no commit)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PreviewOrder' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PreviewOrderResponse' }
+  /me/orders/available-slots:
+    get:
+      tags: [orders]
+      summary: List bookable start times for a service + vehicle type
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: serviceTypeId, in: query, required: true, schema: { type: string } }
+        - { name: vehicleTypeId, in: query, required: true, schema: { type: string } }
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AvailableSlot' }
+  /me/orders/{id}:
+    get:
+      tags: [orders]
+      summary: Get one of my orders
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderResponse' }
+        '404':
+          description: Not found (or not owned)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /me/orders/{id}/reschedule:
+    patch:
+      tags: [orders]
+      summary: Reschedule one of my orders
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RescheduleOrder' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderResponse' }
+  /me/orders/{id}/cancel:
+    patch:
+      tags: [orders]
+      summary: Cancel one of my orders
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelOrder' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderResponse' }
+  /payments/webhook:
+    post:
+      tags: [orders]
+      summary: PayOS payment webhook (public, called by PayOS)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Raw PayOS webhook payload.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+  /admin/orders:
+    get:
+      tags: [orders]
+      summary: List orders (cashier/manager/admin, paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: paymentMethod, in: query, schema: { type: string } }
+        - { name: paymentStatus, in: query, schema: { type: string } }
+        - { name: customerId, in: query, schema: { type: string } }
+        - { name: scheduledFrom, in: query, schema: { type: string, format: date-time } }
+        - { name: scheduledTo, in: query, schema: { type: string, format: date-time } }
+        - { name: customerPhone, in: query, schema: { type: string } }
+        - { name: vehicleLicensePlate, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderListResponse' }
+  /admin/orders/{id}:
+    get:
+      tags: [orders]
+      summary: Get one order (cashier/manager/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/orders/{id}/status:
+    patch:
+      tags: [orders]
+      summary: Update order status (cashier/manager/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateOrderStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderResponse' }
+  /admin/orders/{id}/mark-paid:
+    post:
+      tags: [orders]
+      summary: Mark a cash order as paid (cashier/manager/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderResponse' }
+  /washers/me/schedule:
+    get:
+      tags: [orders]
+      summary: My wash schedule (washer)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: date, in: query, schema: { type: string }, description: 'YYYY-MM-DD' }
+        - { name: from, in: query, schema: { type: string }, description: 'YYYY-MM-DD' }
+        - { name: to, in: query, schema: { type: string }, description: 'YYYY-MM-DD' }
+        - { name: status, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WasherScheduleItem' }
+  /me/vouchers:
+    get:
+      tags: [vouchers]
+      summary: List my vouchers
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string }, description: 'Filter by VoucherStatusEnum' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VoucherResponse' }
+  /me/vouchers/{id}:
+    get:
+      tags: [vouchers]
+      summary: Get one of my vouchers
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherResponse' }
+        '404':
+          description: Not found (or not owned)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/vouchers:
+    post:
+      tags: [vouchers]
+      summary: Grant a voucher to a customer (admin/manager)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GrantVoucherAdmin' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    get:
+      tags: [vouchers]
+      summary: List all vouchers (admin/manager, paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: status, in: query, schema: { type: string }, description: 'VoucherStatusEnum' }
+        - { name: customerId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherListResponse' }
+  /admin/vouchers/{id}:
+    get:
+      tags: [vouchers]
+      summary: Get one voucher (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/vouchers/{id}/revoke:
+    patch:
+      tags: [vouchers]
+      summary: Revoke an unused voucher (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RevokeVoucher' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherResponse' }
+  /shifts/available:
+    get:
+      tags: [shifts]
+      summary: List available shifts in a date range
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: shiftType, in: query, schema: { type: string }, description: 'ShiftTypeEnum' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StaffShiftResponse' }
+  /admin/shifts:
+    get:
+      tags: [shifts]
+      summary: List staff shifts (admin/manager, paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: staffId, in: query, schema: { type: string } }
+        - { name: shiftType, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: startFrom, in: query, schema: { type: string, format: date-time } }
+        - { name: startTo, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffShiftListResponse' }
+    post:
+      tags: [shifts]
+      summary: Create a staff shift (admin/manager). fullday returns two shifts.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateStaffShift' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/StaffShiftResponse' }
+                  - type: array
+                    items: { $ref: '#/components/schemas/StaffShiftResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/shifts/staff:
+    get:
+      tags: [shifts]
+      summary: List staff assignable to shifts (admin/manager)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+                    name: { type: string, example: 'Tran Van B' }
+                    role: { type: string, example: 'washer' }
+  /admin/shifts/{id}:
+    get:
+      tags: [shifts]
+      summary: Get one staff shift (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffShiftResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      tags: [shifts]
+      summary: Update a staff shift (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateStaffShift' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffShiftResponse' }
+  /admin/shifts/{id}/status:
+    patch:
+      tags: [shifts]
+      summary: Change a staff shift status (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetStaffShiftStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StaffShiftResponse' }
+  /upload/image:
+    post:
+      tags: [upload]
+      summary: Upload a single image
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string, example: 'https://res.cloudinary.com/.../img.jpg' }
+  /upload/images:
+    post:
+      tags: [upload]
+      summary: Upload multiple images
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items: { type: string, format: binary }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  urls:
+                    type: array
+                    items: { type: string }
+  /me/vehicles:
+    get:
+      tags: [vehicles]
+      summary: List my vehicles
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VehicleResponse' }
+    post:
+      tags: [vehicles]
+      summary: Add a vehicle
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateVehicle' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /me/vehicles/{id}:
+    get:
+      tags: [vehicles]
+      summary: Get one of my vehicles
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleResponse' }
+        '404':
+          description: Not found (or not owned)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      tags: [vehicles]
+      summary: Update one of my vehicles
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateVehicle' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleResponse' }
+    delete:
+      tags: [vehicles]
+      summary: Soft-delete one of my vehicles
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204':
+          description: No Content
+  /me/vehicles/{id}/set-default:
+    patch:
+      tags: [vehicles]
+      summary: Set a vehicle as default
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleResponse' }
+  /admin/vehicles:
+    get:
+      tags: [vehicles]
+      summary: List all vehicles (admin/manager, paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+        - { name: customerId, in: query, schema: { type: string } }
+        - { name: vehicleTypeId, in: query, schema: { type: string } }
+        - { name: licensePlate, in: query, schema: { type: string } }
+        - { name: isActive, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleListResponse' }
+  /admin/vehicles/{id}:
+    get:
+      tags: [vehicles]
+      summary: Get one vehicle (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /me/loyalty:
+    get:
+      tags: [loyalty]
+      summary: My loyalty account
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoyaltyAccountResponse' }
+  /me/loyalty/transactions:
+    get:
+      tags: [loyalty]
+      summary: My loyalty point transactions (paginated)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LoyaltyTransactionListResponse' }
+  /vehicle-types:
+    get:
+      tags: [vehicle-types]
+      summary: List active vehicle types (public)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VehicleTypeResponse' }
+  /vehicle-types/{id}:
+    get:
+      tags: [vehicle-types]
+      summary: Get one active vehicle type (public)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleTypeResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/vehicle-types:
+    get:
+      tags: [vehicle-types]
+      summary: List all vehicle types (admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VehicleTypeResponse' }
+    post:
+      tags: [vehicle-types]
+      summary: Create a vehicle type (admin)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateVehicleType' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleTypeResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/vehicle-types/{id}:
+    patch:
+      tags: [vehicle-types]
+      summary: Update a vehicle type (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateVehicleType' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleTypeResponse' }
+  /admin/vehicle-types/{id}/status:
+    patch:
+      tags: [vehicle-types]
+      summary: Activate/deactivate a vehicle type (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetVehicleTypeStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleTypeResponse' }
+  /tier-configs:
+    get:
+      tags: [tier-configs]
+      summary: List active tier configs (public)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TierConfigResponse' }
+  /tier-configs/{id}:
+    get:
+      tags: [tier-configs]
+      summary: Get one active tier config (public)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TierConfigResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/tier-configs:
+    get:
+      tags: [tier-configs]
+      summary: List all tier configs (admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TierConfigResponse' }
+  /admin/tier-configs/{id}:
+    patch:
+      tags: [tier-configs]
+      summary: Update a tier config (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTierConfig' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TierConfigResponse' }
+  /admin/tier-configs/{id}/status:
+    patch:
+      tags: [tier-configs]
+      summary: Activate/deactivate a tier config (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetTierConfigStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TierConfigResponse' }
+  /service-types:
+    get:
+      tags: [service-types]
+      summary: List active service types (public)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServiceTypeResponse' }
+  /service-types/{id}:
+    get:
+      tags: [service-types]
+      summary: Get one active service type (public)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceTypeResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/service-types:
+    get:
+      tags: [service-types]
+      summary: List all service types (admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ServiceTypeResponse' }
+    post:
+      tags: [service-types]
+      summary: Create a service type (admin)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateServiceType' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceTypeResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/service-types/{id}:
+    patch:
+      tags: [service-types]
+      summary: Update a service type (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateServiceType' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceTypeResponse' }
+  /admin/service-types/{id}/status:
+    patch:
+      tags: [service-types]
+      summary: Activate/deactivate a service type (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetServiceTypeStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ServiceTypeResponse' }

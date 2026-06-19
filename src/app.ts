@@ -6,6 +6,7 @@ import morgan from 'morgan';
 import { config } from './config';
 import { errorMiddleware } from './middlewares/error.middleware';
 import { notFoundHandler } from './middlewares/not-found.middleware';
+import { mountSwagger } from './docs/swagger';
 import {
   chatRateLimiter,
   globalRateLimiter,
@@ -120,6 +121,9 @@ export function createApp() {
   apiRouter.use('/admin/dashboard', adminDashboardRouter);
 
   app.use(`/${config.app.globalPrefix}`, apiRouter);
+
+  // API docs (Swagger UI + raw spec). Public, all envs. Before the 404 handler.
+  mountSwagger(app);
 
   // Catch-all 404 (= Nest unmatched-route NotFoundException JSON). After all
   // routers, before the error middleware. Service-thrown NotFoundException is
