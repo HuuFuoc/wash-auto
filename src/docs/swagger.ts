@@ -31,5 +31,17 @@ export function mountSwagger(app: Express): void {
   app.get(`/${prefix}/docs.json`, (_req, res) => {
     res.json(doc);
   });
-  app.use(`/${prefix}/docs`, swaggerUi.serve, swaggerUi.setup(doc));
+  // Serve the UI static assets (swagger-ui-bundle.js, CSS, …) from a CDN.
+  // swagger-ui-dist's files are NOT bundled into the Vercel serverless function,
+  // so the local assets return HTML (blank page). CDN URLs work everywhere.
+  const cdn = 'https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.6';
+  const uiOptions: swaggerUi.SwaggerUiOptions = {
+    customCssUrl: `${cdn}/swagger-ui.css`,
+    customJs: [
+      `${cdn}/swagger-ui-bundle.js`,
+      `${cdn}/swagger-ui-standalone-preset.js`,
+    ],
+    customSiteTitle: 'WAVE / AutoWash Pro API',
+  };
+  app.use(`/${prefix}/docs`, swaggerUi.serve, swaggerUi.setup(doc, uiOptions));
 }
