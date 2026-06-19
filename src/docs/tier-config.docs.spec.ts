@@ -7,9 +7,9 @@ import {
 } from '../modules/tier-config/tier-config.router';
 import { assertRouterDocumented } from '../../test/docs-helpers/assert-router-documented';
 
-const spec = parse(
-  readFileSync(join(__dirname, 'openapi.yaml'), 'utf8'),
-) as { paths: Record<string, Record<string, unknown>> };
+const spec = parse(readFileSync(join(__dirname, 'openapi.yaml'), 'utf8')) as {
+  paths: Record<string, Record<string, unknown>>;
+};
 
 describe('tier-config docs', () => {
   it('documents every public /tier-configs route', () => {

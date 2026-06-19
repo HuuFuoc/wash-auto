@@ -4,9 +4,9 @@ import { parse } from 'yaml';
 import { adminPricingPolicyRouter } from '../modules/pricing-policy/pricing-policy.router';
 import { assertRouterDocumented } from '../../test/docs-helpers/assert-router-documented';
 
-const spec = parse(
-  readFileSync(join(__dirname, 'openapi.yaml'), 'utf8'),
-) as { paths: Record<string, Record<string, unknown>> };
+const spec = parse(readFileSync(join(__dirname, 'openapi.yaml'), 'utf8')) as {
+  paths: Record<string, Record<string, unknown>>;
+};
 
 describe('pricing-policy docs', () => {
   it('documents every /admin/pricing-policy route', () => {
