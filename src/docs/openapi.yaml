@@ -13,6 +13,10 @@ tags:
     description: Registration, login, token refresh, email OTP
   - name: service-types
     description: Wash service catalogue (public read, admin manage)
+  - name: vehicle-types
+    description: Vehicle type catalogue (public read, admin manage)
+  - name: tier-configs
+    description: Loyalty tier configuration (public read, admin manage)
 components:
   securitySchemes:
     bearerAuth:
@@ -100,6 +104,55 @@ components:
       type: object
       properties:
         token: { type: string, description: 'JWT scope=email_verified, 15m TTL', example: 'eyJhbGciOi...' }
+    CreateVehicleType:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 80, example: 'Motorbike' }
+        description: { type: string, maxLength: 500, example: '2-wheel motor vehicles' }
+    UpdateVehicleType:
+      description: All CreateVehicleType fields, all optional (PartialType).
+      type: object
+      properties:
+        name: { type: string, maxLength: 80 }
+        description: { type: string, maxLength: 500 }
+    SetVehicleTypeStatus:
+      type: object
+      required: [isActive]
+      properties:
+        isActive: { type: boolean, example: true }
+    VehicleTypeResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        name: { type: string, example: 'Motorbike' }
+        description: { type: string, example: '2-wheel motor vehicles' }
+        isActive: { type: boolean, example: true }
+    UpdateTierConfig:
+      description: Admin-tunable tier fields, all optional.
+      type: object
+      properties:
+        minLoyaltyPoints: { type: integer, minimum: 0, example: 200 }
+        bookingWindowDays: { type: integer, minimum: 0, example: 10 }
+        priorityLevel: { type: integer, minimum: 0, example: 1 }
+        pointsPer1000Vnd: { type: number, minimum: 0, example: 1.5 }
+        discountPercent: { type: number, minimum: 0, maximum: 100, example: 5 }
+    SetTierConfigStatus:
+      type: object
+      required: [isActive]
+      properties:
+        isActive: { type: boolean, example: true }
+    TierConfigResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        tierName: { type: string, enum: [None, Bronze, Silver, Gold], example: None }
+        minLoyaltyPoints: { type: integer, example: 200 }
+        bookingWindowDays: { type: integer, example: 10 }
+        priorityLevel: { type: integer, example: 1 }
+        pointsPer1000Vnd: { type: number, example: 1.5 }
+        discountPercent: { type: number, example: 5 }
+        isActive: { type: boolean, example: true }
     VehiclePricing:
       type: object
       required: [vehicleTypeId, price, estimatedMinutes]
@@ -327,6 +380,182 @@ paths:
                   status:
                     type: string
                     example: ok
+  /vehicle-types:
+    get:
+      tags: [vehicle-types]
+      summary: List active vehicle types (public)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VehicleTypeResponse' }
+  /vehicle-types/{id}:
+    get:
+      tags: [vehicle-types]
+      summary: Get one active vehicle type (public)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleTypeResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/vehicle-types:
+    get:
+      tags: [vehicle-types]
+      summary: List all vehicle types (admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VehicleTypeResponse' }
+    post:
+      tags: [vehicle-types]
+      summary: Create a vehicle type (admin)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateVehicleType' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleTypeResponse' }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/vehicle-types/{id}:
+    patch:
+      tags: [vehicle-types]
+      summary: Update a vehicle type (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateVehicleType' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleTypeResponse' }
+  /admin/vehicle-types/{id}/status:
+    patch:
+      tags: [vehicle-types]
+      summary: Activate/deactivate a vehicle type (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetVehicleTypeStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleTypeResponse' }
+  /tier-configs:
+    get:
+      tags: [tier-configs]
+      summary: List active tier configs (public)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TierConfigResponse' }
+  /tier-configs/{id}:
+    get:
+      tags: [tier-configs]
+      summary: Get one active tier config (public)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TierConfigResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/tier-configs:
+    get:
+      tags: [tier-configs]
+      summary: List all tier configs (admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/TierConfigResponse' }
+  /admin/tier-configs/{id}:
+    patch:
+      tags: [tier-configs]
+      summary: Update a tier config (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTierConfig' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TierConfigResponse' }
+  /admin/tier-configs/{id}/status:
+    patch:
+      tags: [tier-configs]
+      summary: Activate/deactivate a tier config (admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetTierConfigStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TierConfigResponse' }
   /service-types:
     get:
       tags: [service-types]
