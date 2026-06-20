@@ -2,6 +2,7 @@ import { ApiPropertyOptional } from '../../../common/swagger-shim';
 import { Transform, Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsEnum,
   IsInt,
   IsMongoId,
   IsOptional,
@@ -10,6 +11,21 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+
+export enum VehicleSortByEnum {
+  LICENSE_PLATE = 'licensePlate',
+  CUSTOMER_NAME = 'customerName',
+  VEHICLE_TYPE = 'vehicleType',
+  CREATED_AT = 'createdAt',
+  UPDATED_AT = 'updatedAt',
+  USAGE_COUNT = 'usageCount',
+  STATUS = 'status',
+}
+
+export enum SortOrderEnum {
+  ASC = 'asc',
+  DESC = 'desc',
+}
 
 export class QueryVehicleDto {
   @ApiPropertyOptional({ example: 1, default: 1 })
@@ -45,6 +61,28 @@ export class QueryVehicleDto {
   @IsString()
   @MaxLength(20)
   licensePlate?: string;
+
+  @ApiPropertyOptional({
+    example: 'Honda',
+    description: 'Broad search: matches plate, nickname, brand, or model.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  search?: string;
+
+  @ApiPropertyOptional({
+    enum: VehicleSortByEnum,
+    example: VehicleSortByEnum.CREATED_AT,
+  })
+  @IsOptional()
+  @IsEnum(VehicleSortByEnum)
+  sortBy?: VehicleSortByEnum;
+
+  @ApiPropertyOptional({ enum: SortOrderEnum, example: SortOrderEnum.DESC })
+  @IsOptional()
+  @IsEnum(SortOrderEnum)
+  sortOrder?: SortOrderEnum;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()

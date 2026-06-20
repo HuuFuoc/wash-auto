@@ -26,6 +26,8 @@ import { voucherService } from '../voucher/voucher.router';
 import { AdminOrderController } from './admin-order.controller';
 import { OrderController, PaymentWebhookController } from './order.controller';
 import { registerOrderCrons } from './order.crons';
+import { FeedbackRepository } from '../feedback/feedback.repository';
+import { WorkOrderRepository } from '../work-order/work-order.repository';
 import { OrderRepository } from './order.repository';
 import { OrderService } from './order.service';
 import { PaymentTransactionRepository } from './payment-transaction.repository';
@@ -37,6 +39,8 @@ import { WasherScheduleController } from './washer-schedule.controller';
 export const orderRepository = new OrderRepository();
 const transactionRepository = new PaymentTransactionRepository();
 const userRepository = new UserRepository();
+const workOrderRepository = new WorkOrderRepository();
+const feedbackRepository = new FeedbackRepository();
 
 const service = new OrderService(
   orderRepository,
@@ -53,6 +57,8 @@ const service = new OrderService(
   getPayosService(),
   getEmailService(),
   pricingPolicyService,
+  workOrderRepository,
+  feedbackRepository,
 );
 
 const orderController = new OrderController(service);

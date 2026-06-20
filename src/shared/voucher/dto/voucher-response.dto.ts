@@ -65,7 +65,7 @@ export class VoucherResponseDto {
   ): VoucherResponseDto {
     const dto = new VoucherResponseDto();
     dto.id = doc._id.toString();
-    dto.customerId = doc.customer_id.toString();
+    dto.customerId = doc.customer_id?.toString() ?? '';
     dto.customerName = customer?.name;
     dto.customerEmail = customer?.email;
     dto.code = doc.code;

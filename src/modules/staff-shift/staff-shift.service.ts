@@ -10,11 +10,15 @@ import { SetStaffShiftStatusDto } from '../../shared/staff-shift/dto/set-staff-s
 import { StaffShiftListResponseDto } from '../../shared/staff-shift/dto/staff-shift-list-response.dto';
 import { StaffShiftResponseDto } from '../../shared/staff-shift/dto/staff-shift-response.dto';
 import { UpdateStaffShiftDto } from '../../shared/staff-shift/dto/update-staff-shift.dto';
+import { QueryStaffPerformanceDto } from '../../shared/staff-shift/dto/query-staff-performance.dto';
 import { ShiftStatusEnum } from '../../shared/staff-shift/types/shift-status.enum';
 import { ShiftTypeEnum } from '../../shared/staff-shift/types/shift-type.enum';
+import { StaffPerformanceRow } from '../../shared/staff-shift/types/staff-performance.type';
 import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { RoleRepository } from '../auth/role.repository';
 import { UserRepository } from '../auth/user.repository';
+import { FeedbackRepository } from '../feedback/feedback.repository';
+import { WorkOrderRepository } from '../work-order/work-order.repository';
 import { expandSchedule, resolveShiftBlock } from './shift-blocks';
 import { StaffShiftDocument } from './staff-shift.model';
 import {
@@ -43,7 +47,48 @@ export class StaffShiftService {
     private readonly repository: StaffShiftRepository,
     private readonly userRepository: UserRepository,
     private readonly roleRepository: RoleRepository,
+    private readonly workOrderRepository: WorkOrderRepository,
+    private readonly feedbackRepository: FeedbackRepository,
   ) {}
+
+  /**
+   * Per-washer stats for the shift/performance tab: shifts, cars washed,
+   * orders handled, feedback count + average rating, and working status.
+   */
+  async staffPerformance(
+    query: QueryStaffPerformanceDto,
+  ): Promise<StaffPerformanceRow[]> {
+    const role = await this.roleRepository.findByCode(RoleEnum.WASHER);
+    if (!role) return [];
+    const washers = await this.userRepository.findPaginated(
+      { roleId: role._id },
+      1,
+      500,
+    );
+    const ids = washers.map((u) => u._id.toString());
+
+    const [work, feedback, shifts] = await Promise.all([
+      this.workOrderRepository.washerWorkStats(ids, query.from, query.to),
+      this.feedbackRepository.summaryByWashers(ids),
+      this.repository.countShiftsByStaff(ids, query.from, query.to),
+    ]);
+
+    return washers.map((u) => {
+      const id = u._id.toString();
+      const w = work.get(id);
+      const f = feedback.get(id);
+      return {
+        washerId: id,
+        name: u.name,
+        isActive: u.is_active,
+        shiftsCount: shifts.get(id) ?? 0,
+        carsWashed: w?.carsWashed ?? 0,
+        ordersHandled: w?.ordersHandled ?? 0,
+        feedbackCount: f?.count ?? 0,
+        averageRating: f?.averageRating ?? 0,
+      };
+    });
+  }
 
   async listAssignableStaff(): Promise<AssignableStaff[]> {
     const result: AssignableStaff[] = [];

@@ -6,13 +6,41 @@ import {
   NotFoundException,
 } from '../../common/exceptions';
 import { CreateVehicleDto } from '../../shared/vehicle/dto/create-vehicle.dto';
-import { QueryVehicleDto } from '../../shared/vehicle/dto/query-vehicle.dto';
+import {
+  QueryVehicleDto,
+  SortOrderEnum,
+  VehicleSortByEnum,
+} from '../../shared/vehicle/dto/query-vehicle.dto';
 import { UpdateVehicleDto } from '../../shared/vehicle/dto/update-vehicle.dto';
 import { VehicleListResponseDto } from '../../shared/vehicle/dto/vehicle-list-response.dto';
 import { VehicleResponseDto } from '../../shared/vehicle/dto/vehicle-response.dto';
 import { VehicleTypeRepository } from '../vehicle-type/vehicle-type.repository';
 import { VehicleDocument } from './vehicle.model';
-import { IVehicleListFilter, VehicleRepository } from './vehicle.repository';
+import {
+  IVehicleListFilter,
+  IVehicleSort,
+  VehicleRepository,
+  VehicleSortField,
+} from './vehicle.repository';
+
+/** Maps the public sort key to a DB sort field + direction (whitelist). */
+export function resolveVehicleSort(
+  sortBy?: VehicleSortByEnum,
+  sortOrder?: SortOrderEnum,
+): IVehicleSort {
+  const fieldMap: Record<VehicleSortByEnum, VehicleSortField> = {
+    [VehicleSortByEnum.LICENSE_PLATE]: 'license_plate',
+    [VehicleSortByEnum.CUSTOMER_NAME]: 'customer_name',
+    [VehicleSortByEnum.VEHICLE_TYPE]: 'vehicle_type_name',
+    [VehicleSortByEnum.CREATED_AT]: 'created_at',
+    [VehicleSortByEnum.UPDATED_AT]: 'updated_at',
+    [VehicleSortByEnum.USAGE_COUNT]: 'usage_count',
+    [VehicleSortByEnum.STATUS]: 'is_active',
+  };
+  const field = sortBy ? fieldMap[sortBy] : 'created_at';
+  const order: 1 | -1 = sortOrder === SortOrderEnum.ASC ? 1 : -1;
+  return { field, order };
+}
 
 // Business logic copied verbatim from features/vehicle/vehicle.service.ts;
 // only DI + Nest exceptions + Logger were swapped out.
@@ -161,14 +189,16 @@ export class VehicleService {
     const filter: IVehicleListFilter = {
       isActive: query.isActive,
       licensePlateLike: query.licensePlate,
+      searchLike: query.search,
     };
     if (query.customerId)
       filter.customerId = new Types.ObjectId(query.customerId);
     if (query.vehicleTypeId)
       filter.vehicleTypeId = new Types.ObjectId(query.vehicleTypeId);
 
+    const sort = resolveVehicleSort(query.sortBy, query.sortOrder);
     const [docs, total] = await Promise.all([
-      this.vehicleRepository.findPaginated(filter, page, limit),
+      this.vehicleRepository.findPaginatedSorted(filter, page, limit, sort),
       this.vehicleRepository.countMatching(filter),
     ]);
 

@@ -85,9 +85,11 @@ export interface WasherRow {
   assignedJobs: number;
   averageServiceMinutes: number;
   revenueHandled: number;
-  /** QC rejections sent back to this washer - rework proxy (no ratings exist). */
-  reworkCount: number;
   onTimeRate: number;
+  /** Mean customer rating for this washer (0 when no feedback yet). */
+  averageRating: number;
+  /** Number of customer feedbacks received. */
+  feedbackCount: number;
 }
 
 export interface CustomerAnalytics {
@@ -128,12 +130,8 @@ export interface ServiceAnalytics {
 export interface RefundDisputeAnalytics {
   refundCount: number;
   refundAmount: number;
-  /** QC rejections - closest signal to a complaint/dispute in this system. */
-  qcRejections: number;
-  /** Completed orders in window (denominator for the rework rate). */
+  /** Completed orders in window. */
   completedBookings: number;
-  reworkRate: number;
-  disputesByWasher: RankRow[];
   /** Sections without a dedicated backing collection in the BE. */
   notes: string[];
 }

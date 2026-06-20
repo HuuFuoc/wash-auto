@@ -3,8 +3,10 @@ import { VoucherStatusEnum } from '../../shared/voucher/types/voucher-status.enu
 import { VoucherTypeEnum } from '../../shared/voucher/types/voucher-type.enum';
 
 // Plain-Mongoose rewrite of features/voucher/entities/voucher.entity.ts.
+// customer_id is OPTIONAL: bulk-created "pool" vouchers have no owner until a
+// customer claims one by code (sets customer_id). Granted vouchers set it up front.
 export interface Voucher {
-  customer_id: Types.ObjectId;
+  customer_id?: Types.ObjectId;
   code: string;
   type: VoucherTypeEnum;
   status: VoucherStatusEnum;
@@ -22,7 +24,6 @@ const voucherSchema = new Schema<Voucher>(
     customer_id: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
       index: true,
     },
     code: { type: String, required: true, unique: true, index: true },

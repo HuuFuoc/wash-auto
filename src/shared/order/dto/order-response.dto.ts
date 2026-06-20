@@ -16,6 +16,22 @@ function isPopulated(
   return typeof ref === 'object' && ref !== null && '_id' in ref;
 }
 
+/** Assigned-washer + rating + feedback-eligibility view attached to an order. */
+export interface OrderWasherView {
+  washerId?: string;
+  washerName?: string;
+  washerPhone?: string;
+  /** The washer's overall mean rating (reputation), not this order's rating. */
+  washerAvgRating?: number;
+  /** The star rating the customer gave THIS order (undefined until rated). */
+  orderRating?: number;
+  status?: string;
+  /** Customer may submit feedback (completed, has a washer, not yet rated). */
+  canRate?: boolean;
+  /** Customer already left feedback for this order. */
+  alreadyRated?: boolean;
+}
+
 export class OrderResponseDto {
   @ApiProperty({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
   id: string;
@@ -124,13 +140,59 @@ export class OrderResponseDto {
   @ApiPropertyOptional({ example: 1716800000001 })
   payosOrderCode?: number;
 
+  @ApiPropertyOptional({
+    example: '6601e3b3f1a2c3a4b5d6e7f8',
+    description:
+      'Washer assigned to wash this booking (when a work order exists).',
+  })
+  assignedWasherId?: string;
+
+  @ApiPropertyOptional({ example: 'Trần Văn B' })
+  assignedWasherName?: string;
+
+  @ApiPropertyOptional({ example: '0986307720' })
+  assignedWasherPhone?: string;
+
+  @ApiPropertyOptional({
+    example: 4.6,
+    description: "Washer's overall mean rating (reputation badge on the card).",
+  })
+  assignedWasherAvgRating?: number;
+
+  @ApiPropertyOptional({
+    example: 5,
+    description:
+      'Star rating the customer gave THIS order (absent until rated).',
+  })
+  orderRating?: number;
+
+  @ApiPropertyOptional({
+    example: 'in_progress',
+    description:
+      "The booking's work-order status (waiting/assigned/in_progress/done).",
+  })
+  workOrderStatus?: string;
+
+  @ApiPropertyOptional({
+    example: true,
+    description:
+      'Customer may rate the washer (completed, has washer, not yet rated).',
+  })
+  canRate?: boolean;
+
+  @ApiPropertyOptional({ example: false })
+  alreadyRated?: boolean;
+
   @ApiProperty()
   createdAt: Date;
 
   @ApiProperty()
   updatedAt: Date;
 
-  static fromDocument(doc: OrderDocument): OrderResponseDto {
+  static fromDocument(
+    doc: OrderDocument,
+    washer?: OrderWasherView,
+  ): OrderResponseDto {
     const dto = new OrderResponseDto();
     dto.id = doc._id.toString();
 
@@ -180,6 +242,16 @@ export class OrderResponseDto {
     dto.note = doc.note;
     dto.payosCheckoutUrl = doc.payos_checkout_url;
     dto.payosOrderCode = doc.payos_order_code;
+    if (washer) {
+      dto.assignedWasherId = washer.washerId;
+      dto.assignedWasherName = washer.washerName;
+      dto.assignedWasherPhone = washer.washerPhone;
+      dto.assignedWasherAvgRating = washer.washerAvgRating;
+      dto.orderRating = washer.orderRating;
+      dto.workOrderStatus = washer.status;
+      dto.canRate = washer.canRate;
+      dto.alreadyRated = washer.alreadyRated;
+    }
     const ts = doc as unknown as { created_at: Date; updated_at: Date };
     dto.createdAt = ts.created_at;
     dto.updatedAt = ts.updated_at;

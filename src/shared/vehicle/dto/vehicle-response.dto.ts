@@ -48,6 +48,13 @@ export class VehicleResponseDto {
   @ApiProperty({ example: true })
   isActive: boolean;
 
+  @ApiPropertyOptional({
+    example: 12,
+    description:
+      'Lifetime number of orders booked with this vehicle (admin list).',
+  })
+  usageCount?: number;
+
   static fromDocument(doc: VehicleDocument): VehicleResponseDto {
     const dto = new VehicleResponseDto();
     dto.id = doc._id.toString();
@@ -80,6 +87,8 @@ export class VehicleResponseDto {
     dto.color = doc.color;
     dto.isDefault = doc.is_default;
     dto.isActive = doc.is_active;
+    const usage = (doc as unknown as { usage_count?: number }).usage_count;
+    if (typeof usage === 'number') dto.usageCount = usage;
     return dto;
   }
 }

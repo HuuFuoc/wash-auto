@@ -224,4 +224,33 @@ export class StaffShiftRepository {
     }
     return q;
   }
+
+  /** Number of shifts per staff member, optionally within a start_at window. */
+  async countShiftsByStaff(
+    staffIds: Array<Types.ObjectId | string>,
+    from?: Date,
+    to?: Date,
+  ): Promise<Map<string, number>> {
+    const result = new Map<string, number>();
+    if (staffIds.length === 0) return result;
+    const match: ShiftQuery = {
+      staff_id: { $in: staffIds.map((s) => new Types.ObjectId(s)) },
+    };
+    if (from || to) {
+      match.start_at = {};
+      if (from) match.start_at.$gte = from;
+      if (to) match.start_at.$lte = to;
+    }
+    const rows = await StaffShiftModel.aggregate<{
+      _id: Types.ObjectId;
+      count: number;
+    }>([
+      { $match: match },
+      { $group: { _id: '$staff_id', count: { $sum: 1 } } },
+    ]).exec();
+    for (const row of rows) {
+      result.set(row._id.toString(), row.count);
+    }
+    return result;
+  }
 }

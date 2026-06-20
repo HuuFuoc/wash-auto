@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import { IdParam } from '../../common/params';
 import { AssignWasherDto } from '../../shared/work-order/dto/assign-washer.dto';
 import { CreateWorkOrderDto } from '../../shared/work-order/dto/create-work-order.dto';
-import { QcWorkOrderDto } from '../../shared/work-order/dto/qc-work-order.dto';
 import { QueryWorkOrderDto } from '../../shared/work-order/dto/query-work-order.dto';
 import { AuthRequest } from '../../middlewares/auth.middleware';
 import { WorkOrderService } from './work-order.service';
@@ -46,16 +45,6 @@ export class AdminWorkOrderController {
       await this.service.assignWasher(
         req.params.id,
         dto.washerId,
-        req.user!.sub,
-      ),
-    );
-  };
-
-  qc = async (req: AuthRequest<IdParam>, res: Response): Promise<void> => {
-    res.json(
-      await this.service.qualityCheck(
-        req.params.id,
-        req.body as QcWorkOrderDto,
         req.user!.sub,
       ),
     );

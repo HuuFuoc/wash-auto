@@ -11,6 +11,14 @@ export interface ICreateVoucherInput {
   expiresAt: Date;
 }
 
+/** One pool voucher in a bulk batch (no owner until claimed). */
+export interface IBulkVoucherInput {
+  code: string;
+  type: VoucherTypeEnum;
+  discountCapVnd: number;
+  expiresAt: Date;
+}
+
 export class VoucherRepository {
   async create(input: ICreateVoucherInput): Promise<VoucherDocument> {
     return VoucherModel.create({
@@ -21,6 +29,40 @@ export class VoucherRepository {
       discount_cap_vnd: input.discountCapVnd,
       expires_at: input.expiresAt,
     });
+  }
+
+  /** Inserts a batch of unowned pool vouchers (customers claim them by code). */
+  async createBulk(inputs: IBulkVoucherInput[]): Promise<VoucherDocument[]> {
+    if (inputs.length === 0) return [];
+    const docs = inputs.map((i) => ({
+      code: i.code,
+      type: i.type,
+      status: VoucherStatusEnum.UNUSED,
+      discount_cap_vnd: i.discountCapVnd,
+      expires_at: i.expiresAt,
+    }));
+    return VoucherModel.insertMany(docs);
+  }
+
+  /**
+   * Atomically assigns an unclaimed, UNUSED, unexpired pool voucher to a
+   * customer. Returns null if the code does not exist, was already claimed,
+   * is used, or has expired.
+   */
+  async claimByCode(
+    code: string,
+    customerId: Types.ObjectId | string,
+  ): Promise<VoucherDocument | null> {
+    return VoucherModel.findOneAndUpdate(
+      {
+        code,
+        customer_id: { $exists: false },
+        status: VoucherStatusEnum.UNUSED,
+        expires_at: { $gt: new Date() },
+      },
+      { $set: { customer_id: new Types.ObjectId(customerId) } },
+      { returnDocument: 'after' },
+    ).exec();
   }
 
   async findById(id: Types.ObjectId | string): Promise<VoucherDocument | null> {

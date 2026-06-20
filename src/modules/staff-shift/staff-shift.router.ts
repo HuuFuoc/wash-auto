@@ -3,6 +3,7 @@ import { asyncHandler } from '../../common/async-handler';
 import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { CreateStaffShiftDto } from '../../shared/staff-shift/dto/create-staff-shift.dto';
 import { QueryAvailableShiftDto } from '../../shared/staff-shift/dto/query-available-shift.dto';
+import { QueryStaffPerformanceDto } from '../../shared/staff-shift/dto/query-staff-performance.dto';
 import { QueryStaffShiftDto } from '../../shared/staff-shift/dto/query-staff-shift.dto';
 import { SetStaffShiftStatusDto } from '../../shared/staff-shift/dto/set-staff-shift-status.dto';
 import { UpdateStaffShiftDto } from '../../shared/staff-shift/dto/update-staff-shift.dto';
@@ -11,6 +12,8 @@ import { roleMiddleware } from '../../middlewares/roles.middleware';
 import { validateDto } from '../../middlewares/validate.middleware';
 import { RoleRepository } from '../auth/role.repository';
 import { UserRepository } from '../auth/user.repository';
+import { FeedbackRepository } from '../feedback/feedback.repository';
+import { WorkOrderRepository } from '../work-order/work-order.repository';
 import { AdminStaffShiftController } from './admin-staff-shift.controller';
 import { StaffShiftController } from './staff-shift.controller';
 import { StaffShiftRepository } from './staff-shift.repository';
@@ -24,6 +27,8 @@ const service = new StaffShiftService(
   repository,
   userRepository,
   roleRepository,
+  new WorkOrderRepository(),
+  new FeedbackRepository(),
 );
 const publicController = new StaffShiftController(service);
 const adminController = new AdminStaffShiftController(service);
@@ -50,6 +55,11 @@ adminShiftRouter.get(
   asyncHandler(adminController.list),
 );
 adminShiftRouter.get('/staff', asyncHandler(adminController.assignableStaff));
+adminShiftRouter.get(
+  '/staff-stats',
+  validateDto(QueryStaffPerformanceDto, 'query'),
+  asyncHandler(adminController.staffStats),
+);
 adminShiftRouter.get('/:id', asyncHandler(adminController.getOne));
 adminShiftRouter.post(
   '/',

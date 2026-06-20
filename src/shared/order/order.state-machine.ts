@@ -5,9 +5,9 @@ import {
 
 // Operational transitions (→ checked_in / in_progress / completed) are NOT
 // listed here on purpose. They are driven by the Work Order flow:
-//   - checked_in  ← POST /admin/work-orders          (cashier check-in)
-//   - in_progress ← PATCH /me/work-orders/:id/start  (washer starts)
-//   - completed   ← PATCH /admin/work-orders/:id/qc  (QC passed)
+//   - checked_in  ← POST /admin/work-orders            (cashier check-in)
+//   - in_progress ← PATCH /me/work-orders/:id/start    (washer starts)
+//   - completed   ← PATCH /me/work-orders/:id/finish   (washer finishes; QC removed)
 // This map only governs the manual PATCH /admin/orders/:id/status, which is
 // now limited to the non-operational outcomes: cancel and no-show.
 const TRANSITIONS: Record<OrderStatusEnum, OrderStatusEnum[]> = {

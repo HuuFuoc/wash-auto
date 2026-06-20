@@ -30,7 +30,7 @@ tags:
   - name: orders
     description: Bookings/orders (customer, cashier/admin, washer schedule, PayOS webhook)
   - name: work-orders
-    description: Wash job tickets (cashier check-in/QC, washer execution)
+    description: Wash job tickets (cashier check-in, washer execution)
   - name: users
     description: Staff/customer account management (admin)
   - name: golden-hours
@@ -41,6 +41,8 @@ tags:
     description: Management reporting / analytics (manager/admin)
   - name: chat
     description: AI chat assistant (public) + chat knowledge base (admin)
+  - name: feedback
+    description: Customer feedback/rating per completed order (customer + manager/admin)
 components:
   securitySchemes:
     bearerAuth:
@@ -48,6 +50,59 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    CreateFeedback:
+      type: object
+      required: [orderId, rating]
+      properties:
+        orderId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        rating: { type: integer, minimum: 1, maximum: 5, example: 5 }
+        comment: { type: string, maxLength: 1000, example: 'Thợ rửa sạch, thái độ tốt.' }
+    FeedbackResponse:
+      type: object
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        orderId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        workOrderId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        customerName: { type: string, example: 'Nguyễn Văn A' }
+        washerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        washerName: { type: string, example: 'Trần Văn B' }
+        rating: { type: integer, minimum: 1, maximum: 5, example: 5 }
+        comment: { type: string, example: 'Thợ rửa sạch, thái độ tốt.' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    FeedbackEligibility:
+      type: object
+      properties:
+        eligible: { type: boolean, example: true }
+        alreadyRated: { type: boolean, example: false }
+        feedback:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/FeedbackResponse'
+    FeedbackListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/FeedbackResponse' }
+        meta:
+          type: object
+          properties:
+            page: { type: integer, example: 1 }
+            limit: { type: integer, example: 20 }
+            total: { type: integer, example: 42 }
+            totalPages: { type: integer, example: 3 }
+    WasherFeedbackSummary:
+      type: object
+      properties:
+        washerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        averageRating: { type: number, format: float, example: 4.5 }
+        count: { type: integer, example: 12 }
+        distribution:
+          type: object
+          additionalProperties: { type: integer }
+          example: { '1': 0, '2': 1, '3': 1, '4': 4, '5': 6 }
     ErrorResponse:
       type: object
       properties:
@@ -221,6 +276,7 @@ components:
         color: { type: string, example: 'Red' }
         isDefault: { type: boolean, example: true }
         isActive: { type: boolean, example: true }
+        usageCount: { type: integer, description: 'Lifetime orders with this vehicle (admin list)', example: 12 }
     VehicleListResponse:
       type: object
       properties:
@@ -273,6 +329,26 @@ components:
       required: [reason]
       properties:
         reason: { type: string, minLength: 5, maxLength: 500, example: 'Granted to wrong customer by mistake' }
+    BulkCreateVoucher:
+      type: object
+      required: [quantity]
+      properties:
+        quantity: { type: integer, minimum: 1, maximum: 1000, example: 100 }
+        prefix: { type: string, pattern: '^[A-Z0-9]{1,15}$', example: 'TET2026' }
+        discountCapVnd: { type: integer, minimum: 1, maximum: 200000, default: 100000, example: 100000 }
+        expiresAt: { type: string, format: date-time, example: '2026-12-31T00:00:00.000Z' }
+    BulkVoucherResult:
+      type: object
+      properties:
+        count: { type: integer, example: 100 }
+        vouchers:
+          type: array
+          items: { $ref: '#/components/schemas/VoucherResponse' }
+    ClaimVoucher:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, pattern: '^[A-Z0-9-]{3,40}$', example: 'TET2026-20260620-0001' }
     VoucherResponse:
       type: object
       properties:
@@ -430,6 +506,14 @@ components:
         note: { type: string, example: 'Hut bui ky phan ghe sau.' }
         payosCheckoutUrl: { type: string, example: 'https://pay.payos.vn/web/...' }
         payosOrderCode: { type: integer, example: 1716800000001 }
+        assignedWasherId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        assignedWasherName: { type: string, example: 'Trần Văn B' }
+        assignedWasherPhone: { type: string, example: '0986307720' }
+        assignedWasherAvgRating: { type: number, format: float, example: 4.6 }
+        orderRating: { type: integer, minimum: 1, maximum: 5, example: 5 }
+        workOrderStatus: { type: string, example: 'in_progress' }
+        canRate: { type: boolean, example: true }
+        alreadyRated: { type: boolean, example: false }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     OrderListResponse:
@@ -479,12 +563,6 @@ components:
       required: [washerId]
       properties:
         washerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
-    QcWorkOrder:
-      type: object
-      required: [passed]
-      properties:
-        passed: { type: boolean, description: 'true=DONE, false=RETURNED', example: true }
-        note: { type: string, maxLength: 500, example: 'Còn vết nước ở kính sau, làm lại.' }
     FinishWorkOrder:
       type: object
       required: [checkoutPhotos]
@@ -520,11 +598,6 @@ components:
         stationName: { type: string, example: 'Bay 1' }
         startedAt: { type: string, format: date-time, example: '2026-05-22T09:00:00.000Z' }
         finishedAt: { type: string, format: date-time, example: '2026-05-22T09:25:00.000Z' }
-        qcBy: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
-        qcAt: { type: string, format: date-time, example: '2026-05-22T09:30:00.000Z' }
-        qcPassed: { type: boolean, example: true }
-        qcNote: { type: string, example: 'Còn vết nước ở kính sau.' }
-        returnCount: { type: integer, example: 0 }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     WorkOrderListResponse:
@@ -1336,18 +1409,81 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/WorkOrderResponse' }
-  /admin/work-orders/{id}/qc:
-    patch:
-      tags: [work-orders]
-      summary: Quality-check a work order (cashier/manager/admin)
+  /me/feedback:
+    post:
+      tags: [feedback]
+      summary: Rate a completed order (customer; upsert)
       security: [{ bearerAuth: [] }]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
       requestBody:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/QcWorkOrder' }
+            schema: { $ref: '#/components/schemas/CreateFeedback' }
+      responses:
+        '201':
+          description: Created/updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeedbackResponse' }
+    get:
+      tags: [feedback]
+      summary: List my submitted feedback (customer)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeedbackListResponse' }
+  /me/feedback/{orderId}:
+    get:
+      tags: [feedback]
+      summary: My feedback + rating eligibility for one order (customer)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeedbackEligibility' }
+  /admin/feedback:
+    get:
+      tags: [feedback]
+      summary: List/filter feedback by washer or order (manager/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: washerId, in: query, required: false, schema: { type: string } }
+        - { name: orderId, in: query, required: false, schema: { type: string } }
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeedbackListResponse' }
+  /admin/feedback/washers/{washerId}/summary:
+    get:
+      tags: [feedback]
+      summary: Washer rating summary - average, count, distribution (manager/admin)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: washerId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WasherFeedbackSummary' }
+  /me/orders/{orderId}/work-order:
+    get:
+      tags: [work-orders]
+      summary: Who is/was washing my car for this order (customer)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string } }
       responses:
         '200':
           description: OK
@@ -1661,6 +1797,27 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/VoucherResponse' }
+  /me/vouchers/claim:
+    post:
+      tags: [vouchers]
+      summary: Claim a pool voucher by code (customer)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClaimVoucher' }
+      responses:
+        '201':
+          description: Claimed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherResponse' }
+        '404':
+          description: Invalid, already claimed, or expired code
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /me/vouchers/{id}:
     get:
       tags: [vouchers]
@@ -1676,6 +1833,27 @@ paths:
               schema: { $ref: '#/components/schemas/VoucherResponse' }
         '404':
           description: Not found (or not owned)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/vouchers/bulk:
+    post:
+      tags: [vouchers]
+      summary: Bulk-create pool vouchers by quantity (admin/manager)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BulkCreateVoucher' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BulkVoucherResult' }
+        '400':
+          description: Validation error
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1829,6 +2007,32 @@ paths:
                     id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
                     name: { type: string, example: 'Tran Van B' }
                     role: { type: string, example: 'washer' }
+  /admin/shifts/staff-stats:
+    get:
+      tags: [shifts]
+      summary: Per-washer performance stats (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: from, in: query, required: false, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: false, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    washerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+                    name: { type: string, example: 'Tran Van B' }
+                    isActive: { type: boolean, example: true }
+                    shiftsCount: { type: integer, example: 12 }
+                    carsWashed: { type: integer, example: 40 }
+                    ordersHandled: { type: integer, example: 44 }
+                    feedbackCount: { type: integer, example: 18 }
+                    averageRating: { type: number, format: float, example: 4.6 }
   /admin/shifts/{id}:
     get:
       tags: [shifts]
@@ -2029,6 +2233,9 @@ paths:
         - { name: customerId, in: query, schema: { type: string } }
         - { name: vehicleTypeId, in: query, schema: { type: string } }
         - { name: licensePlate, in: query, schema: { type: string } }
+        - { name: search, in: query, description: 'Plate/nickname/brand/model', schema: { type: string } }
+        - { name: sortBy, in: query, schema: { type: string, enum: [licensePlate, customerName, vehicleType, createdAt, updatedAt, usageCount, status] } }
+        - { name: sortOrder, in: query, schema: { type: string, enum: [asc, desc] } }
         - { name: isActive, in: query, schema: { type: boolean } }
       responses:
         '200':

@@ -19,6 +19,7 @@ import { OrderModel } from '../order/order.model';
 import { StaffShiftModel } from '../staff-shift/staff-shift.model';
 import { VehicleModel } from '../vehicle/vehicle.model';
 import { VoucherModel } from '../voucher/voucher.model';
+import { FeedbackRepository } from '../feedback/feedback.repository';
 import { WorkOrderModel } from '../work-order/work-order.model';
 
 const TZ = 'Asia/Ho_Chi_Minh';
@@ -50,6 +51,7 @@ export class DashboardService {
   private readonly roleModel = RoleModel;
   private readonly loyaltyModel = LoyaltyAccountModel;
   private readonly shiftModel = StaffShiftModel;
+  private readonly feedbackRepository = new FeedbackRepository();
 
   async getReport(
     query: QueryDashboardDto,
@@ -89,12 +91,22 @@ export class DashboardService {
       this.runCancellationNoShow(from, to, topN),
     ]);
 
+    // Attach real customer ratings (replaces the removed QC-rework proxy).
+    const ratingMap = await this.feedbackRepository.summaryByWashers(
+      washers.map((w) => w.id),
+    );
+    const washersRated = washers.map((w) => ({
+      ...w,
+      averageRating: ratingMap.get(w.id)?.averageRating ?? 0,
+      feedbackCount: ratingMap.get(w.id)?.count ?? 0,
+    }));
+
     const report = this.assemble({
       from,
       to,
       period,
       orderFacet,
-      washers,
+      washers: washersRated,
       vehicleStats,
       voucherStats,
       tierDistribution,
@@ -411,7 +423,6 @@ export class DashboardService {
               $cond: [{ $and: ['$isDone', '$ordPaid'] }, '$ordAmount', 0],
             },
           },
-          reworkCount: { $sum: '$return_count' },
           durSum: {
             $sum: { $cond: [{ $ne: ['$durMin', null] }, '$durMin', 0] },
           },
@@ -453,7 +464,6 @@ export class DashboardService {
           assignedJobs: 1,
           completedJobs: 1,
           revenueHandled: 1,
-          reworkCount: 1,
           averageServiceMinutes: {
             $cond: [
               { $gt: ['$durCount', 0] },
@@ -489,7 +499,6 @@ export class DashboardService {
         assignedJobs: number;
         completedJobs: number;
         revenueHandled: number;
-        reworkCount: number;
         averageServiceMinutes: number;
         onTimeRate: number;
       }>(pipeline)
@@ -920,8 +929,6 @@ export class DashboardService {
     const customersWithOrders = returning?.total ?? 0;
     const returningCustomers = returning?.returning ?? 0;
 
-    const qcRejections = washers.reduce((s, w) => s + w.reworkCount, 0);
-
     return {
       scope: 'full',
       range: {
@@ -989,8 +996,9 @@ export class DashboardService {
         assignedJobs: w.assignedJobs,
         averageServiceMinutes: w.averageServiceMinutes,
         revenueHandled: w.revenueHandled,
-        reworkCount: w.reworkCount,
         onTimeRate: w.onTimeRate,
+        averageRating: w.averageRating,
+        feedbackCount: w.feedbackCount,
       })),
 
       customers: {
@@ -1030,19 +1038,10 @@ export class DashboardService {
       refundDispute: {
         refundCount,
         refundAmount,
-        qcRejections,
         completedBookings: completed,
-        reworkRate: pct(qcRejections, completed),
-        disputesByWasher: washers
-          .filter((w) => w.reworkCount > 0)
-          .map<RankRow>((w) => ({
-            id: w.id,
-            name: w.name,
-            value: w.reworkCount,
-          })),
         notes: [
-          'Hệ thống chưa có collection khiếu nại/tranh chấp riêng. Chỉ số "khiếu nại" tạm dùng số lần QC trả về (return_count) của work order làm proxy.',
-          'Chưa có dữ liệu đánh giá (rating) của khách cho thợ rửa.',
+          'QC của manager đã được gỡ bỏ; chất lượng nay phản ánh qua feedback/rating của khách (module feedback).',
+          'Thống kê rating theo thợ rửa sẽ được bổ sung khi dashboard tích hợp module feedback.',
         ],
       },
 
@@ -1266,9 +1265,10 @@ interface AssembleInput {
     assignedJobs: number;
     completedJobs: number;
     revenueHandled: number;
-    reworkCount: number;
     averageServiceMinutes: number;
     onTimeRate: number;
+    averageRating: number;
+    feedbackCount: number;
   }[];
   vehicleStats: {
     total: number;
