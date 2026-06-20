@@ -106,6 +106,8 @@ export class OrderRepository {
   ): Promise<OrderDocument[]> {
     return OrderModel.find({ customer_id: new Types.ObjectId(customerId) })
       .sort({ scheduled_at: -1 })
+      .populate('vehicle_id', 'license_plate')
+      .populate('service_type_id', 'name')
       .exec();
   }
 

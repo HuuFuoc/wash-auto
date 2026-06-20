@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { IdParam } from '../../common/params';
+import { QueryStaffPerformanceDto } from '../../shared/staff-shift/dto/query-staff-performance.dto';
 import { QueryStaffShiftDto } from '../../shared/staff-shift/dto/query-staff-shift.dto';
 import { StaffShiftService } from './staff-shift.service';
 
@@ -15,6 +16,11 @@ export class AdminStaffShiftController {
 
   assignableStaff = async (_req: Request, res: Response): Promise<void> => {
     res.json(await this.service.listAssignableStaff());
+  };
+
+  staffStats = async (req: Request, res: Response): Promise<void> => {
+    const query = (req.validated?.query ?? {}) as QueryStaffPerformanceDto;
+    res.json(await this.service.staffPerformance(query));
   };
 
   getOne = async (req: Request<IdParam>, res: Response): Promise<void> => {

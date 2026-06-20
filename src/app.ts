@@ -18,6 +18,10 @@ import {
   chatRouter,
 } from './modules/chat/chat.router';
 import { adminDashboardRouter } from './modules/dashboard/dashboard.router';
+import {
+  adminFeedbackRouter,
+  meFeedbackRouter,
+} from './modules/feedback/feedback.router';
 import { adminGoldenHourRouter } from './modules/golden-hour/golden-hour.router';
 import { meLoyaltyRouter } from './modules/loyalty/loyalty.router';
 import {
@@ -55,6 +59,7 @@ import {
 } from './modules/vehicle-type/vehicle-type.router';
 import {
   adminWorkOrderRouter,
+  customerWorkOrderRouter,
   washerWorkOrderRouter,
 } from './modules/work-order/work-order.router';
 
@@ -102,6 +107,8 @@ export function createApp() {
   apiRouter.use('/me/loyalty', meLoyaltyRouter);
   apiRouter.use('/me/orders', meOrderRouter);
   apiRouter.use('/me/work-orders', washerWorkOrderRouter);
+  apiRouter.use('/me/orders', customerWorkOrderRouter);
+  apiRouter.use('/me/feedback', meFeedbackRouter);
   apiRouter.use('/shifts', shiftRouter);
   apiRouter.use('/washers/me', washerScheduleRouter);
 
@@ -119,6 +126,7 @@ export function createApp() {
   apiRouter.use('/admin/work-orders', adminWorkOrderRouter);
   apiRouter.use('/admin/chat-knowledge', adminChatKnowledgeRouter);
   apiRouter.use('/admin/dashboard', adminDashboardRouter);
+  apiRouter.use('/admin/feedback', adminFeedbackRouter);
 
   app.use(`/${config.app.globalPrefix}`, apiRouter);
 

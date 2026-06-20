@@ -6,6 +6,7 @@ import {
 } from '../../common/exceptions';
 import { config } from '../../config';
 import { redisClient } from '../../core/redis';
+import { RealtimeEvent, emitToManagers } from '../../core/realtime';
 import { AvailableSlotDto } from '../../shared/order/dto/available-slot.dto';
 import { CancelOrderDto } from '../../shared/order/dto/cancel-order.dto';
 import { CreateOrderDto } from '../../shared/order/dto/create-order.dto';
@@ -13,6 +14,7 @@ import { GetWasherScheduleQueryDto } from '../../shared/order/dto/get-washer-sch
 import {
   OrderListResponseDto,
   OrderResponseDto,
+  OrderWasherView,
 } from '../../shared/order/dto/order-response.dto';
 import {
   PreviewOrderDto,
@@ -46,6 +48,8 @@ import { VehicleDocument } from '../vehicle/vehicle.model';
 import { VehicleRepository } from '../vehicle/vehicle.repository';
 import { VehicleService } from '../vehicle/vehicle.service';
 import { VoucherService } from '../voucher/voucher.service';
+import { FeedbackRepository } from '../feedback/feedback.repository';
+import { WorkOrderRepository } from '../work-order/work-order.repository';
 import { OrderDocument } from './order.model';
 import { IOrderListFilter, OrderRepository } from './order.repository';
 import { PaymentTransactionRepository } from './payment-transaction.repository';
@@ -126,6 +130,70 @@ function fitsBusinessHours(slotMs: number, durationMs: number): boolean {
   );
 }
 
+/** Extracts the assigned-washer summary from a work order (washer may be populated). */
+function washerEntry(wo: { assigned_washer_id?: unknown; status: string }): {
+  washerId?: string;
+  washerName?: string;
+  status?: string;
+} {
+  const washer = wo.assigned_washer_id;
+  if (washer && typeof washer === 'object' && '_id' in washer) {
+    const w = washer as { _id: Types.ObjectId; name?: string };
+    return {
+      washerId: w._id.toString(),
+      washerName: w.name,
+      status: wo.status,
+    };
+  }
+  return {
+    washerId: (washer as Types.ObjectId | undefined)?.toString(),
+    status: wo.status,
+  };
+}
+
+/**
+ * Builds the customer-facing washer card for an order: who washed it, their
+ * phone + overall rating, and whether the customer can/already left feedback.
+ */
+export function customerWasherView(
+  workOrder: { assigned_washer_id?: unknown; status: string } | undefined,
+  ratingByWasher: Map<string, { averageRating: number }>,
+  orderRatings: Map<string, number>,
+  orderId: string,
+  orderStatus: OrderStatusEnum,
+): OrderWasherView {
+  const orderRating = orderRatings.get(orderId);
+  const alreadyRated = orderRating !== undefined;
+  if (!workOrder) {
+    return { orderRating, canRate: false, alreadyRated };
+  }
+  const washer = workOrder.assigned_washer_id;
+  let washerId: string | undefined;
+  let washerName: string | undefined;
+  let washerPhone: string | undefined;
+  if (washer && typeof washer === 'object' && '_id' in washer) {
+    const w = washer as { _id: Types.ObjectId; name?: string; phone?: string };
+    washerId = w._id.toString();
+    washerName = w.name;
+    washerPhone = w.phone;
+  } else if (washer) {
+    washerId = (washer as Types.ObjectId).toString();
+  }
+  return {
+    washerId,
+    washerName,
+    washerPhone,
+    washerAvgRating: washerId
+      ? (ratingByWasher.get(washerId)?.averageRating ?? 0)
+      : undefined,
+    orderRating,
+    status: workOrder.status,
+    alreadyRated,
+    canRate:
+      orderStatus === OrderStatusEnum.COMPLETED && !!washerId && !alreadyRated,
+  };
+}
+
 // Business logic copied verbatim from features/order/services/order.service.ts;
 // only DI (ConfigService/REDIS_CLIENT) + Nest exceptions + Logger were swapped.
 export class OrderService {
@@ -144,6 +212,8 @@ export class OrderService {
     private readonly payosService: PayosService,
     private readonly emailService: EmailService,
     private readonly pricingPolicyService: PricingPolicyService,
+    private readonly workOrderRepository: WorkOrderRepository,
+    private readonly feedbackRepository: FeedbackRepository,
   ) {}
 
   /**
@@ -405,17 +475,71 @@ export class OrderService {
     console.log(
       `Order created customerId=${customerId} orderId=${order._id.toString()} method=${dto.paymentMethod}`,
     );
-    return OrderResponseDto.fromDocument(order);
+    const result = OrderResponseDto.fromDocument(order);
+    emitToManagers(RealtimeEvent.ORDER_CREATED, result);
+    return result;
   }
 
   async listOwn(customerId: string): Promise<OrderResponseDto[]> {
     const docs = await this.orderRepository.findByOwner(customerId);
-    return docs.map((d) => OrderResponseDto.fromDocument(d));
+    const views = await this.buildCustomerWasherViews(docs);
+    return docs.map((d) =>
+      OrderResponseDto.fromDocument(d, views.get(d._id.toString())),
+    );
   }
 
   async getOwn(customerId: string, id: string): Promise<OrderResponseDto> {
     const doc = await this.requireOwned(id, customerId);
-    return OrderResponseDto.fromDocument(doc);
+    const views = await this.buildCustomerWasherViews([doc]);
+    return OrderResponseDto.fromDocument(doc, views.get(doc._id.toString()));
+  }
+
+  /** order_id → washer/rating/feedback-eligibility view for a customer's orders. */
+  private async buildCustomerWasherViews(
+    docs: OrderDocument[],
+  ): Promise<Map<string, OrderWasherView>> {
+    const map = new Map<string, OrderWasherView>();
+    if (docs.length === 0) return map;
+    const orderIds = docs.map((d) => d._id);
+
+    const [workOrders, orderRatings] = await Promise.all([
+      this.workOrderRepository.findByOrderIds(orderIds),
+      this.feedbackRepository.ratingByOrderIds(orderIds),
+    ]);
+    const woByOrder = new Map(
+      workOrders.map((wo) => [wo.order_id.toString(), wo]),
+    );
+
+    const washerIds = [
+      ...new Set(
+        workOrders
+          .map((wo) => {
+            const w = wo.assigned_washer_id as unknown;
+            if (w && typeof w === 'object' && '_id' in w) {
+              return (w as { _id: Types.ObjectId })._id.toString();
+            }
+            return w ? (w as Types.ObjectId).toString() : undefined;
+          })
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    const ratingByWasher =
+      await this.feedbackRepository.summaryByWashers(washerIds);
+
+    for (const doc of docs) {
+      const id = doc._id.toString();
+      map.set(
+        id,
+        customerWasherView(
+          woByOrder.get(id),
+          ratingByWasher,
+          orderRatings,
+          id,
+          doc.status,
+        ),
+      );
+    }
+    return map;
   }
 
   /**
@@ -897,8 +1021,11 @@ export class OrderService {
       this.orderRepository.findPaginated(filter, page, limit),
       this.orderRepository.countMatching(filter),
     ]);
+    const washerMap = await this.buildWasherMap(docs.map((d) => d._id));
     return {
-      data: docs.map((d) => OrderResponseDto.fromDocument(d)),
+      data: docs.map((d) =>
+        OrderResponseDto.fromDocument(d, washerMap.get(d._id.toString())),
+      ),
       meta: {
         page,
         limit,
@@ -914,7 +1041,25 @@ export class OrderService {
     }
     const doc = await this.orderRepository.findById(id);
     if (!doc) throw new NotFoundException('Order not found');
-    return OrderResponseDto.fromDocument(doc);
+    const wo = await this.workOrderRepository.findByOrderIdWithWasher(doc._id);
+    return OrderResponseDto.fromDocument(doc, wo ? washerEntry(wo) : undefined);
+  }
+
+  /** order_id (string) → assigned washer + work-order status, for the booking tab. */
+  private async buildWasherMap(
+    orderIds: Types.ObjectId[],
+  ): Promise<
+    Map<string, { washerId?: string; washerName?: string; status?: string }>
+  > {
+    const workOrders = await this.workOrderRepository.findByOrderIds(orderIds);
+    const map = new Map<
+      string,
+      { washerId?: string; washerName?: string; status?: string }
+    >();
+    for (const wo of workOrders) {
+      map.set(wo.order_id.toString(), washerEntry(wo));
+    }
+    return map;
   }
 
   // ---------- WASHER ----------

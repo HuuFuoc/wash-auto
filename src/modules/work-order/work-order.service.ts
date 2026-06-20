@@ -2,10 +2,11 @@ import { Types } from 'mongoose';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '../../common/exceptions';
 import { redisClient } from '../../core/redis';
-import { QcWorkOrderDto } from '../../shared/work-order/dto/qc-work-order.dto';
+import { RealtimeEvent, emitToManagers, emitToUser } from '../../core/realtime';
 import { QueryWorkOrderDto } from '../../shared/work-order/dto/query-work-order.dto';
 import {
   WorkOrderListResponseDto,
@@ -173,8 +174,7 @@ export class WorkOrderService {
     const wo = await this.requireWorkOrder(id);
     if (
       wo.status !== WorkOrderStatusEnum.WAITING &&
-      wo.status !== WorkOrderStatusEnum.ASSIGNED &&
-      wo.status !== WorkOrderStatusEnum.RETURNED
+      wo.status !== WorkOrderStatusEnum.ASSIGNED
     ) {
       throw new BadRequestException(
         `Cannot assign a washer to a work order in status ${wo.status}`,
@@ -198,47 +198,41 @@ export class WorkOrderService {
     });
     if (!updated) throw new NotFoundException('Work order not found');
     console.log(`Work order ${updated.code} assigned to washer ${washerId}`);
-    return WorkOrderResponseDto.fromDocument(updated);
+    const dto = WorkOrderResponseDto.fromDocument(updated);
+    emitToUser(washerId, RealtimeEvent.WASH_ASSIGNED, dto);
+    await this.emitWashEvent(
+      updated.order_id,
+      RealtimeEvent.WASH_ASSIGNED,
+      dto,
+    );
+    return dto;
   }
 
-  /** Quality check. Pass → DONE + order COMPLETED; fail → RETURNED to washer. */
-  async qualityCheck(
-    id: string,
-    dto: QcWorkOrderDto,
-    actorId: string,
+  // ---------- CUSTOMER ----------
+
+  /**
+   * Customer view of "who is/was washing my car": returns the work order for an
+   * order the customer owns, with the assigned washer's name populated.
+   */
+  async getForCustomerByOrder(
+    customerId: string,
+    orderId: string,
   ): Promise<WorkOrderResponseDto> {
-    const wo = await this.requireWorkOrder(id);
-    if (wo.status !== WorkOrderStatusEnum.QUALITY_CHECK) {
-      throw new BadRequestException(
-        `QC only applies to work orders awaiting quality check (current status: ${wo.status})`,
+    if (!Types.ObjectId.isValid(orderId)) {
+      throw new NotFoundException('Order not found');
+    }
+    const order = await this.orderRepository.findById(orderId);
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.customer_id.toString() !== customerId) {
+      throw new ForbiddenException('You can only view your own order');
+    }
+    const wo = await this.repository.findByOrderIdWithWasher(order._id);
+    if (!wo) {
+      throw new NotFoundException(
+        'No work order has been created for this order yet',
       );
     }
-
-    if (dto.passed) {
-      const updated = await this.repository.updateById(id, {
-        status: WorkOrderStatusEnum.DONE,
-        qcBy: new Types.ObjectId(actorId),
-        qcAt: new Date(),
-        qcPassed: true,
-        qcNote: dto.note,
-      });
-      if (!updated) throw new NotFoundException('Work order not found');
-      await this.completeOrder(wo.order_id);
-      console.log(`Work order ${updated.code} QC passed → DONE`);
-      return WorkOrderResponseDto.fromDocument(updated);
-    }
-
-    const updated = await this.repository.updateById(id, {
-      status: WorkOrderStatusEnum.RETURNED,
-      qcBy: new Types.ObjectId(actorId),
-      qcAt: new Date(),
-      qcPassed: false,
-      qcNote: dto.note,
-      returnCount: wo.return_count + 1,
-    });
-    if (!updated) throw new NotFoundException('Work order not found');
-    console.log(`Work order ${updated.code} QC failed → RETURNED`);
-    return WorkOrderResponseDto.fromDocument(updated);
+    return WorkOrderResponseDto.fromDocument(wo);
   }
 
   // ---------- WASHER ----------
@@ -256,13 +250,10 @@ export class WorkOrderService {
     return WorkOrderResponseDto.fromDocument(doc);
   }
 
-  /** Washer starts the wash. ASSIGNED or RETURNED → IN_PROGRESS. */
+  /** Washer starts the wash. ASSIGNED → IN_PROGRESS. */
   async start(washerId: string, id: string): Promise<WorkOrderResponseDto> {
     const wo = await this.requireAssignedToWasher(id, washerId);
-    if (
-      wo.status !== WorkOrderStatusEnum.ASSIGNED &&
-      wo.status !== WorkOrderStatusEnum.RETURNED
-    ) {
+    if (wo.status !== WorkOrderStatusEnum.ASSIGNED) {
       throw new BadRequestException(
         `Cannot start a work order in status ${wo.status}`,
       );
@@ -277,10 +268,16 @@ export class WorkOrderService {
       status: OrderStatusEnum.IN_PROGRESS,
     });
     console.log(`Work order ${updated.code} started by washer ${washerId}`);
-    return WorkOrderResponseDto.fromDocument(updated);
+    const dto = WorkOrderResponseDto.fromDocument(updated);
+    await this.emitWashEvent(updated.order_id, RealtimeEvent.WASH_STARTED, dto);
+    return dto;
   }
 
-  /** Washer finishes the wash. IN_PROGRESS → QUALITY_CHECK (≥1 photo required). */
+  /**
+   * Washer finishes the wash. IN_PROGRESS → DONE (≥1 photo required). With
+   * manager QC removed, finishing the wash completes the order directly
+   * (loyalty hook runs in OrderService.markCompletedByWorkOrder).
+   */
   async finish(
     washerId: string,
     id: string,
@@ -299,13 +296,14 @@ export class WorkOrderService {
     }
 
     const updated = await this.repository.updateById(id, {
-      status: WorkOrderStatusEnum.QUALITY_CHECK,
+      status: WorkOrderStatusEnum.DONE,
       finishedAt: new Date(),
       checkoutPhotos,
     });
     if (!updated) throw new NotFoundException('Work order not found');
+    await this.completeOrder(wo.order_id);
     console.log(
-      `Work order ${updated.code} finished by washer ${washerId} → QC`,
+      `Work order ${updated.code} finished by washer ${washerId} → DONE`,
     );
 
     try {
@@ -314,10 +312,33 @@ export class WorkOrderService {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`Pull-next after finish failed: ${msg}`);
     }
-    return WorkOrderResponseDto.fromDocument(updated);
+    const dto = WorkOrderResponseDto.fromDocument(updated);
+    await this.emitWashEvent(
+      updated.order_id,
+      RealtimeEvent.WASH_COMPLETED,
+      dto,
+    );
+    return dto;
   }
 
   // ---------- helpers ----------
+
+  /** Best-effort realtime fan-out: managers' ops feed + the order's customer. */
+  private async emitWashEvent(
+    orderId: Types.ObjectId,
+    event: string,
+    payload: WorkOrderResponseDto,
+  ): Promise<void> {
+    emitToManagers(event, payload);
+    try {
+      const order = await this.orderRepository.findById(orderId);
+      if (order?.customer_id) {
+        emitToUser(order.customer_id.toString(), event, payload);
+      }
+    } catch {
+      // Realtime is best-effort; never fail the wash flow on emit errors.
+    }
+  }
 
   private async requireWorkOrder(id: string): Promise<WorkOrderDocument> {
     if (!Types.ObjectId.isValid(id)) {

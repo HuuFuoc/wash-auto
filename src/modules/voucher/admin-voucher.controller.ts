@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { IdParam } from '../../common/params';
+import { BulkCreateVoucherDto } from '../../shared/voucher/dto/bulk-create-voucher.dto';
 import { QueryVoucherDto } from '../../shared/voucher/dto/query-voucher.dto';
 import { RevokeVoucherDto } from '../../shared/voucher/dto/revoke-voucher.dto';
 import { VoucherService } from './voucher.service';
@@ -11,6 +12,14 @@ export class AdminVoucherController {
 
   grant = async (req: Request, res: Response): Promise<void> => {
     res.status(201).json(await this.service.adminGrantForCustomer(req.body));
+  };
+
+  bulkCreate = async (req: Request, res: Response): Promise<void> => {
+    res
+      .status(201)
+      .json(
+        await this.service.adminBulkCreate(req.body as BulkCreateVoucherDto),
+      );
   };
 
   list = async (req: Request, res: Response): Promise<void> => {

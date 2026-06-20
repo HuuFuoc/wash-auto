@@ -27,11 +27,6 @@ export interface WorkOrder {
   station_name?: string;
   started_at?: Date;
   finished_at?: Date;
-  qc_by?: Types.ObjectId;
-  qc_at?: Date;
-  qc_passed?: boolean;
-  qc_note?: string;
-  return_count: number;
 }
 
 export type WorkOrderDocument = HydratedDocument<WorkOrder>;
@@ -89,11 +84,6 @@ const workOrderSchema = new Schema<WorkOrder>(
     station_name: { type: String, trim: true },
     started_at: { type: Date },
     finished_at: { type: Date },
-    qc_by: { type: Schema.Types.ObjectId, ref: 'User' },
-    qc_at: { type: Date },
-    qc_passed: { type: Boolean },
-    qc_note: { type: String, trim: true },
-    return_count: { type: Number, required: true, default: 0, min: 0 },
   },
   {
     timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },

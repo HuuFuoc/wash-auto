@@ -4,7 +4,6 @@ import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { AssignWasherDto } from '../../shared/work-order/dto/assign-washer.dto';
 import { CreateWorkOrderDto } from '../../shared/work-order/dto/create-work-order.dto';
 import { FinishWorkOrderDto } from '../../shared/work-order/dto/finish-work-order.dto';
-import { QcWorkOrderDto } from '../../shared/work-order/dto/qc-work-order.dto';
 import { QueryWorkOrderDto } from '../../shared/work-order/dto/query-work-order.dto';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/roles.middleware';
@@ -18,6 +17,7 @@ import { vehicleRepository } from '../vehicle/vehicle.router';
 import { VehicleTypeRepository } from '../vehicle-type/vehicle-type.repository';
 import { AdminWorkOrderController } from './admin-work-order.controller';
 import { AssignmentService } from './assignment.service';
+import { CustomerWorkOrderController } from './customer-work-order.controller';
 import { WasherWorkOrderController } from './washer-work-order.controller';
 import { registerWorkOrderCron as registerCron } from './work-order.crons';
 import { WorkOrderRepository } from './work-order.repository';
@@ -47,6 +47,7 @@ const service = new WorkOrderService(
 );
 const adminController = new AdminWorkOrderController(service);
 const washerController = new WasherWorkOrderController(service);
+const customerController = new CustomerWorkOrderController(service);
 
 // Admin router — mounted at /admin/work-orders (CASHIER/MANAGER/ADMIN).
 // `/queue` MUST be registered before `/:id`.
@@ -72,11 +73,6 @@ adminWorkOrderRouter.patch(
   validateDto(AssignWasherDto),
   asyncHandler(adminController.assign),
 );
-adminWorkOrderRouter.patch(
-  '/:id/qc',
-  validateDto(QcWorkOrderDto),
-  asyncHandler(adminController.qc),
-);
 
 // Washer router — mounted at /me/work-orders (WASHER).
 export const washerWorkOrderRouter = Router();
@@ -88,6 +84,15 @@ washerWorkOrderRouter.patch(
   '/:id/finish',
   validateDto(FinishWorkOrderDto),
   asyncHandler(washerController.finish),
+);
+
+// Customer router — mounted at /me/orders (CUSTOMER). Exposes the work order
+// (who washed, status, timings) for an order the customer owns.
+export const customerWorkOrderRouter = Router();
+customerWorkOrderRouter.use(authMiddleware, roleMiddleware(RoleEnum.CUSTOMER));
+customerWorkOrderRouter.get(
+  '/:orderId/work-order',
+  asyncHandler(customerController.getByOrder),
 );
 
 // Replaces QueueDrainCron (@nestjs/schedule) — registered from server bootstrap.

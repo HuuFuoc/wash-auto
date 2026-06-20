@@ -34,8 +34,27 @@ export interface IVehicleListFilter {
   customerId?: Types.ObjectId;
   vehicleTypeId?: Types.ObjectId;
   licensePlateLike?: string;
+  /** Broad search across plate, nickname, brand, model. */
+  searchLike?: string;
   isActive?: boolean;
 }
+
+export type VehicleSortField =
+  | 'license_plate'
+  | 'customer_name'
+  | 'vehicle_type_name'
+  | 'created_at'
+  | 'updated_at'
+  | 'usage_count'
+  | 'is_active';
+
+export interface IVehicleSort {
+  field: VehicleSortField;
+  order: 1 | -1;
+}
+
+/** A vehicle row enriched with owner/type names and lifetime usage count. */
+export type VehicleListRow = VehicleDocument & { usage_count: number };
 
 export class VehicleRepository {
   async findByOwner(
@@ -187,18 +206,99 @@ export class VehicleRepository {
       .exec();
   }
 
-  private buildQuery(filter: IVehicleListFilter): VehicleQuery {
-    const q: VehicleQuery = {};
+  /**
+   * Admin list with server-side sort across stored + derived columns
+   * (owner name, vehicle-type name, and lifetime service-usage count). Returns
+   * rows shaped like a populated VehicleDocument plus `usage_count`.
+   */
+  async findPaginatedSorted(
+    filter: IVehicleListFilter,
+    page: number,
+    limit: number,
+    sort: IVehicleSort,
+  ): Promise<VehicleListRow[]> {
+    const skip = (page - 1) * limit;
+    const sortStage: Record<string, 1 | -1> = {
+      [sort.field]: sort.order,
+      _id: 1, // stable tiebreaker for deterministic pagination
+    };
+
+    return VehicleModel.aggregate<VehicleListRow>([
+      { $match: this.buildQuery(filter) },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'customer_id',
+          foreignField: '_id',
+          as: '_cust',
+        },
+      },
+      {
+        $lookup: {
+          from: 'vehicle_types',
+          localField: 'vehicle_type_id',
+          foreignField: '_id',
+          as: '_vtype',
+        },
+      },
+      {
+        $lookup: {
+          from: 'orders',
+          localField: '_id',
+          foreignField: 'vehicle_id',
+          as: '_orders',
+        },
+      },
+      {
+        $addFields: {
+          usage_count: { $size: '$_orders' },
+          customer_name: { $first: '$_cust.name' },
+          vehicle_type_name: { $first: '$_vtype.name' },
+          customer_id: {
+            _id: '$customer_id',
+            name: { $first: '$_cust.name' },
+            phone: { $first: '$_cust.phone' },
+          },
+          vehicle_type_id: {
+            _id: '$vehicle_type_id',
+            name: { $first: '$_vtype.name' },
+          },
+        },
+      },
+      { $sort: sortStage },
+      { $skip: skip },
+      { $limit: limit },
+      { $project: { _cust: 0, _vtype: 0, _orders: 0 } },
+    ]).exec();
+  }
+
+  private buildQuery(filter: IVehicleListFilter): Record<string, unknown> {
+    const q: Record<string, unknown> = {};
     if (filter.customerId) q.customer_id = filter.customerId;
     if (filter.vehicleTypeId) q.vehicle_type_id = filter.vehicleTypeId;
     if (filter.isActive !== undefined) q.is_active = filter.isActive;
     if (filter.licensePlateLike) {
       const term = filter.licensePlateLike.trim();
       if (term.length > 0) {
-        const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        q.license_plate = { $regex: escaped, $options: 'i' };
+        q.license_plate = { $regex: escapeRegex(term), $options: 'i' };
+      }
+    }
+    if (filter.searchLike) {
+      const term = filter.searchLike.trim();
+      if (term.length > 0) {
+        const rx = { $regex: escapeRegex(term), $options: 'i' };
+        q.$or = [
+          { license_plate: rx },
+          { nickname: rx },
+          { brand: rx },
+          { car_model: rx },
+        ];
       }
     }
     return q;
   }
+}
+
+function escapeRegex(term: string): string {
+  return term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -9,6 +9,10 @@ import {
   chatRouter,
 } from '../modules/chat/chat.router';
 import { adminDashboardRouter } from '../modules/dashboard/dashboard.router';
+import {
+  adminFeedbackRouter,
+  meFeedbackRouter,
+} from '../modules/feedback/feedback.router';
 import { adminGoldenHourRouter } from '../modules/golden-hour/golden-hour.router';
 import { meLoyaltyRouter } from '../modules/loyalty/loyalty.router';
 import {
@@ -46,6 +50,7 @@ import {
 } from '../modules/vehicle-type/vehicle-type.router';
 import {
   adminWorkOrderRouter,
+  customerWorkOrderRouter,
   washerWorkOrderRouter,
 } from '../modules/work-order/work-order.router';
 
@@ -64,6 +69,8 @@ const groups: Array<[Router, string]> = [
   [meLoyaltyRouter, '/me/loyalty'],
   [meOrderRouter, '/me/orders'],
   [washerWorkOrderRouter, '/me/work-orders'],
+  [customerWorkOrderRouter, '/me/orders'],
+  [meFeedbackRouter, '/me/feedback'],
   [shiftRouter, '/shifts'],
   [washerScheduleRouter, '/washers/me'],
   [adminVehicleTypeRouter, '/admin/vehicle-types'],
@@ -79,6 +86,7 @@ const groups: Array<[Router, string]> = [
   [adminWorkOrderRouter, '/admin/work-orders'],
   [adminChatKnowledgeRouter, '/admin/chat-knowledge'],
   [adminDashboardRouter, '/admin/dashboard'],
+  [adminFeedbackRouter, '/admin/feedback'],
 ];
 
 const spec = parse(readFileSync(join(__dirname, 'openapi.yaml'), 'utf8')) as {

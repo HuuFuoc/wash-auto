@@ -1,7 +1,9 @@
 import * as dns from 'dns';
+import { createServer } from 'http';
 import { createApp } from './app';
 import { connectDB } from './config/database';
 import { config } from './config';
+import { initRealtime } from './core/realtime';
 import { seedAuthRoles } from './modules/auth/auth.router';
 import { seedChatKnowledge } from './modules/chat/chat.router';
 import { seedGoldenHourDefaults } from './modules/golden-hour/golden-hour.router';
@@ -41,9 +43,11 @@ async function bootstrap(): Promise<void> {
   await seedDefaults();
   registerCrons();
   const app = createApp();
-  app.listen(config.app.port, () => {
+  const httpServer = createServer(app);
+  initRealtime(httpServer);
+  httpServer.listen(config.app.port, () => {
     console.log(
-      `🚀 Server on http://localhost:${config.app.port}/${config.app.globalPrefix}`,
+      `🚀 Server on http://localhost:${config.app.port}/${config.app.globalPrefix} (realtime enabled)`,
     );
   });
 }

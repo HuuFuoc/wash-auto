@@ -24,7 +24,6 @@ export interface ICreateWorkOrderInput {
 export const BUSY_WASHER_STATUSES = [
   WorkOrderStatusEnum.ASSIGNED,
   WorkOrderStatusEnum.IN_PROGRESS,
-  WorkOrderStatusEnum.RETURNED,
 ];
 
 export interface IUpdateWorkOrderInput {
@@ -34,11 +33,6 @@ export interface IUpdateWorkOrderInput {
   checkoutPhotos?: string[];
   startedAt?: Date;
   finishedAt?: Date;
-  qcBy?: Types.ObjectId;
-  qcAt?: Date;
-  qcPassed?: boolean;
-  qcNote?: string;
-  returnCount?: number;
 }
 
 export interface IWorkOrderListFilter {
@@ -66,7 +60,6 @@ export class WorkOrderRepository {
       status: WorkOrderStatusEnum.WAITING,
       estimated_minutes: input.estimatedMinutes,
       station_name: input.stationName,
-      return_count: 0,
     });
   }
 
@@ -170,6 +163,26 @@ export class WorkOrderRepository {
     return WorkOrderModel.findOne({ order_id: orderId }).exec();
   }
 
+  /** Same as findByOrderId but populates the washer's name (customer view). */
+  async findByOrderIdWithWasher(
+    orderId: Types.ObjectId | string,
+  ): Promise<WorkOrderDocument | null> {
+    if (!Types.ObjectId.isValid(orderId)) return null;
+    return WorkOrderModel.findOne({ order_id: orderId })
+      .populate('assigned_washer_id', 'name phone')
+      .exec();
+  }
+
+  /** Work orders for a set of orders, with washer name populated (booking tab). */
+  async findByOrderIds(
+    orderIds: Array<Types.ObjectId | string>,
+  ): Promise<WorkOrderDocument[]> {
+    if (orderIds.length === 0) return [];
+    return WorkOrderModel.find({ order_id: { $in: orderIds } })
+      .populate('assigned_washer_id', 'name phone')
+      .exec();
+  }
+
   async findByAssignedWasher(
     washerId: Types.ObjectId | string,
   ): Promise<WorkOrderDocument[]> {
@@ -190,7 +203,7 @@ export class WorkOrderRepository {
       .sort({ created_at: -1 })
       .skip(skip)
       .limit(limit)
-      .populate('assigned_washer_id', 'name')
+      .populate('assigned_washer_id', 'name phone')
       .exec();
   }
 
@@ -211,12 +224,6 @@ export class WorkOrderRepository {
       update.checkout_photos = input.checkoutPhotos;
     if (input.startedAt !== undefined) update.started_at = input.startedAt;
     if (input.finishedAt !== undefined) update.finished_at = input.finishedAt;
-    if (input.qcBy !== undefined) update.qc_by = input.qcBy;
-    if (input.qcAt !== undefined) update.qc_at = input.qcAt;
-    if (input.qcPassed !== undefined) update.qc_passed = input.qcPassed;
-    if (input.qcNote !== undefined) update.qc_note = input.qcNote;
-    if (input.returnCount !== undefined)
-      update.return_count = input.returnCount;
 
     return WorkOrderModel.findByIdAndUpdate(
       id,
@@ -230,5 +237,58 @@ export class WorkOrderRepository {
     if (filter.status) q.status = filter.status;
     if (filter.assignedWasherId) q.assigned_washer_id = filter.assignedWasherId;
     return q;
+  }
+
+  /**
+   * Per-washer work counts (shift/performance tab): cars washed (DONE) and
+   * total jobs handled, optionally within a created_at window.
+   */
+  async washerWorkStats(
+    washerIds: Array<Types.ObjectId | string>,
+    from?: Date,
+    to?: Date,
+  ): Promise<Map<string, { carsWashed: number; ordersHandled: number }>> {
+    const result = new Map<
+      string,
+      { carsWashed: number; ordersHandled: number }
+    >();
+    if (washerIds.length === 0) return result;
+
+    const match: Record<string, unknown> = {
+      assigned_washer_id: { $in: washerIds.map((w) => new Types.ObjectId(w)) },
+    };
+    if (from || to) {
+      const range: Record<string, Date> = {};
+      if (from) range.$gte = from;
+      if (to) range.$lte = to;
+      match.created_at = range;
+    }
+
+    const rows = await WorkOrderModel.aggregate<{
+      _id: Types.ObjectId;
+      ordersHandled: number;
+      carsWashed: number;
+    }>([
+      { $match: match },
+      {
+        $group: {
+          _id: '$assigned_washer_id',
+          ordersHandled: { $sum: 1 },
+          carsWashed: {
+            $sum: {
+              $cond: [{ $eq: ['$status', WorkOrderStatusEnum.DONE] }, 1, 0],
+            },
+          },
+        },
+      },
+    ]).exec();
+
+    for (const row of rows) {
+      result.set(row._id.toString(), {
+        carsWashed: row.carsWashed,
+        ordersHandled: row.ordersHandled,
+      });
+    }
+    return result;
   }
 }

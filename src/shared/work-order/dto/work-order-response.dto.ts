@@ -53,9 +53,7 @@ export class WorkOrderResponseDto {
   @ApiProperty({
     type: [String],
     example: ['https://cdn.example.com/checkout/abc-front.jpg'],
-    description:
-      'Post-wash photos the washer uploaded at finish. The cashier reviews ' +
-      'these during quality check.',
+    description: 'Post-wash photos the washer uploaded at finish.',
   })
   checkoutPhotos: string[];
 
@@ -89,21 +87,6 @@ export class WorkOrderResponseDto {
 
   @ApiPropertyOptional({ example: '2026-05-22T09:25:00.000Z' })
   finishedAt?: Date;
-
-  @ApiPropertyOptional({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
-  qcBy?: string;
-
-  @ApiPropertyOptional({ example: '2026-05-22T09:30:00.000Z' })
-  qcAt?: Date;
-
-  @ApiPropertyOptional({ example: true })
-  qcPassed?: boolean;
-
-  @ApiPropertyOptional({ example: 'Còn vết nước ở kính sau.' })
-  qcNote?: string;
-
-  @ApiProperty({ example: 0 })
-  returnCount: number;
 
   @ApiProperty()
   createdAt: Date;
@@ -141,11 +124,6 @@ export class WorkOrderResponseDto {
     dto.stationName = doc.station_name;
     dto.startedAt = doc.started_at;
     dto.finishedAt = doc.finished_at;
-    dto.qcBy = doc.qc_by?.toString();
-    dto.qcAt = doc.qc_at;
-    dto.qcPassed = doc.qc_passed;
-    dto.qcNote = doc.qc_note;
-    dto.returnCount = doc.return_count;
     const ts = doc as unknown as { created_at: Date; updated_at: Date };
     dto.createdAt = ts.created_at;
     dto.updatedAt = ts.updated_at;

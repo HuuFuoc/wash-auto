@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '../../common/exceptions';
 import { redisClient } from '../../core/redis';
+import { BulkCreateVoucherDto } from '../../shared/voucher/dto/bulk-create-voucher.dto';
 import { GrantVoucherAdminDto } from '../../shared/voucher/dto/grant-voucher-admin.dto';
 import { QueryVoucherDto } from '../../shared/voucher/dto/query-voucher.dto';
 import { VoucherListResponseDto } from '../../shared/voucher/dto/voucher-list-response.dto';
@@ -166,6 +167,53 @@ export class VoucherService {
     });
   }
 
+  /**
+   * Bulk-mints `quantity` unowned pool vouchers with sequential codes
+   * (`PREFIX-YYYYMMDD-NNNN`). Customers later claim them by code.
+   */
+  async adminBulkCreate(
+    dto: BulkCreateVoucherDto,
+  ): Promise<{ count: number; vouchers: VoucherResponseDto[] }> {
+    const prefix = (dto.prefix ?? 'WASH').trim().toUpperCase();
+    const expiresAt =
+      dto.expiresAt ??
+      new Date(Date.now() + DEFAULT_VOUCHER_TTL_DAYS * 24 * 60 * 60 * 1000);
+    const discountCapVnd = dto.discountCapVnd ?? DEFAULT_FREE_WASH_CAP_VND;
+
+    const codes = await this.generateBulkCodes(prefix, dto.quantity);
+    const docs = await this.repository.createBulk(
+      codes.map((code) => ({
+        code,
+        type: VoucherTypeEnum.FREE_WASH,
+        discountCapVnd,
+        expiresAt,
+      })),
+    );
+    console.log(
+      `Admin bulk-created ${docs.length} vouchers prefix=${prefix} cap=${discountCapVnd}`,
+    );
+    return {
+      count: docs.length,
+      vouchers: docs.map((d) => VoucherResponseDto.fromDocument(d)),
+    };
+  }
+
+  /** A customer claims an unowned pool voucher by its code. */
+  async claimByCode(
+    customerId: string,
+    code: string,
+  ): Promise<VoucherResponseDto> {
+    const normalized = code.trim().toUpperCase();
+    const claimed = await this.repository.claimByCode(normalized, customerId);
+    if (!claimed) {
+      throw new NotFoundException(
+        'Mã voucher không hợp lệ, đã được nhận, hoặc đã hết hạn',
+      );
+    }
+    console.log(`Customer ${customerId} claimed voucher ${claimed.code}`);
+    return VoucherResponseDto.fromDocument(claimed);
+  }
+
   async adminList(query: QueryVoucherDto): Promise<VoucherListResponseDto> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -180,13 +228,22 @@ export class VoucherService {
       this.repository.countAll(filter),
     ]);
     // Enrich each voucher with the owner's name/email so the admin AND manager
-    // UIs can show a name (managers cannot call /admin/users).
-    const customerIds = [...new Set(docs.map((d) => d.customer_id.toString()))];
+    // UIs can show a name (managers cannot call /admin/users). Pool vouchers
+    // (not yet claimed) have no customer_id, so skip them in the lookup.
+    const customerIds = [
+      ...new Set(
+        docs
+          .map((d) => d.customer_id?.toString())
+          .filter((id): id is string => !!id),
+      ),
+    ];
     const users = await this.userRepository.findByIds(customerIds);
     const userMap = new Map(users.map((u) => [u._id.toString(), u]));
     return {
       data: docs.map((d) => {
-        const u = userMap.get(d.customer_id.toString());
+        const u = d.customer_id
+          ? userMap.get(d.customer_id.toString())
+          : undefined;
         return VoucherResponseDto.fromDocument(
           d,
           u ? { name: u.name, email: u.email } : undefined,
@@ -204,7 +261,9 @@ export class VoucherService {
   async adminGetById(id: string): Promise<VoucherResponseDto> {
     const doc = await this.repository.findById(id);
     if (!doc) throw new NotFoundException('Voucher not found');
-    const u = await this.userRepository.findById(doc.customer_id);
+    const u = doc.customer_id
+      ? await this.userRepository.findById(doc.customer_id)
+      : null;
     return VoucherResponseDto.fromDocument(
       doc,
       u ? { name: u.name, email: u.email } : undefined,
@@ -237,6 +296,26 @@ export class VoucherService {
       console.log(`Expired ${flipped} due vouchers`);
     }
     return flipped;
+  }
+
+  /** Generates `count` sequential codes like PREFIX-YYYYMMDD-0001 (unique per prefix/day). */
+  private async generateBulkCodes(
+    prefix: string,
+    count: number,
+  ): Promise<string[]> {
+    const now = new Date();
+    const day =
+      `${now.getUTCFullYear()}` +
+      `${String(now.getUTCMonth() + 1).padStart(2, '0')}` +
+      `${String(now.getUTCDate()).padStart(2, '0')}`;
+    const key = `seq:voucher:${prefix}:${day}`;
+    const codes: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const seq = await this.redis.incr(key);
+      if (seq === 1) await this.redis.expire(key, 60 * 60 * 24 * 2);
+      codes.push(`${prefix}-${day}-${String(seq).padStart(4, '0')}`);
+    }
+    return codes;
   }
 
   /** Generates a daily-sequential voucher code like FREEWASH-20260527-001. */

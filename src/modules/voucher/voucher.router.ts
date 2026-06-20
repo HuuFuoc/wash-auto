@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../common/async-handler';
 import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { BulkCreateVoucherDto } from '../../shared/voucher/dto/bulk-create-voucher.dto';
+import { ClaimVoucherDto } from '../../shared/voucher/dto/claim-voucher.dto';
 import { GrantVoucherAdminDto } from '../../shared/voucher/dto/grant-voucher-admin.dto';
 import { QueryVoucherDto } from '../../shared/voucher/dto/query-voucher.dto';
 import { RevokeVoucherDto } from '../../shared/voucher/dto/revoke-voucher.dto';
@@ -29,6 +31,11 @@ const adminController = new AdminVoucherController(service);
 export const meVoucherRouter = Router();
 meVoucherRouter.use(authMiddleware);
 meVoucherRouter.get('/', asyncHandler(customerController.list));
+meVoucherRouter.post(
+  '/claim',
+  validateDto(ClaimVoucherDto),
+  asyncHandler(customerController.claim),
+);
 meVoucherRouter.get('/:id', asyncHandler(customerController.getOne));
 
 // Admin router — mounted at /admin/vouchers. @UseGuards(JwtAuthGuard, RolesGuard)
@@ -42,6 +49,11 @@ adminVoucherRouter.post(
   '/',
   validateDto(GrantVoucherAdminDto),
   asyncHandler(adminController.grant),
+);
+adminVoucherRouter.post(
+  '/bulk',
+  validateDto(BulkCreateVoucherDto),
+  asyncHandler(adminController.bulkCreate),
 );
 adminVoucherRouter.get(
   '/',
