@@ -182,8 +182,6 @@ export class WorkOrderService {
     }
     await this.assertActiveWasher(washerId);
 
-    await this.assignmentService.assertWasherCanTake(washerId);
-
     const busy = await this.repository.findActiveByWasher(washerId, id);
     if (busy.length > 0) {
       throw new ConflictException(

@@ -31,7 +31,8 @@ const roleRepository = new RoleRepository();
 const vehicleTypeRepository = new VehicleTypeRepository();
 const assignmentService = new AssignmentService(
   repository,
-  staffShiftRepository,
+  userRepository,
+  roleRepository,
 );
 const service = new WorkOrderService(
   repository,
