@@ -1,28 +1,37 @@
 import { Types } from 'mongoose';
-import { BadRequestException } from '../../common/exceptions';
 import { redisClient } from '../../core/redis';
-import { StaffShiftRepository } from '../staff-shift/staff-shift.repository';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { RoleRepository } from '../auth/role.repository';
+import { UserRepository } from '../auth/user.repository';
 import { WorkOrderDocument } from './work-order.model';
 import { WorkOrderRepository } from './work-order.repository';
 
-// Business logic copied verbatim from features/work-order/assignment.service.ts;
-// only DI (REDIS_CLIENT) + Logger were swapped out.
+// Auto-assign is shift-independent: any active washer (role=washer) that is not
+// already busy is eligible. Managers schedule shifts for planning/booking, but
+// a shift is NOT required to take a job.
 export class AssignmentService {
   private static readonly LOCK_TTL_SECONDS = 10;
 
   constructor(
     private readonly workOrderRepository: WorkOrderRepository,
-    private readonly staffShiftRepository: StaffShiftRepository,
+    private readonly userRepository: UserRepository,
+    private readonly roleRepository: RoleRepository,
   ) {}
 
-  /** Washer ids eligible AND free for any job right now: on-shift ∩ not-busy. */
-  async findEligibleFreeWasherIds(now: Date = new Date()): Promise<string[]> {
-    const onShift =
-      await this.staffShiftRepository.findOnShiftWasherStaffIdsAt(now);
-    if (onShift.length === 0) return [];
+  /** All active washer ids, regardless of shift. The assignable pool. */
+  private async findActiveWasherIds(): Promise<Types.ObjectId[]> {
+    const role = await this.roleRepository.findByCode(RoleEnum.WASHER);
+    if (!role) return [];
+    return this.userRepository.findActiveIdsByRoleId(role._id);
+  }
 
-    const busy = await this.workOrderRepository.findBusyWasherIds(onShift);
-    return onShift.map((id) => id.toString()).filter((id) => !busy.has(id));
+  /** Washer ids eligible AND free for any job right now: active ∩ not-busy. */
+  async findEligibleFreeWasherIds(): Promise<string[]> {
+    const washers = await this.findActiveWasherIds();
+    if (washers.length === 0) return [];
+
+    const busy = await this.workOrderRepository.findBusyWasherIds(washers);
+    return washers.map((id) => id.toString()).filter((id) => !busy.has(id));
   }
 
   /**
@@ -67,12 +76,6 @@ export class AssignmentService {
     try {
       const busy = await this.workOrderRepository.findBusyWasherIds([idStr]);
       if (busy.has(idStr)) return false;
-      const onShift =
-        await this.staffShiftRepository.findOnShiftWasherStaffIdsAt(
-          new Date(),
-          [new Types.ObjectId(idStr)],
-        );
-      if (onShift.length === 0) return false;
 
       const [next] = await this.workOrderRepository.findWaitingQueue(1);
       if (!next) return false;
@@ -100,17 +103,6 @@ export class AssignmentService {
       if (await this.tryAutoAssign(wo)) assigned++;
     }
     return assigned;
-  }
-
-  /** Guard for manual assignment: throws when the washer is not on shift now. */
-  async assertWasherCanTake(washerId: string): Promise<void> {
-    const onShift = await this.staffShiftRepository.findOnShiftWasherStaffIdsAt(
-      new Date(),
-      [new Types.ObjectId(washerId)],
-    );
-    if (onShift.length === 0) {
-      throw new BadRequestException('Washer is not on shift right now');
-    }
   }
 
   // ---------- helpers ----------

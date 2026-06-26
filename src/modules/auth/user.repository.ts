@@ -53,6 +53,21 @@ export class UserRepository {
     return UserModel.find({ _id: { $in: ids } }).exec();
   }
 
+  /**
+   * Active (non-deleted) user ids for a given role - the assignable staff pool.
+   * Used by auto-assign to enumerate washers without coupling to staff shifts.
+   */
+  async findActiveIdsByRoleId(
+    roleId: Types.ObjectId,
+  ): Promise<Types.ObjectId[]> {
+    const ids = await UserModel.distinct('_id', {
+      role_id: roleId,
+      is_active: true,
+      delete_requested_at: { $exists: false },
+    }).exec();
+    return ids as Types.ObjectId[];
+  }
+
   async existsByEmail(email: string): Promise<boolean> {
     const found = await UserModel.exists({ email: email.toLowerCase() }).exec();
     return found !== null;
