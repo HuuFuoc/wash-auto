@@ -780,7 +780,8 @@ export class OrderService {
     const newShift = await this.staffShiftRepository.findById(dto.staffShiftId);
     if (
       !newShift ||
-      newShift.status !== ShiftStatusEnum.SCHEDULED ||
+      (newShift.status !== ShiftStatusEnum.SCHEDULED &&
+        newShift.status !== ShiftStatusEnum.ACTIVE) ||
       newShift.shift_type !== ShiftTypeEnum.WASHER
     ) {
       throw new BadRequestException('New shift not available');

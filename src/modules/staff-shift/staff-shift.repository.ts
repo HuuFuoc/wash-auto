@@ -10,6 +10,16 @@ type ShiftQuery = {
   start_at?: { $gte?: Date; $lte?: Date };
 };
 
+/**
+ * Shift statuses a customer can still book against. A shift stays bookable once
+ * a manager "starts" it (SCHEDULED → ACTIVE) — kept in sync with
+ * findOnShiftWasherStaffIdsAt so auto-assign and booking agree on what is live.
+ */
+const BOOKABLE_SHIFT_STATUSES: ShiftStatusEnum[] = [
+  ShiftStatusEnum.SCHEDULED,
+  ShiftStatusEnum.ACTIVE,
+];
+
 export interface ICreateShiftInput {
   staffId: Types.ObjectId;
   shiftType: ShiftTypeEnum;
@@ -43,7 +53,7 @@ export class StaffShiftRepository {
     shiftType?: ShiftTypeEnum,
   ): Promise<StaffShiftDocument[]> {
     const query: ShiftQuery = {
-      status: ShiftStatusEnum.SCHEDULED,
+      status: { $in: BOOKABLE_SHIFT_STATUSES },
       start_at: { $gte: from, $lte: to },
     };
     if (shiftType) query.shift_type = shiftType;
@@ -51,7 +61,7 @@ export class StaffShiftRepository {
   }
 
   /**
-   * SCHEDULED washer shifts that fully contain the wash window
+   * Live washer shifts (SCHEDULED or ACTIVE) that fully contain the wash window
    * [scheduledAt, scheduledAt + durationMinutes]. Sorted by start_at ASC.
    */
   async findShiftsContaining(
@@ -62,7 +72,7 @@ export class StaffShiftRepository {
     if (staffIds && staffIds.length === 0) return [];
     const finishAt = new Date(scheduledAt.getTime() + durationMinutes * 60_000);
     return StaffShiftModel.find({
-      status: ShiftStatusEnum.SCHEDULED,
+      status: { $in: BOOKABLE_SHIFT_STATUSES },
       shift_type: ShiftTypeEnum.WASHER,
       start_at: { $lte: scheduledAt },
       end_at: { $gte: finishAt },
@@ -92,8 +102,8 @@ export class StaffShiftRepository {
   }
 
   /**
-   * SCHEDULED washer shifts whose window overlaps [from, to] at all - including
-   * shifts that start before `from` but extend into it.
+   * Live washer shifts (SCHEDULED or ACTIVE) whose window overlaps [from, to] at
+   * all - including shifts that start before `from` but extend into it.
    */
   async findOverlapping(
     from: Date,
@@ -102,7 +112,7 @@ export class StaffShiftRepository {
   ): Promise<StaffShiftDocument[]> {
     if (staffIds && staffIds.length === 0) return [];
     return StaffShiftModel.find({
-      status: ShiftStatusEnum.SCHEDULED,
+      status: { $in: BOOKABLE_SHIFT_STATUSES },
       shift_type: ShiftTypeEnum.WASHER,
       ...(staffIds ? { staff_id: { $in: staffIds } } : {}),
       start_at: { $lte: to },
