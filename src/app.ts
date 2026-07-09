@@ -24,6 +24,7 @@ import {
 } from './modules/feedback/feedback.router';
 import { adminGoldenHourRouter } from './modules/golden-hour/golden-hour.router';
 import { meLoyaltyRouter } from './modules/loyalty/loyalty.router';
+import { meNotificationRouter } from './modules/notification/notification.router';
 import {
   adminOrderRouter,
   meOrderRouter,
@@ -109,6 +110,7 @@ export function createApp() {
   apiRouter.use('/me/work-orders', washerWorkOrderRouter);
   apiRouter.use('/me/orders', customerWorkOrderRouter);
   apiRouter.use('/me/feedback', meFeedbackRouter);
+  apiRouter.use('/me/notifications', meNotificationRouter);
   apiRouter.use('/shifts', shiftRouter);
   apiRouter.use('/washers/me', washerScheduleRouter);
 

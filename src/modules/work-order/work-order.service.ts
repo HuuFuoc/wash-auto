@@ -7,6 +7,8 @@ import {
 } from '../../common/exceptions';
 import { redisClient } from '../../core/redis';
 import { RealtimeEvent, emitToManagers, emitToUser } from '../../core/realtime';
+import { NotificationTypeEnum } from '../../shared/notification/types/notification-type.enum';
+import { notificationService } from '../notification/notification.router';
 import { QueryWorkOrderDto } from '../../shared/work-order/dto/query-work-order.dto';
 import {
   WorkOrderListResponseDto,
@@ -203,6 +205,14 @@ export class WorkOrderService {
       RealtimeEvent.WASH_ASSIGNED,
       dto,
     );
+    void notificationService.notifyUser(washerId, {
+      type: NotificationTypeEnum.WASH_ASSIGNED,
+      title: 'Bạn được giao rửa xe',
+      body: `Xe ${dto.vehicleSnapshot?.plate ?? ''} · ${
+        dto.serviceName ?? 'dịch vụ rửa xe'
+      } đã được giao cho bạn.`,
+      data: { workOrderId: dto.id },
+    });
     return dto;
   }
 
@@ -268,6 +278,12 @@ export class WorkOrderService {
     console.log(`Work order ${updated.code} started by washer ${washerId}`);
     const dto = WorkOrderResponseDto.fromDocument(updated);
     await this.emitWashEvent(updated.order_id, RealtimeEvent.WASH_STARTED, dto);
+    await this.notifyOrderCustomer(updated.order_id, {
+      type: NotificationTypeEnum.WASH_STARTED,
+      title: 'Xe của bạn đang được rửa',
+      body: `Thợ đã bắt đầu rửa xe ${dto.vehicleSnapshot?.plate ?? ''}.`,
+      data: { orderId: updated.order_id.toString(), workOrderId: dto.id },
+    });
     return dto;
   }
 
@@ -316,6 +332,12 @@ export class WorkOrderService {
       RealtimeEvent.WASH_COMPLETED,
       dto,
     );
+    await this.notifyOrderCustomer(updated.order_id, {
+      type: NotificationTypeEnum.WASH_COMPLETED,
+      title: 'Xe của bạn đã rửa xong',
+      body: `Xe ${dto.vehicleSnapshot?.plate ?? ''} đã rửa xong, sẵn sàng bàn giao.`,
+      data: { orderId: updated.order_id.toString(), workOrderId: dto.id },
+    });
     return dto;
   }
 
@@ -335,6 +357,29 @@ export class WorkOrderService {
       }
     } catch {
       // Realtime is best-effort; never fail the wash flow on emit errors.
+    }
+  }
+
+  /** Lưu + đẩy thông báo cho khách sở hữu đơn (best-effort). */
+  private async notifyOrderCustomer(
+    orderId: Types.ObjectId,
+    input: {
+      type: NotificationTypeEnum;
+      title: string;
+      body: string;
+      data?: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    try {
+      const order = await this.orderRepository.findById(orderId);
+      if (order?.customer_id) {
+        await notificationService.notifyUser(
+          order.customer_id.toString(),
+          input,
+        );
+      }
+    } catch {
+      // Thông báo là phụ trợ; không làm hỏng flow rửa xe.
     }
   }
 
