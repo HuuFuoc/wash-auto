@@ -75,7 +75,6 @@ authRouter.get(
 );
 
 // Shared instances reused by user/staff-shift/dashboard/order/work-order/chat.
-export const authService = service;
 export { userRepository, roleRepository, verifiedEmailTokenService };
 
 // ---- role seeding (replaces AuthModule.onModuleInit) ----

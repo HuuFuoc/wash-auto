@@ -78,5 +78,4 @@ adminShiftRouter.patch(
 );
 
 // Shared instances so order/work-order reuse them once migrated.
-export const staffShiftService = service;
 export const staffShiftRepository = repository;

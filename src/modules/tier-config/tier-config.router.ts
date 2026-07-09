@@ -46,5 +46,4 @@ export async function seedTierConfigDefaults(): Promise<void> {
 
 // Shared instances so the loyalty module reuses them once migrated
 // (TierConfigModule exported both the service and the repository).
-export const tierConfigService = service;
 export const tierConfigRepository = repository;

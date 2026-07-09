@@ -101,4 +101,3 @@ export function registerWorkOrderCron(): void {
   registerCron(assignmentService);
 }
 
-export const workOrderService = service;

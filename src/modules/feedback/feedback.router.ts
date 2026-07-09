@@ -52,4 +52,3 @@ adminFeedbackRouter.get(
   asyncHandler(adminController.washerSummary),
 );
 
-export const feedbackService = service;
