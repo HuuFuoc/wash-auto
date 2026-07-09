@@ -75,6 +75,23 @@ export class VoucherRepository {
     return VoucherModel.findOne({ code }).exec();
   }
 
+  /**
+   * True nếu khách đã sở hữu 1 voucher thuộc cùng lô (batchKey =
+   * PREFIX-YYYYMMDD). Dùng để chặn nhận >1 voucher mỗi đợt phát hành.
+   */
+  async existsInBatchForCustomer(
+    batchKey: string,
+    customerId: Types.ObjectId | string,
+  ): Promise<boolean> {
+    // Mã trong lô: `${batchKey}-NNNN` (4 chữ số). Escape ký tự regex an toàn.
+    const escaped = batchKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const found = await VoucherModel.exists({
+      customer_id: new Types.ObjectId(customerId),
+      code: { $regex: new RegExp(`^${escaped}-\\d{4}$`) },
+    }).exec();
+    return !!found;
+  }
+
   async findByIdForOwner(
     id: Types.ObjectId | string,
     customerId: Types.ObjectId | string,
@@ -121,6 +138,154 @@ export class VoucherRepository {
     if (filter.status) query.status = filter.status;
     if (filter.customerId) query.customer_id = filter.customerId;
     return VoucherModel.countDocuments(query).exec();
+  }
+
+  /**
+   * Thống kê tổng TOÀN BỘ voucher (gồm cả cấp đích danh lẫn lô pool).
+   * 4 nhóm loại trừ nhau (used → expired → claimed → inPool) cộng lại = total.
+   */
+  async aggregateStats(): Promise<{
+    total: number;
+    used: number;
+    expired: number;
+    claimed: number;
+    inPool: number;
+  }> {
+    const [row] = await VoucherModel.aggregate([
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          used: {
+            $sum: {
+              $cond: [{ $eq: ['$status', VoucherStatusEnum.USED] }, 1, 0],
+            },
+          },
+          expired: {
+            $sum: {
+              $cond: [{ $eq: ['$status', VoucherStatusEnum.EXPIRED] }, 1, 0],
+            },
+          },
+          claimed: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$status', VoucherStatusEnum.UNUSED] },
+                    { $ifNull: ['$customer_id', false] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          inPool: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$status', VoucherStatusEnum.UNUSED] },
+                    { $eq: [{ $ifNull: ['$customer_id', null] }, null] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]).exec();
+    return (
+      row ?? { total: 0, used: 0, expired: 0, claimed: 0, inPool: 0 }
+    );
+  }
+
+  /**
+   * Gộp voucher pool theo "lô" để theo dõi mức sử dụng. Lô = mã bulk dạng
+   * PREFIX-YYYYMMDD-NNNN nhóm theo PREFIX-YYYYMMDD (bỏ 5 ký tự cuối `-NNNN`).
+   * Voucher grant đích danh (mã không theo format) không thuộc lô nào → bỏ qua.
+   * 4 nhóm đếm loại trừ nhau (used → expired → claimed → inPool) nên cộng lại
+   * bằng total.
+   */
+  async aggregateBatches(): Promise<
+    Array<{
+      _id: string;
+      total: number;
+      used: number;
+      expired: number;
+      claimed: number;
+      inPool: number;
+      discountCapVnd: number;
+      expiresAt: Date;
+      createdAt: Date;
+    }>
+  > {
+    return VoucherModel.aggregate([
+      { $match: { code: { $regex: /-\d{8}-\d{4}$/ } } },
+      {
+        $addFields: {
+          batchKey: {
+            $substrCP: [
+              '$code',
+              0,
+              { $subtract: [{ $strLenCP: '$code' }, 5] },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: '$batchKey',
+          total: { $sum: 1 },
+          used: {
+            $sum: {
+              $cond: [{ $eq: ['$status', VoucherStatusEnum.USED] }, 1, 0],
+            },
+          },
+          expired: {
+            $sum: {
+              $cond: [{ $eq: ['$status', VoucherStatusEnum.EXPIRED] }, 1, 0],
+            },
+          },
+          claimed: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$status', VoucherStatusEnum.UNUSED] },
+                    { $ifNull: ['$customer_id', false] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          inPool: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $eq: ['$status', VoucherStatusEnum.UNUSED] },
+                    {
+                      $eq: [{ $ifNull: ['$customer_id', null] }, null],
+                    },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+          discountCapVnd: { $max: '$discount_cap_vnd' },
+          expiresAt: { $max: '$expires_at' },
+          createdAt: { $min: '$created_at' },
+        },
+      },
+      { $sort: { createdAt: -1 } },
+    ]).exec();
   }
 
   /**

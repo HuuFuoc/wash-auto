@@ -7,6 +7,9 @@ import {
 import { config } from '../../config';
 import { redisClient } from '../../core/redis';
 import { RealtimeEvent, emitToManagers } from '../../core/realtime';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { NotificationTypeEnum } from '../../shared/notification/types/notification-type.enum';
+import { notificationService } from '../notification/notification.router';
 import { AvailableSlotDto } from '../../shared/order/dto/available-slot.dto';
 import { CancelOrderDto } from '../../shared/order/dto/cancel-order.dto';
 import { CreateOrderDto } from '../../shared/order/dto/create-order.dto';
@@ -477,6 +480,16 @@ export class OrderService {
     );
     const result = OrderResponseDto.fromDocument(order);
     emitToManagers(RealtimeEvent.ORDER_CREATED, result);
+    void notificationService.notifyRoles([RoleEnum.MANAGER, RoleEnum.ADMIN], {
+      type: NotificationTypeEnum.ORDER_CREATED,
+      title: 'Đơn đặt lịch mới',
+      body: `Có đơn rửa xe mới cần xử lý (${
+        dto.paymentMethod === PaymentMethodEnum.CASH
+          ? 'tiền mặt'
+          : 'thanh toán online'
+      }).`,
+      data: { orderId: order._id.toString() },
+    });
     return result;
   }
 

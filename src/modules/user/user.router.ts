@@ -58,4 +58,3 @@ adminUserRouter.post(
 );
 adminUserRouter.delete('/:id', asyncHandler(controller.softDelete));
 
-export const userService = service;

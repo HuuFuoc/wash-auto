@@ -58,5 +58,3 @@ uploadRouter.post(
   asyncHandler(controller.uploadImages),
 );
 
-// Shared instance so order/work-order reuse it once migrated.
-export const uploadServiceInstance = uploadService;

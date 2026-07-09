@@ -168,6 +168,9 @@ export class StaffShiftService {
     const windows = blocks.map((block) => resolveShiftBlock(dto.date, block));
 
     await this.assertStaffMatchesShiftType(dto.staffId, dto.shiftType);
+    for (const { endAt } of windows) {
+      this.assertShiftNotInPast(endAt);
+    }
     for (const { startAt, endAt } of windows) {
       await this.assertNoStaffShiftOverlap(dto.staffId, startAt, endAt);
     }
@@ -219,6 +222,7 @@ export class StaffShiftService {
         );
       }
       ({ startAt, endAt } = resolveShiftBlock(dto.date, dto.block));
+      this.assertShiftNotInPast(endAt);
     }
 
     if (dto.staffId !== undefined || startAt !== undefined) {
@@ -283,6 +287,15 @@ export class StaffShiftService {
     if (role.code !== expected) {
       throw new BadRequestException(
         `staffId must belong to a user with role=${expected} for shiftType=${shiftType}`,
+      );
+    }
+  }
+
+  /** Rejects creating/moving a shift into a block that already ended. */
+  private assertShiftNotInPast(endAt: Date): void {
+    if (endAt.getTime() <= Date.now()) {
+      throw new BadRequestException(
+        'Không thể tạo ca cho khung giờ đã kết thúc. Vui lòng chọn ca còn hiệu lực.',
       );
     }
   }

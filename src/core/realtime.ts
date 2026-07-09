@@ -36,6 +36,8 @@ export const RealtimeEvent = {
   WASH_STARTED: 'wash:started',
   WASH_COMPLETED: 'wash:completed',
   FEEDBACK_CREATED: 'feedback:created',
+  /** Một thông báo (đã lưu DB) vừa được tạo cho người dùng. */
+  NOTIFICATION_NEW: 'notification:new',
 } as const;
 
 export function initRealtime(httpServer: HttpServer): AppServer {
@@ -92,22 +94,9 @@ export function emitToUser(
   io?.to(`user:${userId}`).emit(event, payload);
 }
 
-/** Emit to everyone holding a given role. */
-export function emitToRole(
-  role: RoleEnum,
-  event: string,
-  payload: unknown,
-): void {
-  io?.to(`role:${role}`).emit(event, payload);
-}
-
 /** Emit to the manager/admin operational feed (dashboard + ops tabs). */
 export function emitToManagers(event: string, payload: unknown): void {
   io?.to(`role:${RoleEnum.MANAGER}`)
     .to(`role:${RoleEnum.ADMIN}`)
     .emit(event, payload);
-}
-
-export function isRealtimeEnabled(): boolean {
-  return io !== null;
 }

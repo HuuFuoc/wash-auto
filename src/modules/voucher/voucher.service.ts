@@ -204,6 +204,25 @@ export class VoucherService {
     code: string,
   ): Promise<VoucherResponseDto> {
     const normalized = code.trim().toUpperCase();
+
+    // Mỗi khách chỉ nhận 1 voucher trong cùng một lô (chiến dịch). Lô = mã
+    // bulk dạng PREFIX-YYYYMMDD-NNNN, gộp theo PREFIX-YYYYMMDD (bỏ '-NNNN').
+    // Voucher cấp đích danh / tích lũy không theo format này nên không bị chặn.
+    const isBatchCode = /^.+-\d{8}-\d{4}$/.test(normalized);
+    const batchKey = isBatchCode ? normalized.replace(/-\d{4}$/, '') : null;
+    if (batchKey) {
+      const already = await this.repository.existsInBatchForCustomer(
+        batchKey,
+        customerId,
+      );
+      if (already) {
+        throw new ConflictException(
+          'Bạn đã nhận một voucher từ đợt phát hành này rồi. ' +
+            'Mỗi khách chỉ nhận được 1 voucher mỗi đợt.',
+        );
+      }
+    }
+
     const claimed = await this.repository.claimByCode(normalized, customerId);
     if (!claimed) {
       throw new NotFoundException(
@@ -255,6 +274,60 @@ export class VoucherService {
         total,
         totalPages: Math.max(1, Math.ceil(total / limit)),
       },
+    };
+  }
+
+  /** Tổng toàn bộ voucher theo trạng thái (cho dòng KPI đầu trang). */
+  async adminStats(): Promise<{
+    total: number;
+    inPool: number;
+    claimed: number;
+    used: number;
+    expired: number;
+  }> {
+    const s = await this.repository.aggregateStats();
+    return {
+      total: s.total,
+      inPool: s.inPool,
+      claimed: s.claimed,
+      used: s.used,
+      expired: s.expired,
+    };
+  }
+
+  /**
+   * Thống kê từng lô voucher pool để admin theo dõi mức sử dụng
+   * (đã dùng bao nhiêu / còn trong kho / đã nhận / hết hạn).
+   */
+  async adminBatchSummary(): Promise<{
+    batches: Array<{
+      batchKey: string;
+      prefix: string;
+      createdAt: Date;
+      expiresAt: Date;
+      discountCapVnd: number;
+      total: number;
+      inPool: number;
+      claimed: number;
+      used: number;
+      expired: number;
+    }>;
+  }> {
+    const rows = await this.repository.aggregateBatches();
+    return {
+      batches: rows.map((r) => ({
+        batchKey: r._id,
+        // batchKey = PREFIX-YYYYMMDD → prefix là phần trước dấu '-' + 8 số cuối.
+        prefix: r._id.replace(/-\d{8}$/, ''),
+        createdAt: r.createdAt,
+        expiresAt: r.expiresAt,
+        discountCapVnd: r.discountCapVnd,
+        total: r.total,
+        inPool: r.inPool,
+        claimed: r.claimed,
+        used: r.used,
+        expired: r.expired,
+      })),
     };
   }
 

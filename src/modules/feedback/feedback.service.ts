@@ -5,6 +5,9 @@ import {
   NotFoundException,
 } from '../../common/exceptions';
 import { RealtimeEvent, emitToManagers } from '../../core/realtime';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { NotificationTypeEnum } from '../../shared/notification/types/notification-type.enum';
+import { notificationService } from '../notification/notification.router';
 import { CreateFeedbackDto } from '../../shared/feedback/dto/create-feedback.dto';
 import {
   FeedbackEligibilityDto,
@@ -57,6 +60,12 @@ export class FeedbackService {
     });
     const result = FeedbackResponseDto.fromDocument(saved);
     emitToManagers(RealtimeEvent.FEEDBACK_CREATED, result);
+    void notificationService.notifyRoles([RoleEnum.MANAGER, RoleEnum.ADMIN], {
+      type: NotificationTypeEnum.FEEDBACK_CREATED,
+      title: 'Đánh giá mới từ khách',
+      body: `Khách vừa đánh giá ${dto.rating}★ cho một đơn rửa xe.`,
+      data: { orderId: order._id.toString(), rating: dto.rating },
+    });
     return result;
   }
 

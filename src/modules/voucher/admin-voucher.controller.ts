@@ -27,6 +27,14 @@ export class AdminVoucherController {
     res.json(await this.service.adminList(query));
   };
 
+  stats = async (_req: Request, res: Response): Promise<void> => {
+    res.json(await this.service.adminStats());
+  };
+
+  batches = async (_req: Request, res: Response): Promise<void> => {
+    res.json(await this.service.adminBatchSummary());
+  };
+
   getOne = async (req: Request<IdParam>, res: Response): Promise<void> => {
     res.json(await this.service.adminGetById(req.params.id));
   };
