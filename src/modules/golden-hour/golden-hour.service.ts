@@ -68,6 +68,11 @@ export class GoldenHourService {
         `A golden hour named "${dto.name}" already exists`,
       );
     }
+    await this.assertNoWindowOverlap(
+      dto.startMinute,
+      dto.endMinute,
+      dto.daysOfWeek ?? [],
+    );
     const created = await this.repository.create({
       name: dto.name,
       daysOfWeek: dto.daysOfWeek ?? [],
@@ -95,6 +100,8 @@ export class GoldenHourService {
     const startMinute = dto.startMinute ?? existing.start_minute;
     const endMinute = dto.endMinute ?? existing.end_minute;
     const timezone = dto.timezone ?? existing.timezone;
+    const daysOfWeek = dto.daysOfWeek ?? existing.days_of_week;
+    const isActive = dto.isActive ?? existing.is_active;
     this.assertWindowValid(startMinute, endMinute, timezone);
 
     if (
@@ -104,6 +111,11 @@ export class GoldenHourService {
       throw new ConflictException(
         `A golden hour named "${dto.name}" already exists`,
       );
+    }
+
+    // Chỉ khung đang bật mới có thể xung đột với khung khác.
+    if (isActive) {
+      await this.assertNoWindowOverlap(startMinute, endMinute, daysOfWeek, id);
     }
 
     const updated = await this.repository.updateById(id, {
@@ -124,6 +136,36 @@ export class GoldenHourService {
     const deleted = await this.repository.deleteById(id);
     if (!deleted) throw new NotFoundException('Golden hour not found');
     console.log('Deleted golden hour', { id });
+  }
+
+  /**
+   * Rejects a window that overlaps an ACTIVE window on any shared day.
+   * Two windows overlap when their time ranges intersect and their
+   * days-of-week intersect (empty daysOfWeek = every day).
+   */
+  private async assertNoWindowOverlap(
+    startMinute: number,
+    endMinute: number,
+    daysOfWeek: number[],
+    excludeId?: string,
+  ): Promise<void> {
+    const windows = await this.repository.findActive();
+    for (const window of windows) {
+      if (excludeId && window._id.toString() === excludeId) continue;
+      const timesIntersect =
+        startMinute < window.end_minute && window.start_minute < endMinute;
+      if (!timesIntersect) continue;
+      const daysIntersect =
+        daysOfWeek.length === 0 ||
+        window.days_of_week.length === 0 ||
+        daysOfWeek.some((d) => window.days_of_week.includes(d));
+      if (daysIntersect) {
+        throw new ConflictException(
+          `Khung giờ bị trùng với khung "${window.name}" đang bật. ` +
+            'Vui lòng chỉnh thời gian/ngày áp dụng hoặc tắt khung kia trước.',
+        );
+      }
+    }
   }
 
   /** Window invariants shared by create + update. */
@@ -160,10 +202,16 @@ export class GoldenHourService {
    */
   async findActiveAt(instant: Date): Promise<GoldenHourConfigDocument | null> {
     const windows = await this.repository.findActive();
+    // Overlap đã bị chặn khi tạo/sửa, nhưng dữ liệu cũ có thể còn chồng lấn:
+    // chọn khung có % cao nhất để kết quả xác định và có lợi cho khách.
+    let best: GoldenHourConfigDocument | null = null;
     for (const window of windows) {
-      if (this.instantInWindow(instant, window)) return window;
+      if (!this.instantInWindow(instant, window)) continue;
+      if (!best || window.discount_percent > best.discount_percent) {
+        best = window;
+      }
     }
-    return null;
+    return best;
   }
 
   private instantInWindow(
