@@ -60,6 +60,9 @@ adminVoucherRouter.get(
   validateDto(QueryVoucherDto, 'query'),
   asyncHandler(adminController.list),
 );
+// Đặt trước '/:id' để 'stats'/'batches' không bị nhận nhầm là id.
+adminVoucherRouter.get('/stats', asyncHandler(adminController.stats));
+adminVoucherRouter.get('/batches', asyncHandler(adminController.batches));
 adminVoucherRouter.get('/:id', asyncHandler(adminController.getOne));
 adminVoucherRouter.patch(
   '/:id/revoke',
@@ -69,7 +72,6 @@ adminVoucherRouter.patch(
 
 // Shared instances so loyalty/order reuse them once migrated.
 export const voucherService = service;
-export const voucherRepository = repository;
 
 // Registered from the server bootstrap (replaces VoucherExpiryCron).
 export function registerVoucherCron(): void {
