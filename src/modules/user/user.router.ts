@@ -57,4 +57,3 @@ adminUserRouter.post(
   asyncHandler(controller.resetPassword),
 );
 adminUserRouter.delete('/:id', asyncHandler(controller.softDelete));
-

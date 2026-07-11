@@ -51,4 +51,3 @@ adminFeedbackRouter.get(
   '/washers/:washerId/summary',
   asyncHandler(adminController.washerSummary),
 );
-
