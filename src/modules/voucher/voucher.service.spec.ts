@@ -66,7 +66,11 @@ describe('VoucherService.claimByCode', () => {
       expires_at: new Date(),
       created_at: new Date(),
     };
-    const repository = { claimByCode: jest.fn(async () => claimed) };
+    const repository = {
+      claimByCode: jest.fn(async () => claimed),
+      // batch-format codes are gated on "already claimed one from this batch?"
+      existsInBatchForCustomer: jest.fn(async () => false),
+    };
     const service = new VoucherService(
       repository as never,
       {} as never,
@@ -78,6 +82,10 @@ describe('VoucherService.claimByCode', () => {
       'tet-20260620-0001',
     );
     expect(res.code).toBe('TET-20260620-0001');
+    expect(repository.existsInBatchForCustomer).toHaveBeenCalledWith(
+      'TET-20260620',
+      customerId.toString(),
+    );
     expect(repository.claimByCode).toHaveBeenCalledWith(
       'TET-20260620-0001',
       customerId.toString(),

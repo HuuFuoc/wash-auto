@@ -43,6 +43,8 @@ tags:
     description: AI chat assistant (public) + chat knowledge base (admin)
   - name: feedback
     description: Customer feedback/rating per completed order (customer + manager/admin)
+  - name: notifications
+    description: Persisted in-app notifications + realtime bell (any authenticated user)
 components:
   securitySchemes:
     bearerAuth:
@@ -371,6 +373,26 @@ components:
         data:
           type: array
           items: { $ref: '#/components/schemas/VoucherResponse' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    NotificationResponse:
+      type: object
+      properties:
+        id: { type: string }
+        type:
+          type: string
+          description: 'order_created | wash_assigned | wash_started | wash_completed | feedback_created'
+        title: { type: string }
+        body: { type: string }
+        data: { type: object, additionalProperties: true }
+        isRead: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    NotificationListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/NotificationResponse' }
+        unread: { type: integer }
         meta: { $ref: '#/components/schemas/PaginationMeta' }
     CreateStaffShift:
       type: object
@@ -1836,6 +1858,64 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /me/notifications:
+    get:
+      tags: [notifications]
+      summary: List my notifications (paginated) + unread count
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 50 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationListResponse' }
+  /me/notifications/unread-count:
+    get:
+      tags: [notifications]
+      summary: My unread notification count (for the bell badge)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  unread: { type: integer }
+  /me/notifications/read-all:
+    patch:
+      tags: [notifications]
+      summary: Mark all my notifications as read
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated: { type: integer }
+  /me/notifications/{id}/read:
+    patch:
+      tags: [notifications]
+      summary: Mark one notification as read
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  unread: { type: integer }
   /admin/vouchers/bulk:
     post:
       tags: [vouchers]
@@ -1857,6 +1937,52 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/vouchers/stats:
+    get:
+      tags: [vouchers]
+      summary: Overall voucher totals by status (admin/manager)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  inPool: { type: integer, description: 'Chưa ai nhận' }
+                  claimed: { type: integer, description: 'Đã nhận, chưa dùng' }
+                  used: { type: integer }
+                  expired: { type: integer }
+  /admin/vouchers/batches:
+    get:
+      tags: [vouchers]
+      summary: Per-batch voucher usage summary (admin/manager)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  batches:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        batchKey: { type: string, example: 'TET2026-20260709' }
+                        prefix: { type: string, example: 'TET2026' }
+                        createdAt: { type: string, format: date-time }
+                        expiresAt: { type: string, format: date-time }
+                        discountCapVnd: { type: integer }
+                        total: { type: integer }
+                        inPool: { type: integer }
+                        claimed: { type: integer }
+                        used: { type: integer }
+                        expired: { type: integer }
   /admin/vouchers:
     post:
       tags: [vouchers]
