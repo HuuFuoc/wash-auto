@@ -57,4 +57,3 @@ uploadRouter.post(
   runMulter(upload.array('files', MAX_IMAGE_COUNT)),
   asyncHandler(controller.uploadImages),
 );
-

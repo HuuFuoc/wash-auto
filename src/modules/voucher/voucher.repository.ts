@@ -19,6 +19,23 @@ export interface IBulkVoucherInput {
   expiresAt: Date;
 }
 
+/** Mutually exclusive status counts (used → expired → claimed → inPool). */
+export interface IVoucherStatsRow {
+  total: number;
+  used: number;
+  expired: number;
+  claimed: number;
+  inPool: number;
+}
+
+/** One pool batch (PREFIX-YYYYMMDD) with its usage counts. */
+export interface IVoucherBatchRow extends IVoucherStatsRow {
+  _id: string;
+  discountCapVnd: number;
+  expiresAt: Date;
+  createdAt: Date;
+}
+
 export class VoucherRepository {
   async create(input: ICreateVoucherInput): Promise<VoucherDocument> {
     return VoucherModel.create({
@@ -144,14 +161,8 @@ export class VoucherRepository {
    * Thống kê tổng TOÀN BỘ voucher (gồm cả cấp đích danh lẫn lô pool).
    * 4 nhóm loại trừ nhau (used → expired → claimed → inPool) cộng lại = total.
    */
-  async aggregateStats(): Promise<{
-    total: number;
-    used: number;
-    expired: number;
-    claimed: number;
-    inPool: number;
-  }> {
-    const [row] = await VoucherModel.aggregate([
+  async aggregateStats(): Promise<IVoucherStatsRow> {
+    const [row] = await VoucherModel.aggregate<IVoucherStatsRow>([
       {
         $group: {
           _id: null,
@@ -197,9 +208,7 @@ export class VoucherRepository {
         },
       },
     ]).exec();
-    return (
-      row ?? { total: 0, used: 0, expired: 0, claimed: 0, inPool: 0 }
-    );
+    return row ?? { total: 0, used: 0, expired: 0, claimed: 0, inPool: 0 };
   }
 
   /**
@@ -209,29 +218,13 @@ export class VoucherRepository {
    * 4 nhóm đếm loại trừ nhau (used → expired → claimed → inPool) nên cộng lại
    * bằng total.
    */
-  async aggregateBatches(): Promise<
-    Array<{
-      _id: string;
-      total: number;
-      used: number;
-      expired: number;
-      claimed: number;
-      inPool: number;
-      discountCapVnd: number;
-      expiresAt: Date;
-      createdAt: Date;
-    }>
-  > {
-    return VoucherModel.aggregate([
+  async aggregateBatches(): Promise<IVoucherBatchRow[]> {
+    return VoucherModel.aggregate<IVoucherBatchRow>([
       { $match: { code: { $regex: /-\d{8}-\d{4}$/ } } },
       {
         $addFields: {
           batchKey: {
-            $substrCP: [
-              '$code',
-              0,
-              { $subtract: [{ $strLenCP: '$code' }, 5] },
-            ],
+            $substrCP: ['$code', 0, { $subtract: [{ $strLenCP: '$code' }, 5] }],
           },
         },
       },

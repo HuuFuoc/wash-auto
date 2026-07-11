@@ -100,4 +100,3 @@ customerWorkOrderRouter.get(
 export function registerWorkOrderCron(): void {
   registerCron(assignmentService);
 }
-

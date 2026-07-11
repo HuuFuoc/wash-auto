@@ -77,8 +77,8 @@ export function initRealtime(httpServer: HttpServer): AppServer {
   io.on('connection', (socket) => {
     const user = socket.data.user;
     if (user) {
-      socket.join(`user:${user.sub}`);
-      if (user.role) socket.join(`role:${user.role}`);
+      void socket.join(`user:${user.sub}`);
+      if (user.role) void socket.join(`role:${user.role}`);
     }
   });
 

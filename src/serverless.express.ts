@@ -1,25 +1,31 @@
 import 'reflect-metadata';
 import * as dns from 'dns';
-import type { Request, Response } from 'express';
+import { createServer } from 'http';
 import { createApp } from './app';
 import { connectDB } from './config/database';
 import { config } from './config';
+import { initRealtime } from './core/realtime';
 import { seedAuthRoles } from './modules/auth/auth.router';
 import { seedChatKnowledge } from './modules/chat/chat.router';
 import { seedGoldenHourDefaults } from './modules/golden-hour/golden-hour.router';
 import { seedPricingPolicyDefaults } from './modules/pricing-policy/pricing-policy.router';
 import { seedTierConfigDefaults } from './modules/tier-config/tier-config.router';
 
-// Express serverless entrypoint for Vercel — the mirror of the Nest
-// serverless.ts. Additive: server.ts (local `app.listen`) and serverless.ts
-// (Nest, current prod entrypoint) are untouched. vercel.json still points at
-// serverless.ts; this file is wired only via vercel.preview.json.
+// Express serverless entrypoint for Vercel (wired via vercel.json).
 //
 // Differences from server.ts ON PURPOSE:
-//   - NO app.listen (Vercel invokes the exported handler per request).
+//   - NO server.listen: Vercel owns the socket. We export the http.Server and
+//     the runtime feeds it requests AND WebSocket upgrades.
 //   - NO registerCrons: node-cron timers cannot run on serverless (the instance
-//     freezes between requests). Crons stay dormant here, matching how the Nest
-//     app behaves on Vercel today. Scheduling is out of scope this round.
+//     freezes between requests). Scheduling is out of scope this round.
+//
+// Realtime on Vercel: exporting an http.Server (not a (req, res) handler) is
+// what allows WebSocket upgrades to reach Socket.IO — see
+// https://vercel.com/docs/functions/websockets. Requires Fluid compute to be
+// enabled on the Vercel project. A connection is pinned to one warm instance,
+// so emits fired during a REST request only reach sockets held by that SAME
+// instance; fine at current traffic (one warm instance), needs
+// @socket.io/redis-adapter if we ever fan out across instances.
 
 // Local dev workaround for Vietnamese ISPs that block Mongo Atlas DNS — kept
 // identical to server.ts / main.ts; never override resolvers in production
@@ -35,7 +41,7 @@ const app = createApp();
 // Bootstrap = connect Mongo + seed defaults, run EXACTLY ONCE per warm instance.
 // Caching the promise (not awaiting per request) is what keeps us from opening a
 // new Mongo connection / re-seeding on every invocation, which would exhaust the
-// Atlas connection pool. Mirrors the bootstrapPromise pattern in serverless.ts.
+// Atlas connection pool.
 let bootstrapPromise: Promise<void> | null = null;
 
 async function bootstrap(): Promise<void> {
@@ -53,13 +59,25 @@ async function seedDefaults(): Promise<void> {
   await seedChatKnowledge();
 }
 
-export default async function handler(
-  req: Request,
-  res: Response,
-): Promise<void> {
+// HTTP requests still gate on the one-time bootstrap before hitting Express.
+// Socket.IO handshakes bypass this on purpose: initRealtime() intercepts
+// /socket.io/* at the server level and only verifies a JWT — no DB needed.
+const server = createServer((req, res) => {
   if (!bootstrapPromise) {
     bootstrapPromise = bootstrap();
   }
-  await bootstrapPromise;
-  app(req, res);
-}
+  bootstrapPromise.then(
+    () => {
+      app(req, res);
+    },
+    (err: unknown) => {
+      console.error('Bootstrap failed:', err);
+      res.statusCode = 500;
+      res.end('Internal Server Error');
+    },
+  );
+});
+
+initRealtime(server);
+
+export default server;
