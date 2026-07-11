@@ -11,6 +11,12 @@ jest.mock('../../core/redis', () => ({
   },
 }));
 
+// claim() pushes a realtime + persisted notification to the washer; stub the
+// singleton so the unit test never touches Mongo.
+jest.mock('../notification/notification.router', () => ({
+  notificationService: { notifyUser: jest.fn(async () => undefined) },
+}));
+
 /**
  * Assignment is shift-independent: any ACTIVE washer (role=washer) that is not
  * already busy can be auto-assigned or pulled, with no staff_shift required.
@@ -28,7 +34,22 @@ describe('AssignmentService (shift-independent assignment)', () => {
           new Set(ids.map(String).filter((id) => id === busy.toString())),
       ),
       findLastFinishedAtByWashers: jest.fn(async () => new Map<string, Date>()),
-      claimForWasher: jest.fn(async () => ({ code: 'WO-1' })),
+      // claim() maps the doc through WorkOrderResponseDto.fromDocument before
+      // notifying, so the stub needs every field that mapping dereferences.
+      claimForWasher: jest.fn(async () => ({
+        _id: new Types.ObjectId(),
+        order_id: new Types.ObjectId(),
+        code: 'WO-1',
+        vehicle_snapshot: {
+          plate: '51H-123.45',
+          vehicle_type_name: 'Sedan',
+          color: 'Đen',
+        },
+        service_name: 'Rửa xe cơ bản',
+        status: 'in_progress',
+        created_at: new Date(),
+        updated_at: new Date(),
+      })),
       findWaitingQueue: jest.fn(async () => []),
     };
     const userRepository = {

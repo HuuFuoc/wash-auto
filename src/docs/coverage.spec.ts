@@ -14,6 +14,7 @@ import {
   meFeedbackRouter,
 } from '../modules/feedback/feedback.router';
 import { adminGoldenHourRouter } from '../modules/golden-hour/golden-hour.router';
+import { meNotificationRouter } from '../modules/notification/notification.router';
 import { meLoyaltyRouter } from '../modules/loyalty/loyalty.router';
 import {
   adminOrderRouter,
@@ -71,6 +72,7 @@ const groups: Array<[Router, string]> = [
   [washerWorkOrderRouter, '/me/work-orders'],
   [customerWorkOrderRouter, '/me/orders'],
   [meFeedbackRouter, '/me/feedback'],
+  [meNotificationRouter, '/me/notifications'],
   [shiftRouter, '/shifts'],
   [washerScheduleRouter, '/washers/me'],
   [adminVehicleTypeRouter, '/admin/vehicle-types'],
