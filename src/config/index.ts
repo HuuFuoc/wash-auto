@@ -66,6 +66,21 @@ export const config = {
   cache: {
     redisUrl: process.env.REDIS_URL ?? '',
   },
+  // Socket.IO realtime (src/core/realtime.ts). All three default to the safe
+  // behaviour, so an existing deployment needs NO new env vars to keep working.
+  realtime: {
+    // Every emit path targets an authenticated room (`user:` / `role:`), so an
+    // anonymous socket can never receive anything — we reject it instead of
+    // letting it linger. Flip to `true` only if a client legitimately needs to
+    // connect before login.
+    allowAnonymous: (process.env.SOCKET_ALLOW_ANONYMOUS ?? 'false') === 'true',
+    // Redis adapter: on by default, but a missing REDIS_URL just degrades to
+    // single-instance mode (never crashes local dev).
+    redisEnabled: (process.env.SOCKET_REDIS_ENABLED ?? 'true') === 'true',
+    // Set true in a multi-instance production to fail fast instead of silently
+    // dropping cross-instance emits.
+    redisRequired: (process.env.SOCKET_REDIS_REQUIRED ?? 'false') === 'true',
+  },
   // Maps src/config/booking.config.ts (order/booking rules).
   booking: {
     maxActivePerCustomer: toInt(

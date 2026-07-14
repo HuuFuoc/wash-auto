@@ -44,6 +44,8 @@ async function bootstrap(): Promise<void> {
   registerCrons();
   const app = createApp();
   const httpServer = createServer(app);
+  // Sync: Socket.IO (and its Redis adapter) must be attached BEFORE we listen,
+  // so the very first upgrade request already has a handler.
   initRealtime(httpServer);
   httpServer.listen(config.app.port, () => {
     console.log(
@@ -51,5 +53,13 @@ async function bootstrap(): Promise<void> {
     );
   });
 }
+
+// NOTE: no SIGTERM/SIGINT shutdown hook on purpose. `closeRealtime()` (exported
+// from core/realtime) quits the Redis pub/sub clients, but a hook that calls it
+// and then process.exit() aborts on Windows (libuv: "Assertion failed:
+// !(handle->flags & UV_HANDLE_CLOSING)" — verified), while a hook WITHOUT
+// process.exit() hangs, because Mongo, the shared Redis client and the node-cron
+// jobs all keep the event loop alive. A correct graceful shutdown means draining
+// all four, which is out of scope here. The OS reclaims the connections on exit.
 
 void bootstrap();

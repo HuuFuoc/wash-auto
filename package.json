@@ -27,6 +27,7 @@
   "dependencies": {
     "@google/genai": "^2.6.0",
     "@payos/node": "^2.0.5",
+    "@socket.io/redis-adapter": "^8.3.0",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
@@ -99,7 +100,8 @@
     ],
     "rootDir": "src",
     "setupFiles": [
-      "reflect-metadata"
+      "reflect-metadata",
+      "<rootDir>/../test/jest.setup.ts"
     ],
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {

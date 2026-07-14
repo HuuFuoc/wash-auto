@@ -22,10 +22,15 @@ import { seedTierConfigDefaults } from './modules/tier-config/tier-config.router
 // Realtime on Vercel: exporting an http.Server (not a (req, res) handler) is
 // what allows WebSocket upgrades to reach Socket.IO — see
 // https://vercel.com/docs/functions/websockets. Requires Fluid compute to be
-// enabled on the Vercel project. A connection is pinned to one warm instance,
-// so emits fired during a REST request only reach sockets held by that SAME
-// instance; fine at current traffic (one warm instance), needs
-// @socket.io/redis-adapter if we ever fan out across instances.
+// enabled on the Vercel project.
+//
+// A connection is pinned to one warm instance, so an emit fired during a REST
+// request would only reach sockets held by that SAME instance. initRealtime()
+// now attaches the Socket.IO Redis adapter (core/realtime-adapter.ts) when
+// REDIS_URL is set, which fans emits out across instances over Pub/Sub. It stays
+// SYNCHRONOUS (ioredis queues commands until connected), so we can still export
+// the http.Server at module scope without awaiting anything — do not make this
+// async, it would break the WebSocket upgrade path.
 
 // Local dev workaround for Vietnamese ISPs that block Mongo Atlas DNS — kept
 // identical to server.ts / main.ts; never override resolvers in production
