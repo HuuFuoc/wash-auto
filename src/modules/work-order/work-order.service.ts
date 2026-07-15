@@ -6,9 +6,10 @@ import {
   NotFoundException,
 } from '../../common/exceptions';
 import { redisClient } from '../../core/redis';
-import { RealtimeEvent, emitToManagers, emitToUser } from '../../core/realtime';
+import { RealtimeEvent, emitToOps, emitToUser } from '../../core/realtime';
 import { NotificationTypeEnum } from '../../shared/notification/types/notification-type.enum';
 import { notificationService } from '../notification/notification.router';
+import { emitOrderStatus } from '../order/order.service';
 import { QueryWorkOrderDto } from '../../shared/work-order/dto/query-work-order.dto';
 import {
   WorkOrderListResponseDto,
@@ -111,10 +112,13 @@ export class WorkOrderService {
     const settlesCash =
       order.payment_method === PaymentMethodEnum.CASH &&
       order.payment_status !== PaymentStatusEnum.PAID;
-    await this.orderRepository.updateById(order._id, {
+    const checkedInOrder = await this.orderRepository.updateById(order._id, {
       status: OrderStatusEnum.CHECKED_IN,
       ...(settlesCash ? { paymentStatus: PaymentStatusEnum.PAID } : {}),
     });
+    // Không emit thì khách + màn POS khác không thấy đơn chuyển CHECKED_IN
+    // (mọi transition khác đều đi qua emitOrderStatus).
+    if (checkedInOrder) emitOrderStatus(checkedInOrder);
 
     console.log(
       `Work order ${created.code} created for order ${orderId} by ${actorId}`,
@@ -272,9 +276,10 @@ export class WorkOrderService {
       startedAt: wo.started_at ?? new Date(),
     });
     if (!updated) throw new NotFoundException('Work order not found');
-    await this.orderRepository.updateById(wo.order_id, {
+    const startedOrder = await this.orderRepository.updateById(wo.order_id, {
       status: OrderStatusEnum.IN_PROGRESS,
     });
+    if (startedOrder) emitOrderStatus(startedOrder);
     console.log(`Work order ${updated.code} started by washer ${washerId}`);
     const dto = WorkOrderResponseDto.fromDocument(updated);
     await this.emitWashEvent(updated.order_id, RealtimeEvent.WASH_STARTED, dto);
@@ -343,13 +348,16 @@ export class WorkOrderService {
 
   // ---------- helpers ----------
 
-  /** Best-effort realtime fan-out: managers' ops feed + the order's customer. */
+  /**
+   * Best-effort realtime fan-out: ops feed (manager/admin/cashier — POS hiển
+   * thị work order nên cashier cũng cần nhận) + the order's customer.
+   */
   private async emitWashEvent(
     orderId: Types.ObjectId,
     event: string,
     payload: WorkOrderResponseDto,
   ): Promise<void> {
-    emitToManagers(event, payload);
+    emitToOps(event, payload);
     try {
       const order = await this.orderRepository.findById(orderId);
       if (order?.customer_id) {
