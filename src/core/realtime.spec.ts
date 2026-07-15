@@ -7,7 +7,9 @@ import {
   RealtimeErrorCode,
   RealtimeEvent,
   closeRealtime,
+  emitToCustomers,
   emitToManagers,
+  emitToOps,
   emitToUser,
   extractSocketToken,
   handleConnection,
@@ -323,6 +325,45 @@ describe('emit helpers (regression — web client contract)', () => {
     expect(to).toHaveBeenCalledWith(`role:${RoleEnum.MANAGER}`);
     expect(chainedTo).toHaveBeenCalledWith(`role:${RoleEnum.ADMIN}`);
     expect(emit).toHaveBeenCalledWith(RealtimeEvent.ORDER_CREATED, payload);
+    to.mockRestore();
+  });
+
+  it('exposes the slots:changed event name for booking clients', () => {
+    expect(RealtimeEvent.SLOTS_CHANGED).toBe('slots:changed');
+  });
+
+  it('emitToOps targets manager, admin and cashier rooms', () => {
+    const emit = jest.fn();
+    const chainedTo = jest.fn(() => ({ to: chainedTo, emit }));
+    const to = jest
+      .spyOn(io, 'to')
+      .mockReturnValue({ to: chainedTo, emit } as unknown as ReturnType<
+        typeof io.to
+      >);
+
+    const payload = { id: 'o1' };
+    emitToOps(RealtimeEvent.ORDER_STATUS, payload);
+
+    expect(to).toHaveBeenCalledWith(`role:${RoleEnum.MANAGER}`);
+    expect(chainedTo).toHaveBeenNthCalledWith(1, `role:${RoleEnum.ADMIN}`);
+    expect(chainedTo).toHaveBeenNthCalledWith(2, `role:${RoleEnum.CASHIER}`);
+    expect(emit).toHaveBeenCalledWith(RealtimeEvent.ORDER_STATUS, payload);
+    to.mockRestore();
+  });
+
+  it('emitToCustomers targets the customer role room', () => {
+    const emit = jest.fn();
+    const to = jest
+      .spyOn(io, 'to')
+      .mockReturnValue({ to: jest.fn(), emit } as unknown as ReturnType<
+        typeof io.to
+      >);
+
+    const payload = { date: '2026-07-15' };
+    emitToCustomers(RealtimeEvent.SLOTS_CHANGED, payload);
+
+    expect(to).toHaveBeenCalledWith(`role:${RoleEnum.CUSTOMER}`);
+    expect(emit).toHaveBeenCalledWith(RealtimeEvent.SLOTS_CHANGED, payload);
     to.mockRestore();
   });
 });

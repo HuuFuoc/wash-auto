@@ -63,6 +63,8 @@ export const RealtimeEvent = {
   NOTIFICATION_NEW: 'notification:new',
   /** Handshake token đã hết hạn khi socket đang mở → client refresh + reconnect. */
   AUTH_ERROR: 'auth:error',
+  /** Slot đặt lịch của một ngày vừa thay đổi (đơn tạo/hủy/dời/no-show). */
+  SLOTS_CHANGED: 'slots:changed',
 } as const;
 
 /** Machine-readable auth failures. The client branches on `code`, not on text. */
@@ -348,4 +350,17 @@ export function emitToManagers(event: string, payload: unknown): void {
   io?.to(roleRoom(RoleEnum.MANAGER))
     .to(roleRoom(RoleEnum.ADMIN))
     .emit(event, payload);
+}
+
+/** Emit to the operational feed including cashier (POS screens). */
+export function emitToOps(event: string, payload: unknown): void {
+  io?.to(roleRoom(RoleEnum.MANAGER))
+    .to(roleRoom(RoleEnum.ADMIN))
+    .to(roleRoom(RoleEnum.CASHIER))
+    .emit(event, payload);
+}
+
+/** Emit to every connected customer (slot-availability broadcasts). */
+export function emitToCustomers(event: string, payload: unknown): void {
+  io?.to(roleRoom(RoleEnum.CUSTOMER)).emit(event, payload);
 }
