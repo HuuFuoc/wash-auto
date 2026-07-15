@@ -112,7 +112,9 @@ rồi kết nối lại.
 | `wash:assigned` | `WorkOrderResponseDto` | washer được giao + manager/admin + khách của đơn |
 | `wash:started` | `WorkOrderResponseDto` | manager/admin + khách của đơn |
 | `wash:completed` | `WorkOrderResponseDto` | manager/admin + khách của đơn |
-| `order:created` | `OrderResponseDto` | manager/admin |
+| `order:created` | `OrderResponseDto` | manager/admin/cashier |
+| `order:status` | `OrderResponseDto` | manager/admin/cashier + khách của đơn |
+| `slots:changed` | `{ date: 'YYYY-MM-DD' }` (ngày giờ VN, UTC+7) | mọi customer đang kết nối |
 | `feedback:created` | `FeedbackResponseDto` | manager/admin |
 | `auth:error` | `{ code, message }` | socket bị ảnh hưởng (rồi disconnect) |
 
@@ -120,8 +122,15 @@ rồi kết nối lại.
 serviceName, status, assignedWasherId?, assignedWasherName?, checkinPhotos[], checkoutPhotos[],
 scheduledAt?, startedAt?, finishedAt?, estimatedMinutes, createdAt, updatedAt`.
 
-> `RealtimeEvent.ORDER_STATUS` (`order:status`) có khai báo trong code nhưng **hiện chưa
-> được emit ở bất kỳ đâu** — mobile **đừng** lắng nghe event này.
+`order:status` phát khi: khách hủy / dời lịch, PayOS webhook (paid → CONFIRMED,
+fail → CANCELLED), staff đổi trạng thái tay, đơn hoàn tất, cashier xác nhận
+tiền mặt (payment_status → PAID, status giữ nguyên), cron NO_SHOW / hết hạn
+thanh toán. Payload luôn là `OrderResponseDto` đầy đủ — client cập nhật thẳng,
+không cần gọi REST bù.
+
+`slots:changed` phát khi slot một ngày thay đổi (đơn tạo/hủy/dời/no-show).
+Client đang mở màn đặt lịch: nếu `date` trùng ngày đang xem → refetch
+`GET /orders/available-slots`. Client khác: bỏ qua.
 
 ## 4. Client events (client → server)
 
