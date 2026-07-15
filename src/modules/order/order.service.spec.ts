@@ -1,5 +1,23 @@
+jest.mock('../../core/realtime', () => ({
+  ...jest.requireActual('../../core/realtime'),
+  emitToOps: jest.fn(),
+  emitToUser: jest.fn(),
+  emitToCustomers: jest.fn(),
+}));
+
 import { Types } from 'mongoose';
-import { customerWasherView } from './order.service';
+import {
+  RealtimeEvent,
+  emitToCustomers,
+  emitToOps,
+  emitToUser,
+} from '../../core/realtime';
+import {
+  customerWasherView,
+  emitOrderStatus,
+  emitSlotsChanged,
+  vnDateOf,
+} from './order.service';
 import { OrderStatusEnum } from '../../shared/order/types/order-status.enum';
 
 describe('customerWasherView', () => {
@@ -65,5 +83,52 @@ describe('customerWasherView', () => {
     );
     expect(view.washerId).toBeUndefined();
     expect(view.canRate).toBe(false);
+  });
+});
+
+describe('realtime order emit helpers', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('vnDateOf converts an instant to the Vietnam-local calendar date', () => {
+    // 2026-07-15T17:30Z = 2026-07-16 00:30 UTC+7 → sang ngày hôm sau.
+    expect(vnDateOf(new Date('2026-07-15T17:30:00.000Z'))).toBe('2026-07-16');
+    expect(vnDateOf(new Date('2026-07-15T09:00:00.000Z'))).toBe('2026-07-15');
+  });
+
+  it('emitOrderStatus sends the full DTO to ops and to the order owner', () => {
+    const customerId = new Types.ObjectId();
+    const order = {
+      _id: new Types.ObjectId(),
+      customer_id: customerId,
+      status: OrderStatusEnum.CONFIRMED,
+      scheduled_at: new Date('2026-07-15T09:00:00.000Z'),
+      amount: 120_000,
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+
+    emitOrderStatus(order as never);
+
+    expect(emitToOps).toHaveBeenCalledTimes(1);
+    const [opsEvent, opsPayload] = (emitToOps as jest.Mock).mock
+      .calls[0] as [string, { id: string; status: OrderStatusEnum }];
+    expect(opsEvent).toBe(RealtimeEvent.ORDER_STATUS);
+    expect(opsPayload).toMatchObject({
+      id: order._id.toString(),
+      status: OrderStatusEnum.CONFIRMED,
+    });
+
+    expect(emitToUser).toHaveBeenCalledWith(
+      customerId.toString(),
+      RealtimeEvent.ORDER_STATUS,
+      opsPayload,
+    );
+  });
+
+  it('emitSlotsChanged broadcasts the affected VN date to customers', () => {
+    emitSlotsChanged(new Date('2026-07-15T17:30:00.000Z'));
+    expect(emitToCustomers).toHaveBeenCalledWith(RealtimeEvent.SLOTS_CHANGED, {
+      date: '2026-07-16',
+    });
   });
 });

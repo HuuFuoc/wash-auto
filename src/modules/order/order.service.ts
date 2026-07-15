@@ -6,7 +6,13 @@ import {
 } from '../../common/exceptions';
 import { config } from '../../config';
 import { redisClient } from '../../core/redis';
-import { RealtimeEvent, emitToManagers } from '../../core/realtime';
+import {
+  RealtimeEvent,
+  emitToCustomers,
+  emitToManagers,
+  emitToOps,
+  emitToUser,
+} from '../../core/realtime';
 import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { NotificationTypeEnum } from '../../shared/notification/types/notification-type.enum';
 import { notificationService } from '../notification/notification.router';
@@ -195,6 +201,32 @@ export function customerWasherView(
     canRate:
       orderStatus === OrderStatusEnum.COMPLETED && !!washerId && !alreadyRated,
   };
+}
+
+/** Ngày dương lịch giờ Việt Nam (UTC+7 cố định, không DST) của một thời điểm. */
+export function vnDateOf(at: Date): string {
+  return new Date(at.getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Slot của ngày chứa `scheduledAt` vừa thay đổi (đơn tạo/hủy/dời/no-show) —
+ * khách đang mở màn đặt lịch refetch slot của đúng ngày đó. Best-effort.
+ */
+export function emitSlotsChanged(scheduledAt: Date): void {
+  emitToCustomers(RealtimeEvent.SLOTS_CHANGED, { date: vnDateOf(scheduledAt) });
+}
+
+/**
+ * Trạng thái đơn vừa đổi (status hoặc payment_status): báo feed vận hành
+ * (manager/admin/cashier) + chính chủ đơn trên mọi thiết bị. Payload là DTO
+ * đầy đủ để client cập nhật không cần gọi REST bù. Best-effort — không bao
+ * giờ làm fail flow chính (io null-safe).
+ */
+export function emitOrderStatus(order: OrderDocument): void {
+  const dto = OrderResponseDto.fromDocument(order);
+  emitToOps(RealtimeEvent.ORDER_STATUS, dto);
+  // dto.customerId đã xử lý cả ref populated lẫn ObjectId thô.
+  emitToUser(dto.customerId, RealtimeEvent.ORDER_STATUS, dto);
 }
 
 // Business logic copied verbatim from features/order/services/order.service.ts;
