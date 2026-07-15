@@ -334,12 +334,13 @@ describe('emit helpers (regression — web client contract)', () => {
 
   it('emitToOps targets manager, admin and cashier rooms', () => {
     const emit = jest.fn();
-    const chainedTo = jest.fn(() => ({ to: chainedTo, emit }));
+    // Chuỗi .to().to() — mock tự trả lại chính nó để nhận mọi lần gọi kế tiếp.
+    const chain: { to: jest.Mock; emit: jest.Mock } = { to: jest.fn(), emit };
+    chain.to.mockReturnValue(chain);
+    const chainedTo = chain.to;
     const to = jest
       .spyOn(io, 'to')
-      .mockReturnValue({ to: chainedTo, emit } as unknown as ReturnType<
-        typeof io.to
-      >);
+      .mockReturnValue(chain as unknown as ReturnType<typeof io.to>);
 
     const payload = { id: 'o1' };
     emitToOps(RealtimeEvent.ORDER_STATUS, payload);

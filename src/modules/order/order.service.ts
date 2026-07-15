@@ -9,7 +9,6 @@ import { redisClient } from '../../core/redis';
 import {
   RealtimeEvent,
   emitToCustomers,
-  emitToManagers,
   emitToOps,
   emitToUser,
 } from '../../core/realtime';
@@ -511,7 +510,8 @@ export class OrderService {
       `Order created customerId=${customerId} orderId=${order._id.toString()} method=${dto.paymentMethod}`,
     );
     const result = OrderResponseDto.fromDocument(order);
-    emitToManagers(RealtimeEvent.ORDER_CREATED, result);
+    emitToOps(RealtimeEvent.ORDER_CREATED, result);
+    emitSlotsChanged(order.scheduled_at);
     void notificationService.notifyRoles([RoleEnum.MANAGER, RoleEnum.ADMIN], {
       type: NotificationTypeEnum.ORDER_CREATED,
       title: 'Đơn đặt lịch mới',
@@ -878,6 +878,9 @@ export class OrderService {
     console.log(
       `Order rescheduled orderId=${id} newShiftId=${dto.staffShiftId}`,
     );
+    emitOrderStatus(updated);
+    emitSlotsChanged(order.scheduled_at); // ngày cũ: slot được nhả
+    emitSlotsChanged(updated.scheduled_at); // ngày mới: slot bị chiếm
     return OrderResponseDto.fromDocument(updated);
   }
 
@@ -914,6 +917,8 @@ export class OrderService {
     });
     if (!updated) throw new NotFoundException('Order not found');
     await this.refundVoucherIfPresent(updated);
+    emitOrderStatus(updated);
+    emitSlotsChanged(updated.scheduled_at);
     return OrderResponseDto.fromDocument(updated);
   }
 
@@ -985,13 +990,18 @@ export class OrderService {
           });
           if (updated) {
             await this.sendConfirmationEmailSafe(updated);
+            emitOrderStatus(updated);
           }
         } else {
           const cancelled = await this.orderRepository.updateById(order._id, {
             status: OrderStatusEnum.CANCELLED,
             cancelReason: 'Payment failed',
           });
-          if (cancelled) await this.refundVoucherIfPresent(cancelled);
+          if (cancelled) {
+            await this.refundVoucherIfPresent(cancelled);
+            emitOrderStatus(cancelled);
+            emitSlotsChanged(cancelled.scheduled_at);
+          }
         }
       }
 
@@ -1170,6 +1180,13 @@ export class OrderService {
     if (dto.status === OrderStatusEnum.CANCELLED) {
       await this.refundVoucherIfPresent(updated);
     }
+    emitOrderStatus(updated);
+    if (
+      dto.status === OrderStatusEnum.CANCELLED ||
+      dto.status === OrderStatusEnum.NO_SHOW
+    ) {
+      emitSlotsChanged(updated.scheduled_at);
+    }
 
     console.log(
       `Staff updated order status orderId=${id} from=${order.status} to=${dto.status}`,
@@ -1189,6 +1206,7 @@ export class OrderService {
       status: OrderStatusEnum.COMPLETED,
     });
     if (!updated) return;
+    emitOrderStatus(updated);
 
     try {
       const service = await this.serviceTypeRepository.findById(
@@ -1228,6 +1246,7 @@ export class OrderService {
     });
     if (!updated) throw new NotFoundException('Order not found');
     console.log(`Cash order marked PAID orderId=${id}`);
+    emitOrderStatus(updated);
     return OrderResponseDto.fromDocument(updated);
   }
 
@@ -1249,6 +1268,8 @@ export class OrderService {
         });
         if (updated) {
           await this.applyNoShowLoyaltyHookSafe(updated);
+          emitOrderStatus(updated);
+          emitSlotsChanged(updated.scheduled_at);
         }
         expired.push(id);
       } catch (err) {
@@ -1270,7 +1291,11 @@ export class OrderService {
           status: OrderStatusEnum.CANCELLED,
           cancelReason: 'Payment timeout',
         });
-        if (updated) await this.refundVoucherIfPresent(updated);
+        if (updated) {
+          await this.refundVoucherIfPresent(updated);
+          emitOrderStatus(updated);
+          emitSlotsChanged(updated.scheduled_at);
+        }
         if (doc.payos_order_code) {
           try {
             await this.payosService.cancelPaymentLink(

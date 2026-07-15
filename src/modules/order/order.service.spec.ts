@@ -1,5 +1,7 @@
 jest.mock('../../core/realtime', () => ({
-  ...jest.requireActual('../../core/realtime'),
+  ...jest.requireActual<typeof import('../../core/realtime')>(
+    '../../core/realtime',
+  ),
   emitToOps: jest.fn(),
   emitToUser: jest.fn(),
   emitToCustomers: jest.fn(),
@@ -110,8 +112,10 @@ describe('realtime order emit helpers', () => {
     emitOrderStatus(order as never);
 
     expect(emitToOps).toHaveBeenCalledTimes(1);
-    const [opsEvent, opsPayload] = (emitToOps as jest.Mock).mock
-      .calls[0] as [string, { id: string; status: OrderStatusEnum }];
+    const [opsEvent, opsPayload] = (emitToOps as jest.Mock).mock.calls[0] as [
+      string,
+      { id: string; status: OrderStatusEnum },
+    ];
     expect(opsEvent).toBe(RealtimeEvent.ORDER_STATUS);
     expect(opsPayload).toMatchObject({
       id: order._id.toString(),
