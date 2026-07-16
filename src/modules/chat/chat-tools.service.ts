@@ -33,7 +33,11 @@ export class ChatToolsService {
         description:
           'Liệt kê tất cả các gói dịch vụ rửa xe đang hoạt động kèm giá, ' +
           'thời gian dự kiến và hệ số tích điểm. Dùng khi khách hỏi về ' +
-          'dịch vụ, bảng giá, gói rửa xe nào đang có.',
+          'dịch vụ, bảng giá, gói rửa xe nào đang có. Giá và thời lượng ' +
+          'phụ thuộc loại xe: xem mảng vehiclePricing (khớp loại xe khách ' +
+          'nói với vehicleTypeName); basePrice/estimatedMinutes chỉ là mức ' +
+          'tham khảo khi không xác định được loại xe. Dùng vehicleTypeId ' +
+          'của row khớp khi gọi get_available_slots.',
         parameters: { type: Type.OBJECT, properties: {} },
       },
       {
@@ -178,6 +182,14 @@ export class ChatToolsService {
         basePrice: s.basePrice,
         estimatedMinutes: s.estimatedMinutes,
         pointsMultiplier: s.pointsMultiplier,
+        vehiclePricing: s.vehiclePricing
+          .filter((p) => p.isActive)
+          .map((p) => ({
+            vehicleTypeId: p.vehicleTypeId,
+            vehicleTypeName: p.vehicleTypeName ?? null,
+            price: p.price,
+            estimatedMinutes: p.estimatedMinutes,
+          })),
       })),
     };
   }

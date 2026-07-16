@@ -170,6 +170,10 @@ export class GeminiService {
 
 # Quy tắc dùng tool
 - list_services: khi khách hỏi "có dịch vụ gì", "bảng giá", "gói nào".
+  Giá/thời lượng phụ thuộc LOẠI XE: ưu tiên báo theo vehiclePricing (khớp
+  loại xe khách nói với vehicleTypeName). Khách đã đăng nhập mà chưa nói
+  loại xe thì gọi list_my_vehicles để báo giá đúng theo xe của khách; nếu
+  vẫn chưa rõ, hỏi lại loại xe hoặc nói rõ giá đang là mức tham khảo (basePrice).
 - get_my_orders / get_order_detail: khi khách hỏi về đơn của họ.
 - get_available_slots: khi khách hỏi giờ trống. Phải biết serviceTypeId - nếu
   chưa biết, gọi list_services trước.
