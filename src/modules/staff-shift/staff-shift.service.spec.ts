@@ -1,5 +1,9 @@
 /* eslint-disable @typescript-eslint/require-await -- async jest mocks mirror the real async repo/service signatures */
 import { Types } from 'mongoose';
+import { ShiftScheduleEnum } from '../../shared/staff-shift/types/shift-schedule.enum';
+import { ShiftStatusEnum } from '../../shared/staff-shift/types/shift-status.enum';
+import { ShiftTypeEnum } from '../../shared/staff-shift/types/shift-type.enum';
+import { effectiveShiftStatus } from './staff-shift.model';
 import { StaffShiftService } from './staff-shift.service';
 
 describe('StaffShiftService.staffPerformance', () => {
@@ -63,5 +67,136 @@ describe('StaffShiftService.staffPerformance', () => {
       feedbackCount: 0,
       averageRating: 0,
     });
+  });
+});
+
+describe('effectiveShiftStatus', () => {
+  const at = (iso: string) => new Date(iso);
+  const window = {
+    start_at: at('2026-06-01T01:00:00.000Z'),
+    end_at: at('2026-06-01T05:00:00.000Z'),
+  };
+
+  it('derives scheduled → active → completed from the clock', () => {
+    const shift = { status: ShiftStatusEnum.SCHEDULED, ...window };
+    expect(effectiveShiftStatus(shift, at('2026-06-01T00:30:00.000Z'))).toBe(
+      ShiftStatusEnum.SCHEDULED,
+    );
+    expect(effectiveShiftStatus(shift, at('2026-06-01T03:00:00.000Z'))).toBe(
+      ShiftStatusEnum.ACTIVE,
+    );
+    expect(effectiveShiftStatus(shift, at('2026-06-01T05:00:00.000Z'))).toBe(
+      ShiftStatusEnum.COMPLETED,
+    );
+  });
+
+  it('cancelled always wins over the clock', () => {
+    const shift = { status: ShiftStatusEnum.CANCELLED, ...window };
+    expect(effectiveShiftStatus(shift, at('2026-06-01T03:00:00.000Z'))).toBe(
+      ShiftStatusEnum.CANCELLED,
+    );
+  });
+});
+
+describe('StaffShiftService anonymous shifts', () => {
+  const otherDeps = [
+    {} as never, // userRepository
+    {} as never, // roleRepository
+    {} as never, // workOrderRepository
+    {} as never, // feedbackRepository
+  ] as const;
+
+  const shiftDoc = (over: Record<string, unknown> = {}) => ({
+    _id: new Types.ObjectId(),
+    shift_type: ShiftTypeEnum.WASHER,
+    capacity: 1,
+    start_at: new Date('2099-01-01T01:00:00.000Z'),
+    end_at: new Date('2099-01-01T05:00:00.000Z'),
+    status: ShiftStatusEnum.SCHEDULED,
+    ...over,
+  });
+
+  it('fullday creates two anonymous shifts carrying the capacity', async () => {
+    const repository = {
+      findOverlappingShifts: jest.fn(async () => []),
+      create: jest.fn(
+        async (input: { capacity: number; startAt: Date; endAt: Date }) =>
+          shiftDoc({
+            capacity: input.capacity,
+            start_at: input.startAt,
+            end_at: input.endAt,
+          }),
+      ),
+    };
+    const service = new StaffShiftService(repository as never, ...otherDeps);
+
+    const rows = await service.create({
+      date: '2099-01-01',
+      block: ShiftScheduleEnum.FULLDAY,
+      capacity: 3,
+    });
+
+    expect(rows).toHaveLength(2);
+    expect(repository.create).toHaveBeenCalledTimes(2);
+    expect(rows[0].capacity).toBe(3);
+    expect(rows[0].staffId).toBeUndefined();
+    expect(rows[0].status).toBe(ShiftStatusEnum.SCHEDULED);
+  });
+
+  it('rejects a shift overlapping an existing one', async () => {
+    const repository = {
+      findOverlappingShifts: jest.fn(async () => [shiftDoc()]),
+      create: jest.fn(),
+    };
+    const service = new StaffShiftService(repository as never, ...otherDeps);
+
+    await expect(
+      service.create({ date: '2099-01-01', block: ShiftScheduleEnum.MORNING }),
+    ).rejects.toThrow('Đã có ca làm việc trong khung giờ này');
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it('setStatus only accepts cancelled', async () => {
+    const service = new StaffShiftService({} as never, ...otherDeps);
+    await expect(
+      service.setStatus(new Types.ObjectId().toString(), {
+        status: ShiftStatusEnum.ACTIVE,
+      }),
+    ).rejects.toThrow('time-derived');
+  });
+
+  it('refuses to cancel a shift that already ended', async () => {
+    const past = shiftDoc({
+      start_at: new Date('2020-01-01T01:00:00.000Z'),
+      end_at: new Date('2020-01-01T05:00:00.000Z'),
+    });
+    const repository = { findById: jest.fn(async () => past) };
+    const service = new StaffShiftService(repository as never, ...otherDeps);
+
+    await expect(
+      service.setStatus(past._id.toString(), {
+        status: ShiftStatusEnum.CANCELLED,
+      }),
+    ).rejects.toThrow('already ended');
+  });
+
+  it('cancels a live shift', async () => {
+    const doc = shiftDoc();
+    const repository = {
+      findById: jest.fn(async () => doc),
+      setStatus: jest.fn(async () =>
+        shiftDoc({ _id: doc._id, status: ShiftStatusEnum.CANCELLED }),
+      ),
+    };
+    const service = new StaffShiftService(repository as never, ...otherDeps);
+
+    const dto = await service.setStatus(doc._id.toString(), {
+      status: ShiftStatusEnum.CANCELLED,
+    });
+    expect(repository.setStatus).toHaveBeenCalledWith(
+      doc._id.toString(),
+      ShiftStatusEnum.CANCELLED,
+    );
+    expect(dto.status).toBe(ShiftStatusEnum.CANCELLED);
   });
 });

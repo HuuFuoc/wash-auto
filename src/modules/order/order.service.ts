@@ -357,7 +357,7 @@ export class OrderService {
     let reservedShiftId: Types.ObjectId | undefined;
     for (const candidate of candidates) {
       const busy = concurrencyByShift.get(candidate._id.toString()) ?? 0;
-      if (busy >= 1) continue;
+      if (busy >= (candidate.capacity ?? 1)) continue;
       reservedShiftId = candidate._id;
       break;
     }
@@ -742,7 +742,7 @@ export class OrderService {
         for (const [bStart, bEnd] of busyWindows) {
           if (bStart < slotEndMs && slotMs < bEnd) busy++;
         }
-        const free = busy > 0 ? 0 : 1;
+        const free = Math.max(0, (shift.capacity ?? 1) - busy);
         if (free <= 0) continue;
         capacityBySlot.set(slotMs, (capacityBySlot.get(slotMs) ?? 0) + free);
       }
@@ -1121,21 +1121,16 @@ export class OrderService {
   // ---------- WASHER ----------
 
   /**
-   * A washer's own schedule: bookings on the shifts they are rostered for.
-   * `washerId` comes from the access token so one washer cannot read another's.
+   * A washer's day view: every booking in the requested window. Shifts are
+   * anonymous (no roster), so the schedule is the shared queue — who actually
+   * washes each car is decided by work-order auto-assign, not the shift.
    */
   async getWasherSchedule(
-    washerId: string,
     query: GetWasherScheduleQueryDto,
   ): Promise<WasherScheduleItemDto[]> {
     const { scheduledFrom, scheduledTo } = resolveScheduleRange(query);
 
-    const shiftIds =
-      await this.staffShiftRepository.findShiftIdsByStaff(washerId);
-    if (shiftIds.length === 0) return [];
-
     const docs = await this.orderRepository.findWasherSchedule({
-      staffShiftIds: shiftIds,
       status: query.status,
       scheduledFrom,
       scheduledTo,

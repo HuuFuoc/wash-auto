@@ -5,9 +5,10 @@ import { ShiftStatusEnum } from '../types/shift-status.enum';
 export class SetStaffShiftStatusDto {
   @ApiProperty({
     enum: ShiftStatusEnum,
-    example: ShiftStatusEnum.ACTIVE,
+    example: ShiftStatusEnum.CANCELLED,
     description:
-      'Allowed transitions: scheduled→active, active→completed, scheduled|active→cancelled.',
+      'Only `cancelled` is accepted — active/completed are derived from the ' +
+      'shift time window automatically.',
   })
   @IsEnum(ShiftStatusEnum)
   status: ShiftStatusEnum;

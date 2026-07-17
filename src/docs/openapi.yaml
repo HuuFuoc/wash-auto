@@ -395,40 +395,40 @@ components:
         unread: { type: integer }
         meta: { $ref: '#/components/schemas/PaginationMeta' }
     CreateStaffShift:
+      description: >-
+        Anonymous capacity-based shift: date + block + capacity. No staff,
+        no station. `fullday` creates two shift records (morning + afternoon).
       type: object
-      required: [staffId, shiftType, date, block]
+      required: [date, block]
       properties:
-        staffId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
-        shiftType: { type: string, description: 'ShiftTypeEnum', example: 'washer' }
-        stationName: { type: string, maxLength: 80, example: 'Bay 1' }
         date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', example: '2026-06-01' }
         block: { type: string, description: 'morning | afternoon | fullday', example: 'morning' }
+        capacity: { type: integer, minimum: 1, maximum: 10, default: 1, description: 'Concurrent washes bookable in this shift.', example: 2 }
         note: { type: string, maxLength: 500, example: 'Morning shift' }
     UpdateStaffShift:
       description: All optional. Provide date + block together to reschedule.
       type: object
       properties:
-        staffId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
-        shiftType: { type: string, example: 'washer' }
-        stationName: { type: string, maxLength: 80, example: 'Bay 1' }
         date: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', example: '2026-06-01' }
-        block: { type: string, example: 'morning' }
+        block: { type: string, description: 'morning | afternoon', example: 'morning' }
+        capacity: { type: integer, minimum: 1, maximum: 10, example: 2 }
         note: { type: string, maxLength: 500 }
     SetStaffShiftStatus:
       type: object
       required: [status]
       properties:
-        status: { type: string, description: 'scheduled|active|completed|cancelled', example: 'active' }
+        status: { type: string, description: 'Only `cancelled` is accepted — active/completed are time-derived.', example: 'cancelled' }
     StaffShiftResponse:
       type: object
       properties:
         id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
-        staffId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        staffId: { type: string, description: 'Legacy per-staff shifts only.', example: '6601e3b3f1a2c3a4b5d6e7f8' }
         shiftType: { type: string, example: 'washer' }
-        stationName: { type: string, example: 'Bay 1' }
+        stationName: { type: string, description: 'Legacy field — no longer settable.', example: 'Bay 1' }
+        capacity: { type: integer, description: 'Concurrent washes bookable in this shift.', example: 2 }
         startAt: { type: string, format: date-time, example: '2026-06-01T08:00:00.000Z' }
         endAt: { type: string, format: date-time, example: '2026-06-01T12:00:00.000Z' }
-        status: { type: string, example: 'scheduled' }
+        status: { type: string, description: 'Time-derived (scheduled/active/completed); only cancelled is stored manually.', example: 'scheduled' }
         note: { type: string, example: 'Morning shift' }
     StaffShiftListResponse:
       type: object
@@ -2093,7 +2093,7 @@ paths:
               schema: { $ref: '#/components/schemas/StaffShiftListResponse' }
     post:
       tags: [shifts]
-      summary: Create a staff shift (admin/manager). fullday returns two shifts.
+      summary: Create an anonymous capacity shift (admin/manager). fullday returns two shifts. Slots become bookable immediately.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -2115,24 +2115,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
-  /admin/shifts/staff:
-    get:
-      tags: [shifts]
-      summary: List staff assignable to shifts (admin/manager)
-      security: [{ bearerAuth: [] }]
-      responses:
-        '200':
-          description: OK
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
-                    name: { type: string, example: 'Tran Van B' }
-                    role: { type: string, example: 'washer' }
   /admin/shifts/staff-stats:
     get:
       tags: [shifts]
@@ -2197,7 +2179,7 @@ paths:
   /admin/shifts/{id}/status:
     patch:
       tags: [shifts]
-      summary: Change a staff shift status (admin/manager)
+      summary: Cancel a shift (admin/manager). Only `cancelled` is accepted; other statuses are time-derived.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }

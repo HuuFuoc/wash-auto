@@ -12,36 +12,24 @@ import { StaffShiftResponseDto } from '../../shared/staff-shift/dto/staff-shift-
 import { UpdateStaffShiftDto } from '../../shared/staff-shift/dto/update-staff-shift.dto';
 import { QueryStaffPerformanceDto } from '../../shared/staff-shift/dto/query-staff-performance.dto';
 import { ShiftStatusEnum } from '../../shared/staff-shift/types/shift-status.enum';
-import { ShiftTypeEnum } from '../../shared/staff-shift/types/shift-type.enum';
 import { StaffPerformanceRow } from '../../shared/staff-shift/types/staff-performance.type';
 import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { RoleRepository } from '../auth/role.repository';
 import { UserRepository } from '../auth/user.repository';
 import { FeedbackRepository } from '../feedback/feedback.repository';
 import { WorkOrderRepository } from '../work-order/work-order.repository';
+import { emitSlotsChanged } from '../order/order.service';
 import { expandSchedule, resolveShiftBlock } from './shift-blocks';
-import { StaffShiftDocument } from './staff-shift.model';
+import { StaffShiftDocument, effectiveShiftStatus } from './staff-shift.model';
 import {
   IShiftListFilter,
   StaffShiftRepository,
 } from './staff-shift.repository';
 
-const SHIFT_TYPE_TO_ROLE: Record<ShiftTypeEnum, RoleEnum> = {
-  [ShiftTypeEnum.CASHIER]: RoleEnum.CASHIER,
-  [ShiftTypeEnum.WASHER]: RoleEnum.WASHER,
-};
-
-/** A staff member that can be assigned to a shift (washer or cashier). */
-export interface AssignableStaff {
-  id: string;
-  name: string;
-  email: string;
-  role: RoleEnum;
-}
-
-// Business logic copied verbatim from
-// features/staff-shift/staff-shift.service.ts; only DI + Nest exceptions +
-// Logger were swapped out.
+// Anonymous capacity-based shifts: a shift is a bookable window (date + block)
+// with a concurrent-wash capacity — no staff roster, no station. ACTIVE and
+// COMPLETED are derived from the clock (effectiveShiftStatus); the only manual
+// transition left is cancelling.
 export class StaffShiftService {
   constructor(
     private readonly repository: StaffShiftRepository,
@@ -52,8 +40,9 @@ export class StaffShiftService {
   ) {}
 
   /**
-   * Per-washer stats for the shift/performance tab: shifts, cars washed,
-   * orders handled, feedback count + average rating, and working status.
+   * Per-washer stats for the shift/performance tab: cars washed, orders
+   * handled, feedback count + average rating, and working status. shiftsCount
+   * only reflects legacy per-staff shifts (new shifts are anonymous).
    */
   async staffPerformance(
     query: QueryStaffPerformanceDto,
@@ -88,28 +77,6 @@ export class StaffShiftService {
         averageRating: f?.averageRating ?? 0,
       };
     });
-  }
-
-  async listAssignableStaff(): Promise<AssignableStaff[]> {
-    const result: AssignableStaff[] = [];
-    for (const code of [RoleEnum.WASHER, RoleEnum.CASHIER]) {
-      const role = await this.roleRepository.findByCode(code);
-      if (!role) continue;
-      const users = await this.userRepository.findPaginated(
-        { roleId: role._id, isActive: true },
-        1,
-        200,
-      );
-      for (const u of users) {
-        result.push({
-          id: u._id.toString(),
-          name: u.name,
-          email: u.email,
-          role: code,
-        });
-      }
-    }
-    return result;
   }
 
   async listAvailable(
@@ -162,26 +129,24 @@ export class StaffShiftService {
   /**
    * Creates one shift per selected block. `fullday` expands to morning +
    * afternoon. All blocks are validated before any write (all-or-nothing).
+   * Created shifts are bookable immediately (status SCHEDULED).
    */
   async create(dto: CreateStaffShiftDto): Promise<StaffShiftResponseDto[]> {
     const blocks = expandSchedule(dto.block);
     const windows = blocks.map((block) => resolveShiftBlock(dto.date, block));
 
-    await this.assertStaffMatchesShiftType(dto.staffId, dto.shiftType);
     for (const { endAt } of windows) {
       this.assertShiftNotInPast(endAt);
     }
     for (const { startAt, endAt } of windows) {
-      await this.assertNoStaffShiftOverlap(dto.staffId, startAt, endAt);
+      await this.assertNoOverlappingShift(startAt, endAt);
     }
 
     const created: StaffShiftDocument[] = [];
     for (const { startAt, endAt } of windows) {
       created.push(
         await this.repository.create({
-          staffId: new Types.ObjectId(dto.staffId),
-          shiftType: dto.shiftType,
-          stationName: dto.stationName,
+          capacity: dto.capacity ?? 1,
           startAt,
           endAt,
           note: dto.note,
@@ -191,10 +156,11 @@ export class StaffShiftService {
 
     console.log('Manager created shift(s)', {
       shiftIds: created.map((c) => c._id.toString()),
-      staffId: dto.staffId,
-      type: dto.shiftType,
       schedule: dto.block,
+      capacity: dto.capacity ?? 1,
     });
+    // Khách đang mở màn đặt lịch thấy slot mới ngay, không cần refetch tay.
+    for (const doc of created) emitSlotsChanged(doc.start_at);
     return created.map((doc) => StaffShiftResponseDto.fromDocument(doc));
   }
 
@@ -203,15 +169,6 @@ export class StaffShiftService {
     dto: UpdateStaffShiftDto,
   ): Promise<StaffShiftResponseDto> {
     const existing = await this.requireShift(id);
-
-    const nextType = dto.shiftType ?? existing.shift_type;
-    const nextStaffId = dto.staffId ?? existing.staff_id.toString();
-    if (
-      dto.staffId !== undefined ||
-      (dto.shiftType !== undefined && dto.shiftType !== existing.shift_type)
-    ) {
-      await this.assertStaffMatchesShiftType(nextStaffId, nextType);
-    }
 
     let startAt: Date | undefined;
     let endAt: Date | undefined;
@@ -223,37 +180,51 @@ export class StaffShiftService {
       }
       ({ startAt, endAt } = resolveShiftBlock(dto.date, dto.block));
       this.assertShiftNotInPast(endAt);
-    }
-
-    if (dto.staffId !== undefined || startAt !== undefined) {
-      await this.assertNoStaffShiftOverlap(
-        nextStaffId,
-        startAt ?? existing.start_at,
-        endAt ?? existing.end_at,
-        id,
-      );
+      await this.assertNoOverlappingShift(startAt, endAt, id);
     }
 
     const updated = await this.repository.updateById(id, {
-      staffId: dto.staffId ? new Types.ObjectId(dto.staffId) : undefined,
-      shiftType: dto.shiftType,
-      stationName: dto.stationName,
+      capacity: dto.capacity,
       startAt,
       endAt,
       note: dto.note,
     });
     if (!updated) throw new NotFoundException('Shift not found');
+
+    if (startAt !== undefined || dto.capacity !== undefined) {
+      emitSlotsChanged(existing.start_at); // ngày cũ (hoặc capacity đổi)
+      emitSlotsChanged(updated.start_at); // ngày mới
+    }
     return StaffShiftResponseDto.fromDocument(updated);
   }
 
+  /**
+   * The only manual transition left: cancelling a shift that has not ended.
+   * ACTIVE/COMPLETED are derived from the clock and cannot be set by hand.
+   */
   async setStatus(
     id: string,
     dto: SetStaffShiftStatusDto,
   ): Promise<StaffShiftResponseDto> {
+    if (dto.status !== ShiftStatusEnum.CANCELLED) {
+      throw new BadRequestException(
+        'Shift status is time-derived; only `cancelled` can be set manually',
+      );
+    }
     const existing = await this.requireShift(id);
-    this.assertValidStatusTransition(existing.status, dto.status);
-    const updated = await this.repository.setStatus(id, dto.status);
+    const current = effectiveShiftStatus(existing);
+    if (current === ShiftStatusEnum.CANCELLED) {
+      return StaffShiftResponseDto.fromDocument(existing);
+    }
+    if (current === ShiftStatusEnum.COMPLETED) {
+      throw new BadRequestException('Cannot cancel a shift that already ended');
+    }
+    const updated = await this.repository.setStatus(
+      id,
+      ShiftStatusEnum.CANCELLED,
+    );
     if (!updated) throw new NotFoundException('Shift not found');
+    emitSlotsChanged(updated.start_at);
     return StaffShiftResponseDto.fromDocument(updated);
   }
 
@@ -268,29 +239,6 @@ export class StaffShiftService {
     return doc;
   }
 
-  private async assertStaffMatchesShiftType(
-    staffId: string,
-    shiftType: ShiftTypeEnum,
-  ): Promise<void> {
-    if (!Types.ObjectId.isValid(staffId)) {
-      throw new BadRequestException('Invalid staffId');
-    }
-    const user = await this.userRepository.findById(staffId);
-    if (!user || !user.is_active) {
-      throw new BadRequestException('Staff user not found or inactive');
-    }
-    const role = await this.roleRepository.findById(user.role_id);
-    if (!role) {
-      throw new BadRequestException('Staff role missing');
-    }
-    const expected = SHIFT_TYPE_TO_ROLE[shiftType];
-    if (role.code !== expected) {
-      throw new BadRequestException(
-        `staffId must belong to a user with role=${expected} for shiftType=${shiftType}`,
-      );
-    }
-  }
-
   /** Rejects creating/moving a shift into a block that already ended. */
   private assertShiftNotInPast(endAt: Date): void {
     if (endAt.getTime() <= Date.now()) {
@@ -300,49 +248,23 @@ export class StaffShiftService {
     }
   }
 
-  /** Rejects creating/moving a shift that overlaps another for the same staff. */
-  private async assertNoStaffShiftOverlap(
-    staffId: string,
+  /**
+   * Anonymous shifts must not overlap: one shift per block, capacity says how
+   * many cars it takes. Overlap means the manager should edit capacity instead.
+   */
+  private async assertNoOverlappingShift(
     startAt: Date,
     endAt: Date,
     excludeId?: string,
   ): Promise<void> {
-    if (!Types.ObjectId.isValid(staffId)) {
-      throw new BadRequestException('Invalid staffId');
-    }
-    const overlaps = await this.repository.findOverlappingForStaff(
-      new Types.ObjectId(staffId),
+    const overlaps = await this.repository.findOverlappingShifts(
       startAt,
       endAt,
       excludeId,
     );
     if (overlaps.length > 0) {
       throw new BadRequestException(
-        'Nhân viên đã có ca làm việc trùng giờ với khoảng thời gian này',
-      );
-    }
-  }
-
-  private assertValidStatusTransition(
-    from: ShiftStatusEnum,
-    to: ShiftStatusEnum,
-  ): void {
-    const valid: Record<ShiftStatusEnum, ShiftStatusEnum[]> = {
-      [ShiftStatusEnum.SCHEDULED]: [
-        ShiftStatusEnum.ACTIVE,
-        ShiftStatusEnum.CANCELLED,
-      ],
-      [ShiftStatusEnum.ACTIVE]: [
-        ShiftStatusEnum.COMPLETED,
-        ShiftStatusEnum.CANCELLED,
-      ],
-      [ShiftStatusEnum.COMPLETED]: [],
-      [ShiftStatusEnum.CANCELLED]: [],
-    };
-    if (from === to) return;
-    if (!valid[from].includes(to)) {
-      throw new BadRequestException(
-        `Invalid status transition: ${from} → ${to}`,
+        'Đã có ca làm việc trong khung giờ này. Hãy sửa sức chứa (capacity) của ca đó thay vì tạo ca mới.',
       );
     }
   }

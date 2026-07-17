@@ -688,9 +688,19 @@ export class DashboardService {
   // ─── Schedule & capacity (staff_shifts) ────────────────────────────────
 
   private async runScheduleStats(from: Date, to: Date) {
-    const [totalShifts, bookedSlots] = await Promise.all([
+    const [shiftAgg, bookedSlots] = await Promise.all([
       this.shiftModel
-        .countDocuments({ start_at: { $gte: from, $lte: to } })
+        .aggregate<{ totalShifts: number; totalCapacity: number }>([
+          { $match: { start_at: { $gte: from, $lte: to } } },
+          {
+            $group: {
+              _id: null,
+              totalShifts: { $sum: 1 },
+              // Ca cũ (per-staff) không có capacity → tính là 1.
+              totalCapacity: { $sum: { $ifNull: ['$capacity', 1] } },
+            },
+          },
+        ])
         .exec(),
       this.orderModel
         .countDocuments({
@@ -699,7 +709,9 @@ export class DashboardService {
         })
         .exec(),
     ]);
-    return { totalShifts, totalCapacity: totalShifts, bookedSlots };
+    const totalShifts = shiftAgg[0]?.totalShifts ?? 0;
+    const totalCapacity = shiftAgg[0]?.totalCapacity ?? 0;
+    return { totalShifts, totalCapacity, bookedSlots };
   }
 
   // ─── Cancellation & no-show analytics ──────────────────────────────────

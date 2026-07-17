@@ -11,9 +11,9 @@ type ShiftQuery = {
 };
 
 /**
- * Shift statuses a customer can still book against. A shift stays bookable once
- * a manager "starts" it (SCHEDULED → ACTIVE) — kept in sync with
- * findOnShiftWasherStaffIdsAt so auto-assign and booking agree on what is live.
+ * Shift statuses a customer can still book against. Stored status is only ever
+ * SCHEDULED or CANCELLED now (ACTIVE/COMPLETED are time-derived at read time),
+ * but legacy rows may still carry manually-set ACTIVE/COMPLETED values.
  */
 const BOOKABLE_SHIFT_STATUSES: ShiftStatusEnum[] = [
   ShiftStatusEnum.SCHEDULED,
@@ -21,18 +21,14 @@ const BOOKABLE_SHIFT_STATUSES: ShiftStatusEnum[] = [
 ];
 
 export interface ICreateShiftInput {
-  staffId: Types.ObjectId;
-  shiftType: ShiftTypeEnum;
-  stationName?: string;
+  capacity: number;
   startAt: Date;
   endAt: Date;
   note?: string;
 }
 
 export interface IUpdateShiftInput {
-  staffId?: Types.ObjectId;
-  shiftType?: ShiftTypeEnum;
-  stationName?: string;
+  capacity?: number;
   startAt?: Date;
   endAt?: Date;
   note?: string;
@@ -83,25 +79,6 @@ export class StaffShiftRepository {
   }
 
   /**
-   * Staff ids of WASHER shifts that cover `now` and are still live (SCHEDULED
-   * or ACTIVE). Optionally intersected with `staffIds`.
-   */
-  async findOnShiftWasherStaffIdsAt(
-    now: Date,
-    staffIds?: Types.ObjectId[],
-  ): Promise<Types.ObjectId[]> {
-    if (staffIds && staffIds.length === 0) return [];
-    const ids = await StaffShiftModel.distinct('staff_id', {
-      shift_type: ShiftTypeEnum.WASHER,
-      status: { $in: [ShiftStatusEnum.SCHEDULED, ShiftStatusEnum.ACTIVE] },
-      start_at: { $lte: now },
-      end_at: { $gte: now },
-      ...(staffIds ? { staff_id: { $in: staffIds } } : {}),
-    }).exec();
-    return ids;
-  }
-
-  /**
    * Live washer shifts (SCHEDULED or ACTIVE) whose window overlaps [from, to] at
    * all - including shifts that start before `from` but extend into it.
    */
@@ -123,17 +100,17 @@ export class StaffShiftRepository {
   }
 
   /**
-   * Non-cancelled shifts for a staff member whose window overlaps
-   * [startAt, endAt]. `excludeId` skips the shift being updated.
+   * Non-cancelled washer shifts whose window overlaps [startAt, endAt] at all.
+   * Anonymous shifts must not overlap each other (capacity is edited instead of
+   * stacking shifts); `excludeId` skips the shift being moved.
    */
-  async findOverlappingForStaff(
-    staffId: Types.ObjectId,
+  async findOverlappingShifts(
     startAt: Date,
     endAt: Date,
     excludeId?: Types.ObjectId | string,
   ): Promise<StaffShiftDocument[]> {
     const query: Record<string, unknown> = {
-      staff_id: staffId,
+      shift_type: ShiftTypeEnum.WASHER,
       status: { $ne: ShiftStatusEnum.CANCELLED },
       start_at: { $lt: endAt },
       end_at: { $gt: startAt },
@@ -147,19 +124,6 @@ export class StaffShiftRepository {
   ): Promise<StaffShiftDocument | null> {
     if (!Types.ObjectId.isValid(id)) return null;
     return StaffShiftModel.findById(id).exec();
-  }
-
-  /** The `_id`s of every shift this staff member is rostered on. */
-  async findShiftIdsByStaff(
-    staffId: Types.ObjectId | string,
-  ): Promise<Types.ObjectId[]> {
-    if (!Types.ObjectId.isValid(staffId)) return [];
-    // `_id` is on the hydrated document, not the StaffShift interface, so
-    // distinct() infers unknown[] — cast the result back to ObjectId[].
-    const ids = await StaffShiftModel.distinct('_id', {
-      staff_id: new Types.ObjectId(staffId),
-    }).exec();
-    return ids as Types.ObjectId[];
   }
 
   async findPaginated(
@@ -181,9 +145,8 @@ export class StaffShiftRepository {
 
   async create(input: ICreateShiftInput): Promise<StaffShiftDocument> {
     return StaffShiftModel.create({
-      staff_id: input.staffId,
-      shift_type: input.shiftType,
-      station_name: input.stationName,
+      shift_type: ShiftTypeEnum.WASHER,
+      capacity: input.capacity,
       start_at: input.startAt,
       end_at: input.endAt,
       status: ShiftStatusEnum.SCHEDULED,
@@ -196,10 +159,7 @@ export class StaffShiftRepository {
     input: IUpdateShiftInput,
   ): Promise<StaffShiftDocument | null> {
     const update: Record<string, unknown> = {};
-    if (input.staffId !== undefined) update.staff_id = input.staffId;
-    if (input.shiftType !== undefined) update.shift_type = input.shiftType;
-    if (input.stationName !== undefined)
-      update.station_name = input.stationName;
+    if (input.capacity !== undefined) update.capacity = input.capacity;
     if (input.startAt !== undefined) update.start_at = input.startAt;
     if (input.endAt !== undefined) update.end_at = input.endAt;
     if (input.note !== undefined) update.note = input.note;

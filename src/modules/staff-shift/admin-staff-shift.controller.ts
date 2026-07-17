@@ -14,10 +14,6 @@ export class AdminStaffShiftController {
     res.json(await this.service.adminList(query));
   };
 
-  assignableStaff = async (_req: Request, res: Response): Promise<void> => {
-    res.json(await this.service.listAssignableStaff());
-  };
-
   staffStats = async (req: Request, res: Response): Promise<void> => {
     const query = (req.validated?.query ?? {}) as QueryStaffPerformanceDto;
     res.json(await this.service.staffPerformance(query));

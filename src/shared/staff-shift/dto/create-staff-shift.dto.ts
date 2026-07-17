@@ -1,30 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '../../../common/swagger-shim';
 import {
   IsEnum,
-  IsMongoId,
+  IsInt,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
 } from 'class-validator';
 import { ShiftScheduleEnum } from '../types/shift-schedule.enum';
-import { ShiftTypeEnum } from '../types/shift-type.enum';
 
 export class CreateStaffShiftDto {
-  @ApiProperty({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
-  @IsMongoId()
-  staffId: string;
-
-  @ApiProperty({ enum: ShiftTypeEnum, example: ShiftTypeEnum.WASHER })
-  @IsEnum(ShiftTypeEnum)
-  shiftType: ShiftTypeEnum;
-
-  @ApiPropertyOptional({ example: 'Bay 1' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(80)
-  stationName?: string;
-
   @ApiProperty({
     example: '2026-06-01',
     description: 'Shift date in Vietnam local time (YYYY-MM-DD).',
@@ -42,6 +29,19 @@ export class CreateStaffShiftDto {
   })
   @IsEnum(ShiftScheduleEnum)
   block: ShiftScheduleEnum;
+
+  @ApiPropertyOptional({
+    example: 1,
+    default: 1,
+    minimum: 1,
+    maximum: 10,
+    description: 'Concurrent washes bookable in this shift. Default 1.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  capacity?: number;
 
   @ApiPropertyOptional({ example: 'Morning shift' })
   @IsOptional()

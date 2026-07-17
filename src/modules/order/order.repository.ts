@@ -223,12 +223,11 @@ export class OrderRepository {
   }
 
   /**
-   * A washer's schedule: bookings sitting on the given (booked-shift) ids,
-   * narrowed by the date/status filter, earliest appointment first. Refs
-   * populated. Returns [] when no shift ids are supplied.
+   * The washer day queue: bookings narrowed by the date/status filter,
+   * earliest appointment first. Refs populated. Shifts are anonymous, so the
+   * queue is shared by every washer.
    */
   async findWasherSchedule(filter: IOrderListFilter): Promise<OrderDocument[]> {
-    if (!filter.staffShiftIds || filter.staffShiftIds.length === 0) return [];
     return OrderModel.find(this.buildQuery(filter))
       .sort({ scheduled_at: 1 })
       .populate('customer_id', 'name phone')

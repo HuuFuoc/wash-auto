@@ -43,7 +43,7 @@ shiftRouter.get(
 );
 
 // Admin router — mounted at /admin/shifts. @UseGuards(JwtAuthGuard, RolesGuard)
-// + @Roles(MANAGER, ADMIN). `/staff` MUST be registered before `/:id`.
+// + @Roles(MANAGER, ADMIN). `/staff-stats` MUST be registered before `/:id`.
 export const adminShiftRouter = Router();
 adminShiftRouter.use(
   authMiddleware,
@@ -54,7 +54,6 @@ adminShiftRouter.get(
   validateDto(QueryStaffShiftDto, 'query'),
   asyncHandler(adminController.list),
 );
-adminShiftRouter.get('/staff', asyncHandler(adminController.assignableStaff));
 adminShiftRouter.get(
   '/staff-stats',
   validateDto(QueryStaffPerformanceDto, 'query'),
