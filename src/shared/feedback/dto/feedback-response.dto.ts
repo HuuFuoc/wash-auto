@@ -21,6 +21,12 @@ export class FeedbackResponseDto {
   @ApiProperty({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
   workOrderId: string;
 
+  @ApiPropertyOptional({ example: 'WO-240612-0001' })
+  workOrderCode?: string;
+
+  @ApiPropertyOptional({ example: '51K-123.45' })
+  vehiclePlate?: string;
+
   @ApiProperty({ example: '6601e3b3f1a2c3a4b5d6e7f8' })
   customerId: string;
 
@@ -49,7 +55,20 @@ export class FeedbackResponseDto {
     const dto = new FeedbackResponseDto();
     dto.id = doc._id.toString();
     dto.orderId = doc.order_id.toString();
-    dto.workOrderId = doc.work_order_id.toString();
+    const workOrder = doc.work_order_id as unknown;
+    if (workOrder && typeof workOrder === 'object' && '_id' in workOrder) {
+      const w = workOrder as {
+        _id: Types.ObjectId;
+        code?: string;
+        vehicle_snapshot?: { plate?: string };
+      };
+      dto.workOrderId = w._id.toString();
+      dto.workOrderCode = w.code;
+      dto.vehiclePlate = w.vehicle_snapshot?.plate;
+    } else {
+      dto.workOrderId =
+        (workOrder as Types.ObjectId | undefined)?.toString() ?? '';
+    }
     const customer = idAndName(doc.customer_id);
     dto.customerId = customer.id;
     dto.customerName = customer.name;

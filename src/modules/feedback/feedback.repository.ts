@@ -102,6 +102,7 @@ export class FeedbackRepository {
       .limit(limit)
       .populate('washer_id', 'name')
       .populate('customer_id', 'name')
+      .populate('work_order_id', 'code vehicle_snapshot')
       .exec();
   }
 

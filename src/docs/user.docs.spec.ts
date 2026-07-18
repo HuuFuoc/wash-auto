@@ -1,7 +1,7 @@
 import { join } from 'path';
 import { readFileSync } from 'fs';
 import { parse } from 'yaml';
-import { adminUserRouter } from '../modules/user/user.router';
+import { adminUserRouter, meUserRouter } from '../modules/user/user.router';
 import { assertRouterDocumented } from '../../test/docs-helpers/assert-router-documented';
 
 const spec = parse(readFileSync(join(__dirname, 'openapi.yaml'), 'utf8')) as {
@@ -11,5 +11,8 @@ const spec = parse(readFileSync(join(__dirname, 'openapi.yaml'), 'utf8')) as {
 describe('user docs', () => {
   it('documents every /admin/users route', () => {
     assertRouterDocumented(adminUserRouter, '/admin/users', spec.paths);
+  });
+  it('documents every /me/profile route', () => {
+    assertRouterDocumented(meUserRouter, '/me/profile', spec.paths);
   });
 });

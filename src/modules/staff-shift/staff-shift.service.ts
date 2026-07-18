@@ -13,6 +13,11 @@ import { UpdateStaffShiftDto } from '../../shared/staff-shift/dto/update-staff-s
 import { QueryStaffPerformanceDto } from '../../shared/staff-shift/dto/query-staff-performance.dto';
 import { ShiftStatusEnum } from '../../shared/staff-shift/types/shift-status.enum';
 import { StaffPerformanceRow } from '../../shared/staff-shift/types/staff-performance.type';
+import {
+  WasherCurrentWorkOrder,
+  WasherLiveStatusRow,
+} from '../../shared/staff-shift/types/washer-live-status.type';
+import { WorkOrderStatusEnum } from '../../shared/work-order/types/work-order-status.enum';
 import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { RoleRepository } from '../auth/role.repository';
 import { UserRepository } from '../auth/user.repository';
@@ -79,6 +84,85 @@ export class StaffShiftService {
     });
   }
 
+  /**
+   * Live board for managers: every active washer with the ticket they are
+   * working on right now (IN_PROGRESS wins over ASSIGNED) and whether a live
+   * shift window covers this instant. With anonymous capacity shifts the
+   * window applies shop-wide (every washer counts as on-shift); legacy
+   * per-staff shifts still resolve per washer via staff_id.
+   */
+  async washerLiveStatus(): Promise<WasherLiveStatusRow[]> {
+    const role = await this.roleRepository.findByCode(RoleEnum.WASHER);
+    if (!role) return [];
+    const washers = await this.userRepository.findPaginated(
+      { roleId: role._id, isActive: true },
+      1,
+      500,
+    );
+    const ids = washers.map((u) => u._id);
+
+    const [activeWork, liveShifts] = await Promise.all([
+      this.workOrderRepository.findActiveByWashers(ids),
+      this.repository.findShiftsContaining(new Date(), 0),
+    ]);
+
+    const workByWasher = new Map<string, typeof activeWork>();
+    for (const wo of activeWork) {
+      const key = wo.assigned_washer_id?.toString();
+      if (!key) continue;
+      const list = workByWasher.get(key) ?? [];
+      list.push(wo);
+      workByWasher.set(key, list);
+    }
+    const anonymousShiftLive = liveShifts.some((s) => !s.staff_id);
+    const onShiftStaff = new Set(
+      liveShifts
+        .filter((s) => s.staff_id)
+        .map((s) => s.staff_id!.toString()),
+    );
+
+    return washers.map((u) => {
+      const id = u._id.toString();
+      const tickets = workByWasher.get(id) ?? [];
+      const current =
+        tickets.find((t) => t.status === WorkOrderStatusEnum.IN_PROGRESS) ??
+        tickets
+          .slice()
+          .sort(
+            (a, b) => a.scheduled_at.getTime() - b.scheduled_at.getTime(),
+          )[0] ??
+        null;
+
+      const currentWorkOrder: WasherCurrentWorkOrder | null = current
+        ? {
+            id: current._id.toString(),
+            code: current.code,
+            plate: current.vehicle_snapshot.plate,
+            vehicleTypeName: current.vehicle_snapshot.vehicle_type_name,
+            serviceName: current.service_name,
+            status: current.status,
+            startedAt: current.started_at ?? null,
+            estimatedMinutes: current.estimated_minutes,
+            stationName: current.station_name,
+          }
+        : null;
+
+      return {
+        washerId: id,
+        name: u.name,
+        email: u.email,
+        avatarUrl: u.avatar_url,
+        onShift: anonymousShiftLive || onShiftStaff.has(id),
+        status:
+          current === null
+            ? 'free'
+            : current.status === WorkOrderStatusEnum.IN_PROGRESS
+              ? 'in_progress'
+              : 'assigned',
+        currentWorkOrder,
+      };
+    });
+  }
   async listAvailable(
     query: QueryAvailableShiftDto,
   ): Promise<StaffShiftResponseDto[]> {

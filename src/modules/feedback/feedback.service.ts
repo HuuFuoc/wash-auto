@@ -98,6 +98,28 @@ export class FeedbackService {
     return this.toListResponse(docs, page, limit, total);
   }
 
+  // ---------- WASHER ----------
+
+  /**
+   * Feedback about the calling washer only — any washerId/orderId in the
+   * query is ignored so a washer can never read another washer's reviews.
+   */
+  async listForWasher(
+    washerId: string,
+    query: QueryFeedbackDto,
+  ): Promise<FeedbackListResponseDto> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const filter: IFeedbackListFilter = {
+      washerId: new Types.ObjectId(washerId),
+    };
+    const [docs, total] = await Promise.all([
+      this.repository.findPaginated(filter, page, limit),
+      this.repository.countMatching(filter),
+    ]);
+    return this.toListResponse(docs, page, limit, total);
+  }
+
   // ---------- MANAGER / ADMIN ----------
 
   async adminList(query: QueryFeedbackDto): Promise<FeedbackListResponseDto> {

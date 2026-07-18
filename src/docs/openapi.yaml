@@ -65,6 +65,8 @@ components:
         id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
         orderId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
         workOrderId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        workOrderCode: { type: string, example: 'WO-240612-0001' }
+        vehiclePlate: { type: string, example: '51K-123.45' }
         customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
         customerName: { type: string, example: 'Nguyễn Văn A' }
         washerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
@@ -185,6 +187,34 @@ components:
       type: object
       properties:
         token: { type: string, description: 'JWT scope=email_verified, 15m TTL', example: 'eyJhbGciOi...' }
+    ChangeMyPassword:
+      type: object
+      required: [oldPassword, newPassword]
+      properties:
+        oldPassword: { type: string, maxLength: 72, example: 'OldP@ss123' }
+        newPassword: { type: string, minLength: 8, maxLength: 72, example: 'NewStrongP@ss123' }
+    WasherLiveStatus:
+      type: object
+      properties:
+        washerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        name: { type: string, example: 'Tran Van B' }
+        email: { type: string, format: email, example: 'washer@washauto.local' }
+        avatarUrl: { type: string, example: 'https://cdn.example.com/avatar.jpg' }
+        onShift: { type: boolean, example: true }
+        status: { type: string, enum: [free, assigned, in_progress], example: in_progress }
+        currentWorkOrder:
+          nullable: true
+          type: object
+          properties:
+            id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+            code: { type: string, example: 'WO-240612-0001' }
+            plate: { type: string, example: '51K-123.45' }
+            vehicleTypeName: { type: string, example: 'SUV' }
+            serviceName: { type: string, example: 'Rửa xe cơ bản' }
+            status: { type: string, enum: [assigned, in_progress], example: in_progress }
+            startedAt: { type: string, format: date-time, nullable: true }
+            estimatedMinutes: { type: integer, example: 45 }
+            stationName: { type: string, example: 'Trạm 1' }
     CreateVehicleType:
       type: object
       required: [name]
@@ -1127,6 +1157,61 @@ paths:
                 type: object
                 properties:
                   message: { type: string, example: 'Password reset' }
+  /me/profile:
+    get:
+      tags: [users]
+      summary: Get my own profile (any authenticated role)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+    patch:
+      tags: [users]
+      summary: Update my own profile (any authenticated role)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUser' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserResponse' }
+        '409':
+          description: Phone already registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /me/profile/change-password:
+    post:
+      tags: [users]
+      summary: Change my own password (requires current password)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeMyPassword' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: 'Password changed successfully' }
+        '400':
+          description: Old password is incorrect
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /admin/golden-hours:
     get:
       tags: [golden-hours]
@@ -1493,6 +1578,31 @@ paths:
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: washerId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WasherFeedbackSummary' }
+  /me/washer-feedback:
+    get:
+      tags: [feedback]
+      summary: List feedback about me (washer)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: page, in: query, required: false, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/FeedbackListResponse' }
+  /me/washer-feedback/summary:
+    get:
+      tags: [feedback]
+      summary: My rating summary - average, count, distribution (washer)
+      security: [{ bearerAuth: [] }]
       responses:
         '200':
           description: OK
@@ -2141,6 +2251,19 @@ paths:
                     ordersHandled: { type: integer, example: 44 }
                     feedbackCount: { type: integer, example: 18 }
                     averageRating: { type: number, format: float, example: 4.6 }
+  /admin/shifts/washer-status:
+    get:
+      tags: [shifts]
+      summary: Live washer board - busy/free, current ticket, on-shift (admin/manager)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WasherLiveStatus' }
   /admin/shifts/{id}:
     get:
       tags: [shifts]

@@ -128,4 +128,31 @@ describe('FeedbackService', () => {
     expect(summary.averageRating).toBe(4.5);
     expect(summary.count).toBe(2);
   });
+
+  it('scopes listForWasher to the caller even if the query names another washer', async () => {
+    const otherWasher = new Types.ObjectId();
+    const findPaginated = jest.fn(async () => []);
+    const countMatching = jest.fn(async () => 0);
+    const service = new FeedbackService(
+      { findPaginated, countMatching } as never,
+      {} as never,
+      {} as never,
+    );
+
+    const res = await service.listForWasher(washerId.toString(), {
+      washerId: otherWasher.toString(),
+      orderId: orderId.toString(),
+      page: 2,
+      limit: 5,
+    });
+
+    const filter = findPaginated.mock.calls[0][0] as {
+      washerId: Types.ObjectId;
+      orderId?: Types.ObjectId;
+    };
+    expect(filter.washerId.toString()).toBe(washerId.toString());
+    expect(filter.orderId).toBeUndefined();
+    expect(findPaginated).toHaveBeenCalledWith(expect.anything(), 2, 5);
+    expect(res.meta).toEqual({ page: 2, limit: 5, total: 0, totalPages: 1 });
+  });
 });

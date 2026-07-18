@@ -12,6 +12,7 @@ import { AdminFeedbackController } from './admin-feedback.controller';
 import { FeedbackController } from './feedback.controller';
 import { FeedbackRepository } from './feedback.repository';
 import { FeedbackService } from './feedback.service';
+import { WasherFeedbackController } from './washer-feedback.controller';
 
 // Manual DI wiring. Reuses the order module's repository instance; the
 // work-order repository is stateless so a fresh instance is fine.
@@ -24,6 +25,7 @@ const service = new FeedbackService(
 );
 const customerController = new FeedbackController(service);
 const adminController = new AdminFeedbackController(service);
+const washerController = new WasherFeedbackController(service);
 
 // Customer router — mounted at /me/feedback (CUSTOMER).
 export const meFeedbackRouter = Router();
@@ -35,6 +37,17 @@ meFeedbackRouter.post(
 );
 meFeedbackRouter.get('/', asyncHandler(customerController.list));
 meFeedbackRouter.get('/:orderId', asyncHandler(customerController.getForOrder));
+
+// Washer router — mounted at /me/washer-feedback (WASHER). Self-view only:
+// the service always scopes queries to the caller's washer id.
+export const washerFeedbackRouter = Router();
+washerFeedbackRouter.use(authMiddleware, roleMiddleware(RoleEnum.WASHER));
+washerFeedbackRouter.get(
+  '/',
+  validateDto(QueryFeedbackDto, 'query'),
+  asyncHandler(washerController.list),
+);
+washerFeedbackRouter.get('/summary', asyncHandler(washerController.summary));
 
 // Admin/Manager router — mounted at /admin/feedback (MANAGER/ADMIN).
 export const adminFeedbackRouter = Router();

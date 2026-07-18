@@ -10,6 +10,7 @@ import {
 import { config } from '../../config';
 import { UserResponseDto } from '../../shared/auth/dto/user-response.dto';
 import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { ChangeMyPasswordDto } from '../../shared/user/dto/change-my-password.dto';
 import { ChangeUserRoleDto } from '../../shared/user/dto/change-user-role.dto';
 import { CreateUserAdminDto } from '../../shared/user/dto/create-user-admin.dto';
 import { QueryUserDto } from '../../shared/user/dto/query-user.dto';
@@ -186,6 +187,28 @@ export class UserService {
       updated,
       role?.code ?? RoleEnum.CUSTOMER,
     );
+  }
+
+  /** Self-service password change — requires proving the current password. */
+  async changePassword(
+    userId: string,
+    dto: ChangeMyPasswordDto,
+  ): Promise<{ message: string }> {
+    const user = await this.requireUser(userId);
+    const matches = await bcrypt.compare(dto.oldPassword, user.password_hash);
+    if (!matches) {
+      throw new BadRequestException('Old password is incorrect');
+    }
+    const saltRounds = config.auth.bcryptSaltRounds;
+    const passwordHash = await bcrypt.hash(dto.newPassword, saltRounds);
+    const updated = await this.userRepository.updateById(userId, {
+      passwordHash,
+    });
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+    console.log('User changed own password', { userId });
+    return { message: 'Password changed successfully' };
   }
 
   async resetPassword(

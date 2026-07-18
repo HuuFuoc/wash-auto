@@ -59,6 +59,10 @@ adminShiftRouter.get(
   validateDto(QueryStaffPerformanceDto, 'query'),
   asyncHandler(adminController.staffStats),
 );
+adminShiftRouter.get(
+  '/washer-status',
+  asyncHandler(adminController.washerStatus),
+);
 adminShiftRouter.get('/:id', asyncHandler(adminController.getOne));
 adminShiftRouter.post(
   '/',

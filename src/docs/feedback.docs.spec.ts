@@ -4,6 +4,7 @@ import { parse } from 'yaml';
 import {
   adminFeedbackRouter,
   meFeedbackRouter,
+  washerFeedbackRouter,
 } from '../modules/feedback/feedback.router';
 import { assertRouterDocumented } from '../../test/docs-helpers/assert-router-documented';
 
@@ -17,5 +18,12 @@ describe('feedback docs', () => {
   });
   it('documents every /admin/feedback route', () => {
     assertRouterDocumented(adminFeedbackRouter, '/admin/feedback', spec.paths);
+  });
+  it('documents every /me/washer-feedback route', () => {
+    assertRouterDocumented(
+      washerFeedbackRouter,
+      '/me/washer-feedback',
+      spec.paths,
+    );
   });
 });

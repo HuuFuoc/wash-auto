@@ -200,3 +200,124 @@ describe('StaffShiftService anonymous shifts', () => {
     expect(dto.status).toBe(ShiftStatusEnum.CANCELLED);
   });
 });
+
+describe('StaffShiftService.washerLiveStatus', () => {
+  const makeService = (overrides: {
+    washers: Array<{ _id: Types.ObjectId; name: string }>;
+    activeWork?: unknown[];
+    onShiftIds?: Types.ObjectId[];
+  }) => {
+    const roleRepository = {
+      findByCode: jest.fn(async () => ({ _id: new Types.ObjectId() })),
+    };
+    const userRepository = {
+      findPaginated: jest.fn(async () =>
+        overrides.washers.map((w) => ({
+          ...w,
+          email: `${w.name}@x.local`,
+          avatar_url: undefined,
+          is_active: true,
+        })),
+      ),
+    };
+    const workOrderRepository = {
+      findActiveByWashers: jest.fn(async () => overrides.activeWork ?? []),
+    };
+    const repository = {
+      // Legacy per-staff shifts: one live shift doc per on-shift washer.
+      findShiftsContaining: jest.fn(async () =>
+        (overrides.onShiftIds ?? []).map((id) => ({ staff_id: id })),
+      ),
+    };
+    return new StaffShiftService(
+      repository as never,
+      userRepository as never,
+      roleRepository as never,
+      workOrderRepository as never,
+      {} as never,
+    );
+  };
+
+  const ticket = (
+    washerId: Types.ObjectId,
+    status: string,
+    extra: Record<string, unknown> = {},
+  ) => ({
+    _id: new Types.ObjectId(),
+    assigned_washer_id: washerId,
+    status,
+    code: 'WO-1',
+    vehicle_snapshot: { plate: '51K-123.45', vehicle_type_name: 'SUV' },
+    service_name: 'Rửa cơ bản',
+    scheduled_at: new Date('2026-07-18T02:00:00Z'),
+    estimated_minutes: 45,
+    started_at: undefined,
+    station_name: undefined,
+    ...extra,
+  });
+
+  it('prefers IN_PROGRESS over ASSIGNED and maps ticket fields', async () => {
+    const w1 = new Types.ObjectId();
+    const started = new Date('2026-07-18T03:00:00Z');
+    const service = makeService({
+      washers: [{ _id: w1, name: 'Washer One' }],
+      activeWork: [
+        ticket(w1, 'assigned'),
+        ticket(w1, 'in_progress', { code: 'WO-2', started_at: started }),
+      ],
+      onShiftIds: [w1],
+    });
+
+    const rows = await service.washerLiveStatus();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      washerId: w1.toString(),
+      status: 'in_progress',
+      onShift: true,
+    });
+    expect(rows[0].currentWorkOrder).toMatchObject({
+      code: 'WO-2',
+      plate: '51K-123.45',
+      serviceName: 'Rửa cơ bản',
+      startedAt: started,
+      estimatedMinutes: 45,
+    });
+  });
+
+  it('reports assigned washers and free/off-shift washers correctly', async () => {
+    const busy = new Types.ObjectId();
+    const idle = new Types.ObjectId();
+    const service = makeService({
+      washers: [
+        { _id: busy, name: 'Busy' },
+        { _id: idle, name: 'Idle' },
+      ],
+      activeWork: [ticket(busy, 'assigned')],
+      onShiftIds: [busy],
+    });
+
+    const rows = await service.washerLiveStatus();
+    const busyRow = rows.find((r) => r.washerId === busy.toString())!;
+    expect(busyRow.status).toBe('assigned');
+    expect(busyRow.onShift).toBe(true);
+    expect(busyRow.currentWorkOrder?.startedAt).toBeNull();
+
+    const idleRow = rows.find((r) => r.washerId === idle.toString())!;
+    expect(idleRow).toMatchObject({
+      status: 'free',
+      onShift: false,
+      currentWorkOrder: null,
+    });
+  });
+
+  it('returns [] when the washer role is not seeded', async () => {
+    const service = new StaffShiftService(
+      {} as never,
+      {} as never,
+      { findByCode: jest.fn(async () => null) } as never,
+      {} as never,
+      {} as never,
+    );
+    expect(await service.washerLiveStatus()).toEqual([]);
+  });
+});

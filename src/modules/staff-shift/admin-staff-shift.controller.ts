@@ -19,6 +19,10 @@ export class AdminStaffShiftController {
     res.json(await this.service.staffPerformance(query));
   };
 
+  washerStatus = async (_req: Request, res: Response): Promise<void> => {
+    res.json(await this.service.washerLiveStatus());
+  };
+
   getOne = async (req: Request<IdParam>, res: Response): Promise<void> => {
     res.json(await this.service.getById(req.params.id));
   };

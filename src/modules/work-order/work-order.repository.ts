@@ -149,6 +149,17 @@ export class WorkOrderRepository {
     }).exec();
   }
 
+  /** All busy tickets for a set of washers — the live monitoring board. */
+  async findActiveByWashers(
+    washerIds: Array<Types.ObjectId | string>,
+  ): Promise<WorkOrderDocument[]> {
+    if (washerIds.length === 0) return [];
+    return WorkOrderModel.find({
+      assigned_washer_id: { $in: washerIds.map((w) => new Types.ObjectId(w)) },
+      status: { $in: BUSY_WASHER_STATUSES },
+    }).exec();
+  }
+
   async findById(
     id: Types.ObjectId | string,
   ): Promise<WorkOrderDocument | null> {

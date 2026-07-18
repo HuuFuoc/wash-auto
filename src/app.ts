@@ -21,6 +21,7 @@ import { adminDashboardRouter } from './modules/dashboard/dashboard.router';
 import {
   adminFeedbackRouter,
   meFeedbackRouter,
+  washerFeedbackRouter,
 } from './modules/feedback/feedback.router';
 import { adminGoldenHourRouter } from './modules/golden-hour/golden-hour.router';
 import { meLoyaltyRouter } from './modules/loyalty/loyalty.router';
@@ -40,7 +41,7 @@ import {
   adminShiftRouter,
   shiftRouter,
 } from './modules/staff-shift/staff-shift.router';
-import { adminUserRouter } from './modules/user/user.router';
+import { adminUserRouter, meUserRouter } from './modules/user/user.router';
 import {
   adminTierConfigRouter,
   tierConfigRouter,
@@ -110,6 +111,8 @@ export function createApp() {
   apiRouter.use('/me/work-orders', washerWorkOrderRouter);
   apiRouter.use('/me/orders', customerWorkOrderRouter);
   apiRouter.use('/me/feedback', meFeedbackRouter);
+  apiRouter.use('/me/washer-feedback', washerFeedbackRouter);
+  apiRouter.use('/me/profile', meUserRouter);
   apiRouter.use('/me/notifications', meNotificationRouter);
   apiRouter.use('/shifts', shiftRouter);
   apiRouter.use('/washers/me', washerScheduleRouter);

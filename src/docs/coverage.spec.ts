@@ -12,6 +12,7 @@ import { adminDashboardRouter } from '../modules/dashboard/dashboard.router';
 import {
   adminFeedbackRouter,
   meFeedbackRouter,
+  washerFeedbackRouter,
 } from '../modules/feedback/feedback.router';
 import { adminGoldenHourRouter } from '../modules/golden-hour/golden-hour.router';
 import { meNotificationRouter } from '../modules/notification/notification.router';
@@ -36,7 +37,7 @@ import {
   tierConfigRouter,
 } from '../modules/tier-config/tier-config.router';
 import { uploadRouter } from '../modules/upload/upload.router';
-import { adminUserRouter } from '../modules/user/user.router';
+import { adminUserRouter, meUserRouter } from '../modules/user/user.router';
 import {
   adminVoucherRouter,
   meVoucherRouter,
@@ -72,6 +73,8 @@ const groups: Array<[Router, string]> = [
   [washerWorkOrderRouter, '/me/work-orders'],
   [customerWorkOrderRouter, '/me/orders'],
   [meFeedbackRouter, '/me/feedback'],
+  [washerFeedbackRouter, '/me/washer-feedback'],
+  [meUserRouter, '/me/profile'],
   [meNotificationRouter, '/me/notifications'],
   [shiftRouter, '/shifts'],
   [washerScheduleRouter, '/washers/me'],

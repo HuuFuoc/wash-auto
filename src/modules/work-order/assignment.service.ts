@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 import { redisClient } from '../../core/redis';
 import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { NotificationTypeEnum } from '../../shared/notification/types/notification-type.enum';
-import { RealtimeEvent, emitToUser } from '../../core/realtime';
+import { RealtimeEvent, emitToOps, emitToUser } from '../../core/realtime';
 import { WorkOrderResponseDto } from '../../shared/work-order/dto/work-order-response.dto';
 import { notificationService } from '../notification/notification.router';
 import { RoleRepository } from '../auth/role.repository';
@@ -128,8 +128,11 @@ export class AssignmentService {
       if (claimed) {
         console.log(`Auto-assigned ${claimed.code} → washer ${washerId}`);
         // Cùng thông báo như khi quản lý gán tay: đẩy realtime + lưu DB cho thợ.
+        // Ops (manager/admin/cashier) cũng cần biết để bảng điều phối và màn
+        // giám sát thợ tự cập nhật — trước đây chỉ thợ nhận được event này.
         const dto = WorkOrderResponseDto.fromDocument(claimed);
         emitToUser(washerId, RealtimeEvent.WASH_ASSIGNED, dto);
+        emitToOps(RealtimeEvent.WASH_ASSIGNED, dto);
         void notificationService.notifyUser(washerId, {
           type: NotificationTypeEnum.WASH_ASSIGNED,
           title: 'Bạn được giao rửa xe',
