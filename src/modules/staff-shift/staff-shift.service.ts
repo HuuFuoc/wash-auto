@@ -116,9 +116,7 @@ export class StaffShiftService {
     }
     const anonymousShiftLive = liveShifts.some((s) => !s.staff_id);
     const onShiftStaff = new Set(
-      liveShifts
-        .filter((s) => s.staff_id)
-        .map((s) => s.staff_id!.toString()),
+      liveShifts.filter((s) => s.staff_id).map((s) => s.staff_id!.toString()),
     );
 
     return washers.map((u) => {
