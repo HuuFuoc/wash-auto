@@ -57,3 +57,50 @@ export function expandSchedule(schedule: ShiftScheduleEnum): ShiftBlockEnum[] {
       return [ShiftBlockEnum.MORNING, ShiftBlockEnum.AFTERNOON];
   }
 }
+
+/**
+ * Inclusive list of VN calendar dates (YYYY-MM-DD) from `from` to `to`. Works on
+ * UTC midnight ticks so it never drifts across DST/timezone (VN has no DST, but
+ * the arithmetic stays timezone-free regardless).
+ */
+export function enumerateDates(from: string, to: string): string[] {
+  if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
+    throw new BadRequestException('date must be in YYYY-MM-DD format');
+  }
+  const [fy, fm, fd] = from.split('-').map(Number);
+  const [ty, tm, td] = to.split('-').map(Number);
+  const start = Date.UTC(fy, fm - 1, fd);
+  const end = Date.UTC(ty, tm - 1, td);
+  const dates: string[] = [];
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  for (let t = start; t <= end; t += DAY_MS) {
+    const d = new Date(t);
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    dates.push(`${d.getUTCFullYear()}-${mm}-${dd}`);
+  }
+  return dates;
+}
+
+/**
+ * ISO-8601 weekday of a VN calendar date: Monday = 1 … Sunday = 7. Only the
+ * calendar date matters (not the wall-clock hour), so plain UTC is correct here.
+ */
+export function isoWeekday(date: string): number {
+  if (!DATE_RE.test(date)) {
+    throw new BadRequestException('date must be in YYYY-MM-DD format');
+  }
+  const [y, m, d] = date.split('-').map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = Sunday
+  return dow === 0 ? 7 : dow;
+}
+
+/** Two half-open time intervals overlap iff each starts before the other ends. */
+export function intervalsOverlap(
+  aStart: Date,
+  aEnd: Date,
+  bStart: Date,
+  bEnd: Date,
+): boolean {
+  return aStart.getTime() < bEnd.getTime() && bStart.getTime() < aEnd.getTime();
+}

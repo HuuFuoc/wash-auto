@@ -31,6 +31,10 @@ export class AdminStaffShiftController {
     res.status(201).json(await this.service.create(req.body));
   };
 
+  bulkCreate = async (req: Request, res: Response): Promise<void> => {
+    res.status(201).json(await this.service.bulkCreate(req.body));
+  };
+
   update = async (req: Request<IdParam>, res: Response): Promise<void> => {
     res.json(await this.service.update(req.params.id, req.body));
   };

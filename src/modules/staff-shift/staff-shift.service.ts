@@ -3,6 +3,11 @@ import {
   BadRequestException,
   NotFoundException,
 } from '../../common/exceptions';
+import {
+  BulkCreateStaffShiftResponseDto,
+  SkippedShiftDto,
+} from '../../shared/staff-shift/dto/bulk-create-staff-shift-response.dto';
+import { BulkCreateStaffShiftDto } from '../../shared/staff-shift/dto/bulk-create-staff-shift.dto';
 import { CreateStaffShiftDto } from '../../shared/staff-shift/dto/create-staff-shift.dto';
 import { QueryAvailableShiftDto } from '../../shared/staff-shift/dto/query-available-shift.dto';
 import { QueryStaffShiftDto } from '../../shared/staff-shift/dto/query-staff-shift.dto';
@@ -24,12 +29,21 @@ import { UserRepository } from '../auth/user.repository';
 import { FeedbackRepository } from '../feedback/feedback.repository';
 import { WorkOrderRepository } from '../work-order/work-order.repository';
 import { emitSlotsChanged } from '../order/order.service';
-import { expandSchedule, resolveShiftBlock } from './shift-blocks';
+import {
+  enumerateDates,
+  expandSchedule,
+  intervalsOverlap,
+  isoWeekday,
+  resolveShiftBlock,
+} from './shift-blocks';
 import { StaffShiftDocument, effectiveShiftStatus } from './staff-shift.model';
 import {
   IShiftListFilter,
   StaffShiftRepository,
 } from './staff-shift.repository';
+
+/** Guardrail: one bulk request may span at most a quarter of shifts. */
+const MAX_BULK_DAYS = 92;
 
 // Anonymous capacity-based shifts: a shift is a bookable window (date + block)
 // with a concurrent-wash capacity — no staff roster, no station. ACTIVE and
@@ -244,6 +258,120 @@ export class StaffShiftService {
     // Khách đang mở màn đặt lịch thấy slot mới ngay, không cần refetch tay.
     for (const doc of created) emitSlotsChanged(doc.start_at);
     return created.map((doc) => StaffShiftResponseDto.fromDocument(doc));
+  }
+
+  /**
+   * Creates shifts for every VN calendar day in [fromDate, toDate] (inclusive),
+   * optionally filtered to specific ISO weekdays. Unlike {@link create}, days
+   * that already have an overlapping shift or whose block already ended are
+   * skipped (not rejected) and reported back — so a range spanning some booked
+   * days still provisions the rest. Overlaps are checked with a single query
+   * over the whole window, and shifts created within the same request also block
+   * each other.
+   */
+  async bulkCreate(
+    dto: BulkCreateStaffShiftDto,
+  ): Promise<BulkCreateStaffShiftResponseDto> {
+    if (dto.fromDate > dto.toDate) {
+      throw new BadRequestException('fromDate must be ≤ toDate');
+    }
+    const allDates = enumerateDates(dto.fromDate, dto.toDate);
+    if (allDates.length > MAX_BULK_DAYS) {
+      throw new BadRequestException(
+        `Khoảng ngày tối đa ${MAX_BULK_DAYS} ngày. Vui lòng chia nhỏ.`,
+      );
+    }
+
+    const weekdays = new Set(dto.weekdays ?? [1, 2, 3, 4, 5, 6, 7]);
+    const dates = allDates.filter((d) => weekdays.has(isoWeekday(d)));
+    const blocks = expandSchedule(dto.block);
+
+    const candidates = dates.flatMap((date) =>
+      blocks.map((block) => ({
+        date,
+        block,
+        ...resolveShiftBlock(date, block),
+      })),
+    );
+    candidates.sort((a, b) => a.startAt.getTime() - b.startAt.getTime());
+
+    const skipped: SkippedShiftDto[] = [];
+    const toCreate: typeof candidates = [];
+
+    if (candidates.length > 0) {
+      const minStart = candidates[0].startAt;
+      const maxEnd = candidates.reduce(
+        (max, c) => (c.endAt > max ? c.endAt : max),
+        candidates[0].endAt,
+      );
+      const existing = await this.repository.findOverlappingShifts(
+        minStart,
+        maxEnd,
+      );
+      // Claimed windows to check against: existing shifts + already-accepted
+      // candidates from this same request (blocks the two fullday halves from
+      // colliding and guards against duplicate input).
+      const claimed = existing.map((s) => ({
+        startAt: s.start_at,
+        endAt: s.end_at,
+      }));
+      const now = Date.now();
+
+      for (const c of candidates) {
+        if (c.endAt.getTime() <= now) {
+          skipped.push({ date: c.date, block: c.block, reason: 'past' });
+          continue;
+        }
+        const overlaps = claimed.some((w) =>
+          intervalsOverlap(c.startAt, c.endAt, w.startAt, w.endAt),
+        );
+        if (overlaps) {
+          skipped.push({ date: c.date, block: c.block, reason: 'overlap' });
+          continue;
+        }
+        toCreate.push(c);
+        claimed.push({ startAt: c.startAt, endAt: c.endAt });
+      }
+    }
+
+    const created =
+      toCreate.length === 0
+        ? []
+        : await this.repository.createMany(
+            toCreate.map((c) => ({
+              capacity: dto.capacity ?? 1,
+              startAt: c.startAt,
+              endAt: c.endAt,
+              note: dto.note,
+            })),
+          );
+
+    console.log('Manager bulk-created shift(s)', {
+      range: `${dto.fromDate}..${dto.toDate}`,
+      schedule: dto.block,
+      capacity: dto.capacity ?? 1,
+      createdCount: created.length,
+      skippedCount: skipped.length,
+    });
+
+    // One slots:changed per distinct VN day so the booking screen refreshes once
+    // per affected date instead of once per created shift.
+    const emittedDays = new Set<string>();
+    for (const c of toCreate) {
+      if (emittedDays.has(c.date)) continue;
+      emittedDays.add(c.date);
+      emitSlotsChanged(c.startAt);
+    }
+
+    return {
+      created: created.map((doc) => StaffShiftResponseDto.fromDocument(doc)),
+      skipped,
+      meta: {
+        requestedDays: dates.length,
+        createdCount: created.length,
+        skippedCount: skipped.length,
+      },
+    };
   }
 
   async update(
