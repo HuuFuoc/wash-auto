@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../common/async-handler';
 import { RoleEnum } from '../../shared/auth/types/role.enum';
+import { BulkCreateStaffShiftDto } from '../../shared/staff-shift/dto/bulk-create-staff-shift.dto';
 import { CreateStaffShiftDto } from '../../shared/staff-shift/dto/create-staff-shift.dto';
 import { QueryAvailableShiftDto } from '../../shared/staff-shift/dto/query-available-shift.dto';
 import { QueryStaffPerformanceDto } from '../../shared/staff-shift/dto/query-staff-performance.dto';
@@ -68,6 +69,11 @@ adminShiftRouter.post(
   '/',
   validateDto(CreateStaffShiftDto),
   asyncHandler(adminController.create),
+);
+adminShiftRouter.post(
+  '/bulk',
+  validateDto(BulkCreateStaffShiftDto),
+  asyncHandler(adminController.bulkCreate),
 );
 adminShiftRouter.patch(
   '/:id',

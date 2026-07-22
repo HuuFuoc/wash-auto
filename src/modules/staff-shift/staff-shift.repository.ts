@@ -154,6 +154,21 @@ export class StaffShiftRepository {
     });
   }
 
+  /** Bulk-insert anonymous washer shifts (used by range/bulk creation). */
+  async createMany(inputs: ICreateShiftInput[]): Promise<StaffShiftDocument[]> {
+    if (inputs.length === 0) return [];
+    return StaffShiftModel.insertMany(
+      inputs.map((input) => ({
+        shift_type: ShiftTypeEnum.WASHER,
+        capacity: input.capacity,
+        start_at: input.startAt,
+        end_at: input.endAt,
+        status: ShiftStatusEnum.SCHEDULED,
+        note: input.note,
+      })),
+    );
+  }
+
   async updateById(
     id: Types.ObjectId | string,
     input: IUpdateShiftInput,

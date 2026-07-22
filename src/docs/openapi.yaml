@@ -2225,6 +2225,59 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/shifts/bulk:
+    post:
+      tags: [shifts]
+      summary: Bulk-create anonymous capacity shifts across a date range (admin/manager). Days already booked or past are skipped, not rejected.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fromDate, toDate, block]
+              properties:
+                fromDate: { type: string, format: date, example: '2026-06-01', description: 'First day (VN local, inclusive).' }
+                toDate: { type: string, format: date, example: '2026-06-30', description: 'Last day (VN local, inclusive). Range at most 92 days.' }
+                block: { type: string, enum: [morning, afternoon, fullday], example: fullday }
+                weekdays:
+                  type: array
+                  items: { type: integer, minimum: 1, maximum: 7 }
+                  example: [1, 2, 3, 4, 5, 6]
+                  description: 'ISO weekdays to include (Mon=1 … Sun=7). Omit for every day.'
+                capacity: { type: integer, minimum: 1, maximum: 10, default: 1 }
+                note: { type: string, maxLength: 500 }
+      responses:
+        '201':
+          description: Created - summary of created and skipped shifts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  created:
+                    type: array
+                    items: { $ref: '#/components/schemas/StaffShiftResponse' }
+                  skipped:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        date: { type: string, format: date, example: '2026-06-15' }
+                        block: { type: string, enum: [morning, afternoon], example: morning }
+                        reason: { type: string, enum: [overlap, past], example: overlap }
+                  meta:
+                    type: object
+                    properties:
+                      requestedDays: { type: integer, example: 30 }
+                      createdCount: { type: integer, example: 40 }
+                      skippedCount: { type: integer, example: 8 }
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /admin/shifts/staff-stats:
     get:
       tags: [shifts]
