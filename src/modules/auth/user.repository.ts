@@ -82,7 +82,11 @@ export class UserRepository {
     return UserModel.findOneAndUpdate(
       { _id: id, google_id: { $exists: false } },
       [{ $set: set }],
-      { returnDocument: 'after' },
+      // `updatePipeline` is REQUIRED for the array form since Mongoose 9 — v8
+      // inferred it from the array and v9 made it opt-in. Without it the driver
+      // is never reached: Mongoose throws "Cannot pass an array to query updates
+      // unless the `updatePipeline` option is set." before sending anything.
+      { returnDocument: 'after', updatePipeline: true },
     ).exec();
   }
 
