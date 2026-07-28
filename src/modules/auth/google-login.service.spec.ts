@@ -189,6 +189,77 @@ describe('AuthService Google sign-in', () => {
     );
   });
 
+  /**
+   * The un-run migration, as it actually reached production: the old non-sparse
+   * `phone_1` index treats a missing field as null, so the first phone-less
+   * account is fine and every Google sign-up after it dies on `{ phone: null }`.
+   */
+  describe('when createUser hits a unique index', () => {
+    const e11000 = (keyPattern: Record<string, number>) =>
+      Object.assign(new Error('E11000 duplicate key error'), {
+        code: 11000,
+        keyPattern,
+      });
+
+    it('recovers a racing sign-up by re-reading the winner', async () => {
+      const { service, userRepository, createUser } = build({
+        byGoogleId: null,
+        byEmail: null,
+      });
+      const winner = {
+        _id: userId,
+        role_id: roleId,
+        email: profile.email,
+        is_active: true,
+      };
+      createUser.mockRejectedValueOnce(e11000({ google_id: 1 }));
+      // First lookup (before insert) misses, second (after the clash) finds it.
+      userRepository.findByGoogleId
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(winner);
+
+      await expect(
+        service.loginWithGoogleIdToken('id-token'),
+      ).resolves.toMatchObject({ refreshToken: 'refresh-token' });
+    });
+
+    it('reports the phone-index collision as a fixable server fault', async () => {
+      const { service, createUser } = build({
+        byGoogleId: null,
+        byEmail: null,
+      });
+      createUser.mockRejectedValueOnce(e11000({ phone: 1 }));
+
+      await expect(service.loginWithGoogleIdToken('id-token')).rejects.toThrow(
+        /migrate-google-auth/,
+      );
+    });
+
+    // The driver's message names the database and collection, and the redirect
+    // callback paints whatever we throw onto the user's screen.
+    it('never leaks the raw driver message', async () => {
+      const { service, createUser } = build({
+        byGoogleId: null,
+        byEmail: null,
+      });
+      createUser.mockRejectedValueOnce(
+        Object.assign(
+          new Error(
+            'E11000 duplicate key error collection: wdp301.users index: email_1',
+          ),
+          { code: 11000, keyPattern: { email: 1 } },
+        ),
+      );
+
+      const thrown = await service
+        .loginWithGoogleIdToken('id-token')
+        .catch((err: Error) => err);
+
+      expect(thrown).toBeInstanceOf(ConflictException);
+      expect((thrown as Error).message).not.toContain('wdp301');
+    });
+  });
+
   // A loyalty outage must not cost the user the account that was just created.
   it('still signs the user in when loyalty setup fails', async () => {
     const { service, loyaltyService } = build({

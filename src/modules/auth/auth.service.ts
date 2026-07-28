@@ -27,13 +27,20 @@ import {
 } from './refresh-token.service';
 import { VerifiedEmailTokenService } from './verified-email-token.service';
 
-/** Mongo E11000 — a unique index rejected the write. */
-function isDuplicateKeyError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: unknown }).code === 11000
-  );
+/**
+ * Mongo E11000 — a unique index rejected the write. Returns the offending field
+ * names (from the driver's `keyPattern`), or null when this is not a duplicate
+ * key error at all. Which index tripped decides whether the write was a benign
+ * race or a broken deployment, so the caller needs more than a boolean.
+ */
+function duplicateKeyFields(error: unknown): string[] | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const candidate = error as {
+    code?: unknown;
+    keyPattern?: Record<string, unknown>;
+  };
+  if (candidate.code !== 11000) return null;
+  return Object.keys(candidate.keyPattern ?? {});
 }
 
 // Business logic copied verbatim from features/auth/auth.service.ts; DI +
@@ -312,14 +319,35 @@ export class AuthService {
         avatarUrl: profile.avatarUrl,
       });
     } catch (error) {
+      const duplicateFields = duplicateKeyFields(error);
+      if (!duplicateFields) throw error;
+
       // Two first-time logins racing each other: both saw "no such user", one
       // won the unique index. Re-read instead of failing the loser's sign-in.
-      if (!isDuplicateKeyError(error)) throw error;
       const existing = await this.userRepository.findByGoogleId(
         profile.googleId,
       );
-      if (!existing) throw error;
-      return existing;
+      if (existing) return existing;
+
+      // Not a race — the write is genuinely rejected. Never let the driver's
+      // message through: it names the database and collection, and the callback
+      // paints whatever we throw straight onto the user's screen.
+      console.error(
+        `Google sign-up rejected by unique index [${duplicateFields.join(', ')}] ` +
+          `email=${profile.email}`,
+        error,
+      );
+
+      if (duplicateFields.includes('phone')) {
+        // The `phone_1` index is still the old non-sparse one, which indexes a
+        // missing field as null — so exactly ONE phone-less account can exist
+        // and every Google sign-up after it collides on `{ phone: null }`.
+        throw new InternalServerErrorException(
+          'Google sign-up is unavailable until the users.phone index is rebuilt ' +
+            'as sparse — run scripts/migrate-google-auth.ts',
+        );
+      }
+      throw new ConflictException('Account already exists');
     }
 
     // Same fire-and-forget contract as register(): a loyalty hiccup must not

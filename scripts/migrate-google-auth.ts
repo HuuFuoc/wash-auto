@@ -16,7 +16,9 @@
  *
  * Guarantees:
  *   - Idempotent. Re-running when the index is already sparse is a no-op.
- *   - Non-destructive. Only index metadata changes; no document is touched.
+ *   - Only `phone` is touched, and only where it is explicitly `null` — that
+ *     key is REMOVED (null and "absent" mean the same thing here, and sparse
+ *     indexes skip only the absent form). No other field is modified.
  *   - Safe to run before deploying the new code (the old code never wrote a
  *     phone-less user, so a sparse index behaves identically for it).
  *
@@ -65,19 +67,31 @@ async function main(): Promise<void> {
   } else if (phoneIndex.sparse === true && phoneIndex.unique === true) {
     console.log(`${PHONE_INDEX} is already unique + sparse — nothing to do.`);
   } else {
-    // Documents that would break the unique constraint on the way back in. A
-    // pre-existing duplicate cannot exist (the old index forbade it), but a
-    // dropIndex followed by a failed createIndex would leave the collection with
-    // NO uniqueness at all, so check before touching anything.
-    const nulls = await users.countDocuments({
-      $or: [{ phone: null }, { phone: { $exists: false } }],
+    // A sparse index skips documents where the field is MISSING, but still
+    // indexes one that is present and explicitly null — so two `phone: null`
+    // rows would collide again even after the rebuild, and the dropIndex would
+    // have left the collection with no uniqueness in between.
+    //
+    // `{ phone: null }` is NOT the query for this: in MongoDB that also matches
+    // documents with no `phone` field at all, which are exactly the ones sparse
+    // handles correctly. `$type: 'null'` matches only a present-and-null field.
+    const explicitNulls = await users.countDocuments({
+      phone: { $type: 'null' },
     });
-    if (nulls > 1) {
-      throw new Error(
-        `${nulls} users have a null/missing phone — the sparse index only skips ` +
-          `MISSING fields, so unset the explicit nulls first: ` +
-          `db.users.updateMany({ phone: null }, { $unset: { phone: "" } })`,
+    if (explicitNulls > 0) {
+      // Unset rather than refuse: `phone: null` and "no phone key" mean the same
+      // thing to this app, and leaving the nulls in place is what would break
+      // the very constraint we are rebuilding.
+      console.log(
+        `Unsetting ${explicitNulls} explicit \`phone: null\` value(s) — sparse ` +
+          `indexes skip MISSING fields, not null ones.`,
       );
+      if (!dryRun) {
+        await users.updateMany(
+          { phone: { $type: 'null' } },
+          { $unset: { phone: '' } },
+        );
+      }
     }
 
     console.log(
