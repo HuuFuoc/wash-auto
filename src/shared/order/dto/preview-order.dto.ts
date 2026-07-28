@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '../../../common/swagger-shim';
 import { Type } from 'class-transformer';
 import { IsDate, IsMongoId, IsOptional } from 'class-validator';
+import { VoucherReasonCodeEnum } from '../../pricing/types/voucher-reason-code.enum';
 
 /**
  * Body of `POST /me/orders/preview`. Customer asks the server what the
@@ -114,10 +115,60 @@ export class PreviewOrderResponseDto {
   voucherDiscountCapVnd?: number;
 
   @ApiPropertyOptional({
-    example: 'Voucher is expired',
+    example: 'Voucher đã hết hạn',
     description:
-      'Set when the supplied voucherId was rejected (expired, not owned, ' +
-      'already used). Discount fields ignore the voucher in that case.',
+      'DEPRECATED — mirrors `invalidReasonMessage`. Set when the supplied ' +
+      'voucherId was rejected. Kept so existing clients keep working; new ' +
+      'clients should branch on `invalidReasonCode`.',
   })
   voucherError?: string;
+
+  // ─── breakdown (added with the campaign engine) ────────────────────────────
+
+  @ApiProperty({
+    example: 150000,
+    description:
+      'Portion of the order the voucher may touch. Equals originalAmount when ' +
+      "the voucher applies, 0 when the campaign's whitelist excludes it.",
+  })
+  eligibleAmountVnd: number;
+
+  @ApiProperty({
+    example: 15000,
+    description: 'Golden-hour component of the discount, in VND.',
+  })
+  promotionDiscountVnd: number;
+
+  @ApiProperty({
+    example: 7500,
+    description: 'Loyalty-tier component of the discount, in VND.',
+  })
+  tierDiscountVnd: number;
+
+  @ApiProperty({
+    example: 50000,
+    description: 'Voucher component of the discount, in VND.',
+  })
+  voucherDiscountVnd: number;
+
+  @ApiProperty({
+    example: true,
+    description:
+      'False when a voucher was supplied but refused. True when it applied, ' +
+      'and also when no voucher was supplied.',
+  })
+  voucherAccepted: boolean;
+
+  @ApiPropertyOptional({
+    enum: VoucherReasonCodeEnum,
+    example: VoucherReasonCodeEnum.ORDER_BELOW_MINIMUM,
+    description: 'Stable refusal code. Branch on this, never on the message.',
+  })
+  invalidReasonCode?: VoucherReasonCodeEnum;
+
+  @ApiPropertyOptional({
+    example: 'Đơn tối thiểu 150.000đ để dùng voucher này',
+    description: 'Vietnamese copy for invalidReasonCode. Display only.',
+  })
+  invalidReasonMessage?: string;
 }

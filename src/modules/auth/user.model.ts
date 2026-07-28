@@ -4,9 +4,20 @@ import { HydratedDocument, Schema, Types, model } from 'mongoose';
 export interface User {
   role_id: Types.ObjectId;
   name: string;
-  phone: string;
+  /**
+   * Absent on accounts created through Google Sign-In — Google never gives us a
+   * phone number. The SPA is expected to collect it (PATCH /me/profile) before
+   * the first booking; nothing in auth needs it.
+   */
+  phone?: string;
   email: string;
-  password_hash: string;
+  /**
+   * Absent on Google-only accounts. `login()` treats a missing hash as "wrong
+   * credentials"; POST /auth/forgot-password is the supported way to add one.
+   */
+  password_hash?: string;
+  /** Google's `sub` claim — the stable account id. Survives an email change. */
+  google_id?: string;
   avatar_url?: string;
   date_of_birth?: Date;
   is_active: boolean;
@@ -26,13 +37,13 @@ const userSchema = new Schema<User>(
       index: true,
     },
     name: { type: String, required: true, trim: true },
-    phone: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-      index: true,
-    },
+    // `sparse` is load-bearing, not decoration: a plain unique index stores a
+    // missing field as null, so the SECOND phone-less (Google) account would
+    // collide with the first on `phone: null`. Existing deployments must run
+    // scripts/migrate-google-auth.ts once — Mongo cannot change an index's
+    // options in place, so the old non-sparse `phone_1` has to be dropped and
+    // rebuilt.
+    phone: { type: String, unique: true, sparse: true, trim: true },
     email: {
       type: String,
       required: true,
@@ -41,7 +52,8 @@ const userSchema = new Schema<User>(
       trim: true,
       index: true,
     },
-    password_hash: { type: String, required: true },
+    password_hash: { type: String },
+    google_id: { type: String, unique: true, sparse: true },
     avatar_url: { type: String },
     date_of_birth: { type: Date },
     is_active: { type: Boolean, default: true },

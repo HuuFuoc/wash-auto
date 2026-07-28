@@ -8,6 +8,12 @@ import { PaymentStatusEnum } from '../../shared/order/types/payment-status.enum'
 import { OrderDocument, OrderModel } from './order.model';
 
 export interface ICreateOrderInput {
+  /**
+   * Pre-allocated order id. The caller mints it BEFORE creating the order so
+   * side effects that must reference the order (redeeming a voucher) can point
+   * at the real id instead of a throwaway one.
+   */
+  id?: Types.ObjectId;
   customerId: Types.ObjectId;
   vehicleId: Types.ObjectId;
   serviceTypeId: Types.ObjectId;
@@ -63,6 +69,7 @@ type Query = {
 export class OrderRepository {
   async create(input: ICreateOrderInput): Promise<OrderDocument> {
     return OrderModel.create({
+      ...(input.id ? { _id: input.id } : {}),
       customer_id: input.customerId,
       vehicle_id: input.vehicleId,
       service_type_id: input.serviceTypeId,
@@ -189,13 +196,20 @@ export class OrderRepository {
 
   /**
    * Returns up to 100 CONFIRMED cash orders whose scheduled time has passed
-   * the grace window without payment. These will be flipped to NO_SHOW.
+   * the grace window without the customer turning up. These will be flipped to
+   * NO_SHOW.
+   *
+   * NO_PAYMENT_REQUIRED is swept alongside UNPAID: a fully-discounted booking
+   * still holds a shift slot, so a customer who never arrives is just as much a
+   * no-show as one who owed money.
    */
   async findUnconfirmedCashPastDue(cutoff: Date): Promise<OrderDocument[]> {
     return OrderModel.find({
       status: OrderStatusEnum.CONFIRMED,
       payment_method: PaymentMethodEnum.CASH,
-      payment_status: PaymentStatusEnum.UNPAID,
+      payment_status: {
+        $in: [PaymentStatusEnum.UNPAID, PaymentStatusEnum.NO_PAYMENT_REQUIRED],
+      },
       scheduled_at: { $lt: cutoff },
     })
       .limit(100)

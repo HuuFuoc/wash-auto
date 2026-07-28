@@ -11,5 +11,43 @@
       "src": "/(.*)",
       "dest": "src/serverless.express.ts"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/internal/jobs/voucher-reservation-sweep",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/internal/jobs/order-expiry",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/internal/jobs/cash-no-show",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/internal/jobs/campaign-lifecycle",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/internal/jobs/voucher-expiry",
+      "schedule": "0 19 * * *"
+    },
+    {
+      "path": "/api/internal/jobs/campaign-reconcile",
+      "schedule": "30 19 * * *"
+    },
+    {
+      "path": "/api/internal/jobs/voucher-expiry-reminder",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/internal/jobs/loyalty-reset-warning",
+      "schedule": "0 2 1 12 *"
+    },
+    {
+      "path": "/api/internal/jobs/loyalty-annual-reset",
+      "schedule": "0 17 31 12 *"
+    }
   ]
 }

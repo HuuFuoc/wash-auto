@@ -12,6 +12,7 @@ import { registerOrderCron } from './modules/order/order.router';
 import { seedPricingPolicyDefaults } from './modules/pricing-policy/pricing-policy.router';
 import { seedTierConfigDefaults } from './modules/tier-config/tier-config.router';
 import { registerVoucherCron } from './modules/voucher/voucher.router';
+import { registerVoucherCampaignCron } from './modules/voucher-campaign/voucher-campaign.router';
 import { registerWorkOrderCron } from './modules/work-order/work-order.router';
 
 // Local dev workaround for Vietnamese ISPs that block Mongo Atlas DNS — kept
@@ -31,8 +32,15 @@ async function seedDefaults(): Promise<void> {
 }
 
 // Replaces @nestjs/schedule @Cron jobs (voucher expiry, loyalty annual reset).
+//
+// LOCAL DEVELOPMENT ONLY. serverless.express.ts deliberately does not call this:
+// on Vercel the instance freezes between requests, so node-cron never fires.
+// Production drives the identical jobs over HTTP through Vercel Cron — see
+// vercel.json and modules/jobs/jobs.router.ts. Every job is idempotent, so a
+// deployment running both schedules is harmless.
 function registerCrons(): void {
   registerVoucherCron();
+  registerVoucherCampaignCron();
   registerLoyaltyCron();
   registerOrderCron();
   registerWorkOrderCron();

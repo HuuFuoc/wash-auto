@@ -3,11 +3,14 @@ import { Transform, Type } from 'class-transformer';
 import {
   IsDate,
   IsInt,
+  IsMongoId,
   IsOptional,
   IsString,
   Matches,
   Max,
+  MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
 
 /**
@@ -31,8 +34,8 @@ export class BulkCreateVoucherDto {
   @ApiPropertyOptional({
     example: 'TET2026',
     description:
-      'Code prefix (1-15 chars A-Z/0-9). Codes become PREFIX-YYYYMMDD-NNNN. ' +
-      'Defaults to WASH.',
+      'Code prefix (1-15 chars A-Z/0-9). Codes become PREFIX-XXXXXXXXXX where ' +
+      'the suffix is random, not sequential. Defaults to WASH.',
   })
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>
@@ -66,4 +69,30 @@ export class BulkCreateVoucherDto {
   @Type(() => Date)
   @IsDate()
   expiresAt?: Date;
+
+  @ApiPropertyOptional({
+    example: '6601e3b3f1a2c3a4b5d6e7f8',
+    description:
+      'Campaign these vouchers belong to. Its rules (eligibility, stacking, ' +
+      'minimum order, expiry) govern every voucher in the batch, and its ' +
+      'maxUsesTotal is enforced before minting. Omit only for legacy batches ' +
+      'with no campaign.',
+  })
+  @IsOptional()
+  @IsMongoId()
+  campaignId?: string;
+
+  @ApiPropertyOptional({
+    example: 'Chiến dịch Tết 2026',
+    minLength: 5,
+    maxLength: 500,
+    description:
+      'Why this batch exists. Stored on every voucher in it so grant history ' +
+      'is auditable. Omit to fall back to "Lô phát hành <PREFIX>".',
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(5)
+  @MaxLength(500)
+  reason?: string;
 }

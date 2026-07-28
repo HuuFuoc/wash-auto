@@ -2,6 +2,7 @@ import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { NotificationTypeEnum } from '../../shared/notification/types/notification-type.enum';
 import { NotificationResponseDto } from '../../shared/notification/dto/notification-response.dto';
 import { RealtimeEvent, emitToUser } from '../../core/realtime';
+import { redisClient } from '../../core/redis';
 import { RoleRepository } from '../auth/role.repository';
 import { UserRepository } from '../auth/user.repository';
 import { NotificationRepository } from './notification.repository';
@@ -12,6 +13,9 @@ interface NotifyInput {
   body: string;
   data?: Record<string, unknown>;
 }
+
+/** Long enough that a yearly reminder cannot fire twice in the same season. */
+const DEFAULT_DEDUPE_TTL_SECONDS = 60 * 60 * 24 * 90;
 
 export class NotificationService {
   constructor(
@@ -38,6 +42,37 @@ export class NotificationService {
         }`,
       );
     }
+  }
+
+  /**
+   * Như `notifyUser`, nhưng chỉ gửi MỘT LẦN cho mỗi `dedupeKey`.
+   *
+   * Các job định kỳ (nhắc voucher sắp hết hạn, cảnh báo reset hạng) chạy lại
+   * nhiều lần theo thiết kế — idempotent là yêu cầu bắt buộc. Khoá đặt trong
+   * Redis bằng SETNX với TTL, cùng cơ chế mà webhook PayOS và idempotency
+   * middleware đang dùng.
+   *
+   * Redis lỗi → vẫn gửi. Trùng một thông báo còn hơn im lặng.
+   */
+  async notifyUserOnce(
+    userId: string,
+    dedupeKey: string,
+    input: NotifyInput,
+    ttlSeconds = DEFAULT_DEDUPE_TTL_SECONDS,
+  ): Promise<boolean> {
+    const key = `notif:once:${userId}:${dedupeKey}`;
+    try {
+      const claimed = await redisClient.set(key, '1', 'EX', ttlSeconds, 'NX');
+      if (claimed === null) return false;
+    } catch (err) {
+      console.warn(
+        `notification dedupe check failed key=${key}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+    await this.notifyUser(userId, input);
+    return true;
   }
 
   /** Thông báo cho mọi người dùng đang hoạt động thuộc các vai trò đã cho. */

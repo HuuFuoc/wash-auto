@@ -2,7 +2,20 @@ import { Types } from 'mongoose';
 import { TierNameEnum } from '../../shared/tier-config/types/tier-name.enum';
 import { TierConfigDocument, TierConfigModel } from './tier-config.model';
 
-export interface IUpsertTierInput {
+/** Voucher-economics knobs, shared by the seed and the admin update paths. */
+export interface ITierVoucherEconomics {
+  washesPerRewardVoucher: number;
+  voucherRewardRatePercent: number;
+  voucherRewardMultiplier: number;
+  voucherRewardFloorVnd: number;
+  voucherRewardCeilVnd: number;
+  minimumValidWashVnd: number;
+  voucherExpiryDays: number;
+  birthdayVoucherVnd: number;
+  exclusiveCampaignAccess: boolean;
+}
+
+export interface IUpsertTierInput extends ITierVoucherEconomics {
   tierName: TierNameEnum;
   minLoyaltyPoints: number;
   bookingWindowDays: number;
@@ -11,13 +24,25 @@ export interface IUpsertTierInput {
   discountPercent: number;
 }
 
-export interface IUpdateTierInput {
-  minLoyaltyPoints?: number;
-  bookingWindowDays?: number;
-  priorityLevel?: number;
-  pointsPer1000Vnd?: number;
-  discountPercent?: number;
-}
+export type IUpdateTierInput = Partial<Omit<IUpsertTierInput, 'tierName'>>;
+
+/** camelCase input key → snake_case column. Drives the partial update. */
+const COLUMN_BY_FIELD: Record<keyof IUpdateTierInput, string> = {
+  minLoyaltyPoints: 'min_loyalty_points',
+  bookingWindowDays: 'booking_window_days',
+  priorityLevel: 'priority_level',
+  pointsPer1000Vnd: 'points_per_1000_vnd',
+  discountPercent: 'discount_percent',
+  washesPerRewardVoucher: 'washes_per_reward_voucher',
+  voucherRewardRatePercent: 'voucher_reward_rate_percent',
+  voucherRewardMultiplier: 'voucher_reward_multiplier',
+  voucherRewardFloorVnd: 'voucher_reward_floor_vnd',
+  voucherRewardCeilVnd: 'voucher_reward_ceil_vnd',
+  minimumValidWashVnd: 'minimum_valid_wash_vnd',
+  voucherExpiryDays: 'voucher_expiry_days',
+  birthdayVoucherVnd: 'birthday_voucher_vnd',
+  exclusiveCampaignAccess: 'exclusive_campaign_access',
+};
 
 export class TierConfigRepository {
   async findActive(): Promise<TierConfigDocument[]> {
@@ -45,6 +70,8 @@ export class TierConfigRepository {
     const doc = await TierConfigModel.findOneAndUpdate(
       { tier_name: input.tierName },
       {
+        // $setOnInsert, never $set: an existing tier row belongs to whoever
+        // configured it, and seeding must not overwrite their settings.
         $setOnInsert: {
           tier_name: input.tierName,
           min_loyalty_points: input.minLoyaltyPoints,
@@ -52,6 +79,15 @@ export class TierConfigRepository {
           priority_level: input.priorityLevel,
           points_per_1000_vnd: input.pointsPer1000Vnd,
           discount_percent: input.discountPercent,
+          washes_per_reward_voucher: input.washesPerRewardVoucher,
+          voucher_reward_rate_percent: input.voucherRewardRatePercent,
+          voucher_reward_multiplier: input.voucherRewardMultiplier,
+          voucher_reward_floor_vnd: input.voucherRewardFloorVnd,
+          voucher_reward_ceil_vnd: input.voucherRewardCeilVnd,
+          minimum_valid_wash_vnd: input.minimumValidWashVnd,
+          voucher_expiry_days: input.voucherExpiryDays,
+          birthday_voucher_vnd: input.birthdayVoucherVnd,
+          exclusive_campaign_access: input.exclusiveCampaignAccess,
           is_active: true,
         },
       },
@@ -86,16 +122,10 @@ export class TierConfigRepository {
     input: IUpdateTierInput,
   ): Promise<TierConfigDocument | null> {
     const update: Record<string, unknown> = {};
-    if (input.minLoyaltyPoints !== undefined)
-      update.min_loyalty_points = input.minLoyaltyPoints;
-    if (input.bookingWindowDays !== undefined)
-      update.booking_window_days = input.bookingWindowDays;
-    if (input.priorityLevel !== undefined)
-      update.priority_level = input.priorityLevel;
-    if (input.pointsPer1000Vnd !== undefined)
-      update.points_per_1000_vnd = input.pointsPer1000Vnd;
-    if (input.discountPercent !== undefined)
-      update.discount_percent = input.discountPercent;
+    for (const [field, column] of Object.entries(COLUMN_BY_FIELD)) {
+      const value = input[field as keyof IUpdateTierInput];
+      if (value !== undefined) update[column] = value;
+    }
 
     return TierConfigModel.findByIdAndUpdate(
       id,

@@ -58,6 +58,10 @@ import { VehicleService } from '../vehicle/vehicle.service';
 import { VoucherService } from '../voucher/voucher.service';
 import { FeedbackRepository } from '../feedback/feedback.repository';
 import { WorkOrderRepository } from '../work-order/work-order.repository';
+import {
+  DiscountCalculationService,
+  IPricingResult,
+} from '../pricing/discount-calculation.service';
 import { OrderDocument } from './order.model';
 import { IOrderListFilter, OrderRepository } from './order.repository';
 import { PaymentTransactionRepository } from './payment-transaction.repository';
@@ -76,6 +80,42 @@ function stackedDiscountPercent(
   capPercent: number,
 ): number {
   return Math.min(windowDiscountPercent + tierDiscountPercent, capPercent);
+}
+
+/**
+ * Projects the engine's breakdown onto the preview response.
+ *
+ * The legacy field names (`originalAmount`, `discountAmount`, `voucherError`)
+ * are preserved so existing clients keep working; the VND-level breakdown and
+ * the stable reason code are additive. `estimatedMinutes` is filled in by the
+ * caller, which is the only figure the pricing engine has no opinion about.
+ */
+function toPreviewResponse(
+  pricing: IPricingResult,
+  tier: TierConfigDocument,
+): Omit<PreviewOrderResponseDto, 'estimatedMinutes'> {
+  return {
+    originalAmount: pricing.subtotalVnd,
+    discountAmount: pricing.totalDiscountVnd,
+    discountPercent:
+      pricing.subtotalVnd > 0
+        ? Math.round((pricing.totalDiscountVnd / pricing.subtotalVnd) * 100)
+        : 0,
+    discountReason: pricing.discountReason,
+    amount: pricing.finalTotalVnd,
+    isGoldenHour: pricing.isGoldenHour,
+    tierName: tier.tier_name,
+    tierDiscountPercent: tier.discount_percent,
+    voucherDiscountCapVnd: pricing.voucherDiscountCapVnd,
+    voucherError: pricing.invalidReasonMessage,
+    eligibleAmountVnd: pricing.eligibleAmountVnd,
+    promotionDiscountVnd: pricing.promotionDiscountVnd,
+    tierDiscountVnd: pricing.tierDiscountVnd,
+    voucherDiscountVnd: pricing.voucherDiscountVnd,
+    voucherAccepted: pricing.voucherAccepted,
+    invalidReasonCode: pricing.invalidReasonCode,
+    invalidReasonMessage: pricing.invalidReasonMessage,
+  };
 }
 
 /** First instant of a YYYY-MM-DD calendar day, in UTC. */
@@ -248,7 +288,39 @@ export class OrderService {
     private readonly pricingPolicyService: PricingPolicyService,
     private readonly workOrderRepository: WorkOrderRepository,
     private readonly feedbackRepository: FeedbackRepository,
+    private readonly discountCalculation: DiscountCalculationService,
   ) {}
+
+  /**
+   * Runs the shared pricing engine for one (service, vehicle, time, voucher)
+   * tuple. Preview and order creation both come through here, so the number the
+   * customer is shown is produced by the same code that prices the booking.
+   */
+  private async priceOrder(args: {
+    customerId: string;
+    tier: TierConfigDocument;
+    service: ServiceTypeDocument;
+    vehicleTypeId: string;
+    scheduledAt: Date;
+    subtotalVnd: number;
+    voucherId?: string;
+  }): Promise<IPricingResult> {
+    const window = await this.goldenHourService.findActiveAt(args.scheduledAt);
+    const maxStackedPercent =
+      await this.pricingPolicyService.getMaxStackedDiscountPercent();
+
+    return this.discountCalculation.calculate({
+      customerId: args.customerId,
+      tier: args.tier,
+      serviceTypeId: args.service._id,
+      vehicleTypeId: args.vehicleTypeId,
+      serviceAcceptsVouchers: args.service.is_voucher_eligible,
+      subtotalVnd: args.subtotalVnd,
+      windowDiscountPercent: window?.discount_percent ?? 0,
+      maxStackedPercent,
+      voucherId: args.voucherId,
+    });
+  }
 
   /**
    * Resolves the active price + duration for a (service, vehicle type) pair from
@@ -378,70 +450,80 @@ export class OrderService {
       createdVehicleId = vehicleObjId;
     }
 
-    const originalAmount = cell.price;
-    const pricing = await this.computeOrderPricing(
-      dto.scheduledAt,
+    // Same engine as the preview, so the customer is charged what they were
+    // quoted. A refused voucher is reported here rather than silently ignored.
+    const pricing = await this.priceOrder({
+      customerId,
       tier,
-      originalAmount,
-    );
+      service,
+      vehicleTypeId,
+      scheduledAt: dto.scheduledAt,
+      subtotalVnd: cell.price,
+      voucherId: dto.voucherId,
+    });
+    if (dto.voucherId && !pricing.voucherAccepted) {
+      throw new BadRequestException(
+        pricing.invalidReasonMessage ?? 'Voucher không dùng được cho đơn này',
+      );
+    }
 
-    let voucherDoc: Awaited<
-      ReturnType<VoucherService['consumeFreeWashForOrder']>
-    > | null = null;
-    let amount = pricing.amount;
-    let discountAmount = pricing.discountAmount;
-    let discountPercent = pricing.discountPercent;
-    let discountReason: string | undefined = pricing.discountReason;
+    const originalAmount = pricing.subtotalVnd;
+    const amount = pricing.finalTotalVnd;
+    const discountAmount = pricing.totalDiscountVnd;
+    const discountPercent =
+      originalAmount > 0
+        ? Math.round((discountAmount / originalAmount) * 100)
+        : 0;
+    const discountReason = pricing.discountReason;
+
+    let voucherReserved = false;
     let voucherIdObj: Types.ObjectId | undefined;
-    const isOnline = dto.paymentMethod === PaymentMethodEnum.ONLINE;
-    const initialStatus = isOnline
-      ? OrderStatusEnum.PENDING_PAYMENT
-      : OrderStatusEnum.CONFIRMED;
-    const initialPaymentStatus = PaymentStatusEnum.UNPAID;
+    // Minted up front so the voucher can be reserved against the REAL order id.
+    // The previous code passed a throwaway ObjectId here, which left every
+    // redeemed voucher pointing at an order that does not exist.
+    const orderId = new Types.ObjectId();
 
     let order: OrderDocument;
     try {
       if (dto.voucherId) {
-        if (!service.is_voucher_eligible) {
-          throw new BadRequestException(
-            `Service "${service.name}" does not accept vouchers`,
-          );
-        }
-
-        const tmpOrderId = new Types.ObjectId();
-        voucherDoc = await this.voucherService.consumeFreeWashForOrder(
-          dto.voucherId,
+        // Eligibility was checked above without a lock; this reservation is the
+        // atomic compare-and-set that actually takes the voucher, so one seized
+        // by a concurrent order fails here rather than being double-spent.
+        //
+        // The hold outlives the payment window by a minute so the sweep can
+        // never race the gateway callback for the same order.
+        const reserved = await this.voucherService.reserveForOrder({
+          voucherId: dto.voucherId,
           customerId,
-          tmpOrderId,
-        );
-        voucherIdObj = voucherDoc._id;
-
-        const remaining = Math.max(0, originalAmount - discountAmount);
-        const voucherDiscount = Math.min(
-          remaining,
-          voucherDoc.discount_cap_vnd,
-        );
-        discountAmount = discountAmount + voucherDiscount;
-        amount = Math.max(0, originalAmount - discountAmount);
-        discountPercent =
-          originalAmount > 0
-            ? Math.round((discountAmount / originalAmount) * 100)
-            : 0;
-        discountReason = discountReason
-          ? `${discountReason}+voucher:${voucherDoc.code}`
-          : `voucher:${voucherDoc.code}`;
-
-        if (isOnline && amount === 0) {
-          throw new BadRequestException(
-            'Order total is 0 VND after discounts - please pay in cash at the counter',
-          );
-        }
+          orderId,
+          reservedUntil: new Date(
+            Date.now() + (config.booking.paymentTimeoutMinutes + 1) * 60_000,
+          ),
+          breakdown: pricing,
+        });
+        voucherReserved = true;
+        voucherIdObj = reserved._id;
       }
+
+      // Discounts covering the full price settle the order outright: there is
+      // nothing for a gateway to charge and nothing for a cashier to collect,
+      // whichever method the customer picked. It skips PENDING_PAYMENT entirely
+      // rather than being bounced to the counter as it was before.
+      const isFullyDiscounted = amount === 0;
+      const isOnline =
+        dto.paymentMethod === PaymentMethodEnum.ONLINE && !isFullyDiscounted;
+      const initialStatus = isOnline
+        ? OrderStatusEnum.PENDING_PAYMENT
+        : OrderStatusEnum.CONFIRMED;
+      const initialPaymentStatus = isFullyDiscounted
+        ? PaymentStatusEnum.NO_PAYMENT_REQUIRED
+        : PaymentStatusEnum.UNPAID;
 
       const payosOrderCode = isOnline
         ? await this.generateOrderCode()
         : undefined;
       order = await this.orderRepository.create({
+        id: orderId,
         customerId: new Types.ObjectId(customerId),
         vehicleId: vehicleObjId,
         serviceTypeId: new Types.ObjectId(dto.serviceTypeId),
@@ -465,13 +547,27 @@ export class OrderService {
       if (createdVehicleId) {
         await this.rollbackInlineVehicle(createdVehicleId);
       }
-      if (voucherDoc) {
-        await this.voucherService.refund(voucherDoc._id);
+      if (voucherReserved) {
+        await this.voucherService.releaseForOrder(orderId);
       }
       throw err;
     }
 
-    if (isOnline && order.payos_order_code) {
+    // An order that is CONFIRMED the moment it is created (cash bookings, and
+    // orders the discounts settled outright) has nothing left to wait for, so
+    // the hold is settled immediately. Online orders keep theirs until the
+    // PayOS webhook says the money arrived.
+    if (voucherReserved && order.status === OrderStatusEnum.CONFIRMED) {
+      await this.voucherService.redeemForOrder(orderId);
+    }
+
+    // Derived from what was actually persisted rather than from the request:
+    // a fully-discounted "online" order is already CONFIRMED and carries no
+    // payos_order_code, so it correctly skips the gateway entirely.
+    if (
+      order.status === OrderStatusEnum.PENDING_PAYMENT &&
+      order.payos_order_code
+    ) {
       const returnUrl = config.payos.returnUrl;
       const cancelUrl = config.payos.cancelUrl;
       const description = `Rua xe ${order.payos_order_code}`;
@@ -502,12 +598,16 @@ export class OrderService {
       }
     }
 
-    if (dto.paymentMethod === PaymentMethodEnum.CASH) {
+    // Anything already CONFIRMED is a done deal (cash bookings, and orders the
+    // discounts settled outright) — confirm it by email now. Orders still
+    // waiting on PayOS get their email from the webhook instead.
+    if (order.status === OrderStatusEnum.CONFIRMED) {
       await this.sendConfirmationEmailSafe(order);
     }
 
     console.log(
-      `Order created customerId=${customerId} orderId=${order._id.toString()} method=${dto.paymentMethod}`,
+      `Order created customerId=${customerId} orderId=${order._id.toString()} ` +
+        `method=${dto.paymentMethod} amount=${order.amount} payment=${order.payment_status}`,
     );
     const result = OrderResponseDto.fromDocument(order);
     emitToOps(RealtimeEvent.ORDER_CREATED, result);
@@ -612,58 +712,19 @@ export class OrderService {
     }
 
     const cell = this.resolvePricingCell(service, dto.vehicleTypeId);
-    const originalAmount = cell.price;
-    const pricing = await this.computeOrderPricing(
-      dto.scheduledAt,
+    const pricing = await this.priceOrder({
+      customerId,
       tier,
-      originalAmount,
-    );
-
-    let discountAmount = pricing.discountAmount;
-    let discountReason = pricing.discountReason;
-    let voucherDiscountCapVnd: number | undefined;
-    let voucherError: string | undefined;
-
-    if (dto.voucherId) {
-      const voucher = await this.voucherService.findRedeemableForCustomer(
-        dto.voucherId,
-        customerId,
-      );
-      if (!voucher) {
-        voucherError = 'Voucher not found, not owned, expired, or already used';
-      } else if (!service.is_voucher_eligible) {
-        voucherDiscountCapVnd = voucher.discount_cap_vnd;
-        voucherError = `Service "${service.name}" does not accept vouchers`;
-      } else {
-        voucherDiscountCapVnd = voucher.discount_cap_vnd;
-        const remaining = Math.max(0, originalAmount - discountAmount);
-        const voucherDiscount = Math.min(remaining, voucher.discount_cap_vnd);
-        discountAmount += voucherDiscount;
-        discountReason = discountReason
-          ? `${discountReason}+voucher:${voucher.code}`
-          : `voucher:${voucher.code}`;
-      }
-    }
-
-    const amount = Math.max(0, originalAmount - discountAmount);
-    const discountPercent =
-      originalAmount > 0
-        ? Math.round((discountAmount / originalAmount) * 100)
-        : 0;
-    const isGoldenHour = !!pricing.discountReason;
+      service,
+      vehicleTypeId: dto.vehicleTypeId,
+      scheduledAt: dto.scheduledAt,
+      subtotalVnd: cell.price,
+      voucherId: dto.voucherId,
+    });
 
     return {
-      originalAmount,
+      ...toPreviewResponse(pricing, tier),
       estimatedMinutes: cell.estimatedMinutes,
-      discountAmount,
-      discountPercent,
-      discountReason,
-      amount,
-      isGoldenHour,
-      tierName: tier.tier_name,
-      tierDiscountPercent: tier.discount_percent,
-      voucherDiscountCapVnd,
-      voucherError,
     };
   }
 
@@ -989,6 +1050,10 @@ export class OrderService {
             paymentStatus: PaymentStatusEnum.PAID,
           });
           if (updated) {
+            // Money is in — only now is the voucher actually spent. The hold
+            // has protected it for the whole time the customer spent at the
+            // gateway, which is what the old burn-at-booking flow could not do.
+            await this.redeemVoucherIfPresent(updated);
             await this.sendConfirmationEmailSafe(updated);
             emitOrderStatus(updated);
           }
@@ -1212,6 +1277,7 @@ export class OrderService {
         updated._id,
         updated.amount,
         service?.is_voucher_eligible ?? false,
+        updated.discount_amount,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1231,6 +1297,11 @@ export class OrderService {
     if (order.payment_method !== PaymentMethodEnum.CASH) {
       throw new BadRequestException(
         'Only cash orders can be marked paid manually',
+      );
+    }
+    if (order.payment_status === PaymentStatusEnum.NO_PAYMENT_REQUIRED) {
+      throw new BadRequestException(
+        'Đơn này đã được giảm hết, không có tiền để thu.',
       );
     }
     if (order.payment_status === PaymentStatusEnum.PAID) {
@@ -1369,45 +1440,6 @@ export class OrderService {
     }
   }
 
-  /**
-   * Resolves the booking-time price. Golden hour is the gate: only a scheduledAt
-   * inside an active window earns a discount (window discount stacked on tier
-   * discount, clamped to the pricing-policy cap).
-   */
-  private async computeOrderPricing(
-    scheduledAt: Date,
-    tier: TierConfigDocument,
-    originalAmount: number,
-  ): Promise<{
-    amount: number;
-    discountAmount: number;
-    discountPercent: number;
-    discountReason?: string;
-  }> {
-    const window = await this.goldenHourService.findActiveAt(scheduledAt);
-    if (!window) {
-      return { amount: originalAmount, discountAmount: 0, discountPercent: 0 };
-    }
-    const capPercent =
-      await this.pricingPolicyService.getMaxStackedDiscountPercent();
-    const discountPercent = stackedDiscountPercent(
-      window.discount_percent ?? 0,
-      tier.discount_percent,
-      capPercent,
-    );
-    if (discountPercent <= 0) {
-      return { amount: originalAmount, discountAmount: 0, discountPercent: 0 };
-    }
-    const discountAmount = Math.round((originalAmount * discountPercent) / 100);
-    const amount = Math.max(0, originalAmount - discountAmount);
-    return {
-      amount,
-      discountAmount,
-      discountPercent,
-      discountReason: `golden_hour:${window.name}+tier:${tier.tier_name}`,
-    };
-  }
-
   /** Wraps LoyaltyService.applyOrderNoShow with a logged catch. */
   private async applyNoShowLoyaltyHookSafe(
     order: OrderDocument,
@@ -1426,14 +1458,30 @@ export class OrderService {
   private async refundVoucherIfPresent(order: OrderDocument): Promise<void> {
     if (!order.voucher_id) return;
     try {
-      await this.voucherService.refund(order.voucher_id);
-      console.log(
-        `Refunded voucher voucherId=${order.voucher_id.toString()} orderId=${order._id.toString()}`,
-      );
+      // Handles both a hold that never settled and one that did: the redemption
+      // record knows which, and backs the campaign budget out when needed.
+      await this.voucherService.releaseForOrder(order._id);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error(
-        `Voucher refund failed orderId=${order._id.toString()} voucherId=${order.voucher_id.toString()} reason=${msg}`,
+        `Voucher release failed orderId=${order._id.toString()} voucherId=${order.voucher_id.toString()} reason=${msg}`,
+      );
+    }
+  }
+
+  /**
+   * Settles the voucher hold once money has actually arrived. Best-effort and
+   * logged: a failure here must not make the webhook look unprocessed, or PayOS
+   * would retry a payment we have already recorded.
+   */
+  private async redeemVoucherIfPresent(order: OrderDocument): Promise<void> {
+    if (!order.voucher_id) return;
+    try {
+      await this.voucherService.redeemForOrder(order._id);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `Voucher redeem failed orderId=${order._id.toString()} voucherId=${order.voucher_id.toString()} reason=${msg}`,
       );
     }
   }

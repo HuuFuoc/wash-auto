@@ -25,6 +25,14 @@ tags:
     description: Customer loyalty account + point transactions
   - name: vouchers
     description: Customer vouchers (self-view) + admin grant/revoke
+  - name: voucher-campaigns
+    description: >
+      Campaigns that own every voucher rule — eligibility (tier / service /
+      vehicle), benefit type, stacking policy, limits and validity window.
+  - name: jobs
+    description: >
+      Scheduled maintenance jobs, driven by Vercel Cron over HTTP because
+      node-cron cannot tick on serverless. Authorised by CRON_SECRET.
   - name: shifts
     description: Staff shifts (availability + admin scheduling)
   - name: orders
@@ -138,6 +146,18 @@ components:
       properties:
         email: { type: string, format: email, example: 'customer@example.com' }
         password: { type: string, maxLength: 72, example: 'P@ssw0rd123' }
+    GoogleLogin:
+      type: object
+      required: [idToken]
+      properties:
+        idToken:
+          type: string
+          maxLength: 4096
+          description: >-
+            The Google id_token (a JWT) the client received from Google Identity
+            Services. Not an access token - only the id_token carries the signed
+            identity claims the server verifies.
+          example: 'eyJhbGciOiJSUzI1NiIsImtpZCI6...'
     RefreshToken:
       type: object
       required: [refreshToken]
@@ -187,6 +207,22 @@ components:
       type: object
       properties:
         token: { type: string, description: 'JWT scope=email_verified, 15m TTL', example: 'eyJhbGciOi...' }
+    ForgotPassword:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email, maxLength: 255, example: 'customer@example.com' }
+    ResetPassword:
+      type: object
+      required: [email, code, newPassword]
+      properties:
+        email: { type: string, format: email, maxLength: 255, example: 'customer@example.com' }
+        code: { type: string, minLength: 6, maxLength: 6, description: 'Code mailed by POST /auth/forgot-password', example: '123456' }
+        newPassword: { type: string, minLength: 8, maxLength: 72, example: 'NewStrongP@ss123' }
+    MessageResponse:
+      type: object
+      properties:
+        message: { type: string, example: 'Password reset successfully' }
     ChangeMyPassword:
       type: object
       required: [oldPassword, newPassword]
@@ -248,6 +284,22 @@ components:
         priorityLevel: { type: integer, minimum: 0, example: 1 }
         pointsPer1000Vnd: { type: number, minimum: 0, example: 1.5 }
         discountPercent: { type: number, minimum: 0, maximum: 100, example: 5 }
+        washesPerRewardVoucher:
+          type: integer
+          minimum: 1
+          description: >
+            Lowering this never destroys accumulated progress: the milestone
+            check is `>=` and the threshold is subtracted on payout, so any
+            surplus carries into the next voucher.
+          example: 8
+        voucherRewardRatePercent: { type: number, minimum: 0, maximum: 100, example: 5 }
+        voucherRewardMultiplier: { type: number, minimum: 0.1, example: 1.5 }
+        voucherRewardFloorVnd: { type: integer, minimum: 0, description: 'Must not exceed voucherRewardCeilVnd', example: 30000 }
+        voucherRewardCeilVnd: { type: integer, minimum: 1, example: 150000 }
+        minimumValidWashVnd: { type: integer, minimum: 0, example: 40000 }
+        voucherExpiryDays: { type: integer, minimum: 1, example: 180 }
+        birthdayVoucherVnd: { type: integer, minimum: 0, example: 100000 }
+        exclusiveCampaignAccess: { type: boolean, example: true }
     SetTierConfigStatus:
       type: object
       required: [isActive]
@@ -264,6 +316,15 @@ components:
         pointsPer1000Vnd: { type: number, example: 1.5 }
         discountPercent: { type: number, example: 5 }
         isActive: { type: boolean, example: true }
+        washesPerRewardVoucher: { type: integer, description: 'Valid washes needed for a reward voucher', example: 8 }
+        voucherRewardRatePercent: { type: number, description: 'Percent of accumulated spend the reward is worth', example: 5 }
+        voucherRewardMultiplier: { type: number, description: 'Scales the reward. >1 rewards a higher tier more.', example: 1.5 }
+        voucherRewardFloorVnd: { type: integer, example: 30000 }
+        voucherRewardCeilVnd: { type: integer, example: 150000 }
+        minimumValidWashVnd: { type: integer, description: 'Orders below this do not count toward the milestone', example: 40000 }
+        voucherExpiryDays: { type: integer, example: 180 }
+        birthdayVoucherVnd: { type: integer, description: '0 = no birthday gift', example: 100000 }
+        exclusiveCampaignAccess: { type: boolean, example: true }
     PaginationMeta:
       type: object
       properties:
@@ -323,10 +384,30 @@ components:
         customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
         tierConfigId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
         tierName: { type: string, enum: [None, Bronze, Silver, Gold], example: None }
-        pointsBalance: { type: integer, example: 0 }
-        successfulWashesTowardVoucher: { type: integer, example: 3 }
+        pointsBalance: { type: integer, description: 'Tier-qualification points. Reset each year.', example: 320 }
+        successfulWashesTowardVoucher:
+          type: integer
+          description: >
+            Washes since the last reward voucher. NOT reset annually — progress
+            toward a voucher is independent of the calendar year.
+          example: 3
         totalSuccessfulWashes: { type: integer, example: 13 }
         lastAnnualResetAt: { type: string, format: date-time, example: '2026-01-01T00:00:00.000Z' }
+        currentTierRank: { type: integer, description: 'Rank of the current tier. Higher is better.', example: 2 }
+        nextTier: { type: string, enum: [None, Bronze, Silver, Gold], description: 'Absent at the top tier', example: Gold }
+        pointsToNextTier: { type: integer, description: 'Absent at the top tier', example: 180 }
+        progressPercent: { type: integer, description: 'Progress through the CURRENT tier band, 0-100', example: 64 }
+        washesRequiredForNextVoucher: { type: integer, example: 8 }
+        washesRemainingForNextVoucher: { type: integer, example: 5 }
+        estimatedNextVoucherVnd:
+          type: integer
+          description: >
+            Estimated value of the next reward voucher, from the same formula
+            that mints it. Server-computed — do not re-derive client-side.
+          example: 55000
+        lifetimePoints: { type: integer, description: 'Every point ever earned. Survives the annual reset.', example: 4320 }
+        lifetimeSpendVnd: { type: integer, example: 8600000 }
+        totalSavedVnd: { type: integer, description: 'Total VND discounts have saved this customer, all time', example: 340000 }
     LoyaltyTransactionResponse:
       type: object
       properties:
@@ -348,14 +429,140 @@ components:
           type: array
           items: { $ref: '#/components/schemas/LoyaltyTransactionResponse' }
         meta: { $ref: '#/components/schemas/PaginationMeta' }
+    VoucherCampaignRules:
+      type: object
+      description: Fields shared by the create and update campaign payloads.
+      properties:
+        name: { type: string, minLength: 3, maxLength: 120, description: 'Internal name. Unique.', example: 'tet-2026-winback' }
+        title: { type: string, minLength: 3, maxLength: 200, example: 'Giảm 50K mừng Tết 2026' }
+        description: { type: string, maxLength: 2000 }
+        terms: { type: string, maxLength: 4000 }
+        imageUrl: { type: string, format: uri }
+        themeColor: { type: string, description: 'Hex colour', example: '#E4572E' }
+        benefitType: { type: string, enum: [fixed_amount, percent_off, free_service] }
+        discountValue: { type: integer, description: 'VND for fixed_amount; percent 1-100 for percent_off; ignored by free_service.', example: 50000 }
+        discountCapVnd: { type: integer, minimum: 1, description: 'percent_off only. Omit = uncapped.', example: 100000 }
+        minOrderVnd: { type: integer, minimum: 0, default: 0, example: 150000 }
+        validFrom: { type: string, format: date-time }
+        validUntil: { type: string, format: date-time }
+        stackingPolicy:
+          type: string
+          enum: [none, with_tier, with_promotion, with_tier_and_promotion]
+          default: with_tier_and_promotion
+          description: >
+            Which other discounts survive alongside this voucher. Suppressing a
+            component can only lower the discount — it never turns one on, so a
+            campaign cannot reprice bookings outside a golden hour.
+        maxUsesTotal: { type: integer, minimum: 1, description: 'Omit = unlimited.' }
+        maxUsesPerCustomer: { type: integer, minimum: 1, default: 1 }
+        budgetVnd: { type: integer, minimum: 1, description: 'Omit = unbudgeted.' }
+        publicClaimCode: { type: string, pattern: '^[A-Z0-9]{3,20}$', description: 'Code customers type to claim from this pool. Unique across campaigns.', example: 'TET2026' }
+        allowedTierIds:
+          type: array
+          items: { type: string }
+          description: 'Tier config ids. EMPTY = every tier qualifies.'
+        applicableServiceTypeIds:
+          type: array
+          items: { type: string }
+          description: 'Service type ids. EMPTY = every service qualifies.'
+        applicableVehicleTypeIds:
+          type: array
+          items: { type: string }
+          description: 'Vehicle type ids. EMPTY = every vehicle qualifies.'
+    CreateVoucherCampaign:
+      allOf:
+        - $ref: '#/components/schemas/VoucherCampaignRules'
+        - type: object
+          required: [name, title, benefitType, validFrom, validUntil]
+          properties:
+            source: { type: string, enum: [loyalty_milestone, admin_grant, campaign, birthday, referral, winback, legacy], default: campaign }
+    UpdateVoucherCampaign:
+      allOf:
+        - $ref: '#/components/schemas/VoucherCampaignRules'
+      description: >
+        Every field optional. `status` is deliberately absent — lifecycle moves
+        through the activate/pause/end endpoints.
+    VoucherCampaignResponse:
+      allOf:
+        - $ref: '#/components/schemas/VoucherCampaignRules'
+        - type: object
+          properties:
+            id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+            status: { type: string, enum: [draft, scheduled, active, paused, ended] }
+            source: { type: string, enum: [loyalty_milestone, admin_grant, campaign, birthday, referral, winback, legacy] }
+            createdAt: { type: string, format: date-time }
+    VoucherCampaignListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/VoucherCampaignResponse' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    VoucherCampaignPublic:
+      type: object
+      description: >
+        Customer-safe campaign view. Deliberately omits budgetVnd,
+        redeemedVnd/redeemedCount, maxUsesTotal, createdBy, source, the internal
+        name, and publicClaimCode.
+      properties:
+        id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        title: { type: string, example: 'Giảm 50K mừng Tết 2026' }
+        description: { type: string }
+        terms: { type: string }
+        imageUrl: { type: string, format: uri }
+        themeColor: { type: string, description: 'Hex colour for the card', example: '#E4572E' }
+        status: { type: string, enum: [scheduled, active, paused, ended], description: 'DRAFT never appears here' }
+        benefitType: { type: string, enum: [fixed_amount, percent_off, free_service] }
+        discountValue: { type: integer, example: 50000 }
+        discountCapVnd: { type: integer, example: 100000 }
+        minOrderVnd: { type: integer, example: 150000 }
+        validFrom: { type: string, format: date-time }
+        validUntil: { type: string, format: date-time }
+        stackingPolicy: { type: string, enum: [none, with_tier, with_promotion, with_tier_and_promotion] }
+        allowedTierIds:
+          type: array
+          items: { type: string }
+          description: 'EMPTY = every tier qualifies. Join with GET /tier-configs for names.'
+        applicableServiceTypeIds:
+          type: array
+          items: { type: string }
+          description: 'EMPTY = every service qualifies. Join with GET /service-types.'
+        applicableVehicleTypeIds:
+          type: array
+          items: { type: string }
+          description: 'EMPTY = every vehicle type qualifies. Join with GET /vehicle-types.'
+    CampaignStatsResponse:
+      type: object
+      properties:
+        campaignId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        name: { type: string, example: 'tet-2026-winback' }
+        status: { type: string, enum: [draft, scheduled, active, paused, ended] }
+        issued: { type: integer, description: 'Vouchers ever minted', example: 1000 }
+        claimed: { type: integer, description: 'Reached a customer (claimed/reserved/used/expired)', example: 640 }
+        inPool: { type: integer, description: 'Still unclaimed', example: 360 }
+        reserved: { type: integer, description: 'Held by an in-flight order', example: 12 }
+        used: { type: integer, example: 410 }
+        expired: { type: integer, description: 'Lapsed unused', example: 218 }
+        revoked: { type: integer, description: 'Killed by an admin. NOT counted as expired.', example: 3 }
+        redemptionRatePercent: { type: integer, description: 'used / claimed', example: 64 }
+        totalDiscountVnd: { type: integer, example: 20500000 }
+        budgetVnd: { type: integer, description: 'Null = unbudgeted', example: 50000000 }
+        budgetUsedVnd: { type: integer, example: 20500000 }
+        budgetRemainingVnd: { type: integer, example: 29500000 }
+        usageLimitRemaining: { type: integer, description: 'maxUsesTotal minus issued. Null = unlimited.', example: 0 }
+        averageOrderBeforeDiscountVnd: { type: integer, example: 180000 }
+        averageOrderAfterDiscountVnd: { type: integer, example: 130000 }
+        cachedRedeemedVnd: { type: integer, description: 'The cached counter, shown so drift is visible', example: 20500000 }
+        countersInSync: { type: boolean, description: 'False → run the campaign-reconcile job', example: true }
     GrantVoucherAdmin:
       type: object
       required: [customerId]
       properties:
         customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
-        code: { type: string, pattern: '^[A-Z0-9-]{3,30}$', example: 'FREEWASH-KHOI' }
+        code: { type: string, pattern: '^[A-Z0-9-]{3,30}$', description: 'Omit to auto-generate a random code.', example: 'FREEWASH-KHOI' }
         discountCapVnd: { type: integer, minimum: 1, maximum: 200000, default: 100000, example: 100000 }
         expiresAt: { type: string, format: date-time, example: '2026-08-27T00:00:00.000Z' }
+        reason: { type: string, minLength: 5, maxLength: 500, description: 'Why this grant happened. Stored on the voucher for audit.', example: 'Đền bù khiếu nại đơn #1234' }
     RevokeVoucher:
       type: object
       required: [reason]
@@ -366,9 +573,10 @@ components:
       required: [quantity]
       properties:
         quantity: { type: integer, minimum: 1, maximum: 1000, example: 100 }
-        prefix: { type: string, pattern: '^[A-Z0-9]{1,15}$', example: 'TET2026' }
+        prefix: { type: string, pattern: '^[A-Z0-9]{1,15}$', description: 'Codes become PREFIX-XXXXXXXXXX (random suffix, not sequential)', example: 'TET2026' }
         discountCapVnd: { type: integer, minimum: 1, maximum: 200000, default: 100000, example: 100000 }
         expiresAt: { type: string, format: date-time, example: '2026-12-31T00:00:00.000Z' }
+        reason: { type: string, minLength: 5, maxLength: 500, description: 'Stored on every voucher in the batch. Defaults to "Lô phát hành <PREFIX>".', example: 'Chiến dịch Tết 2026' }
     BulkVoucherResult:
       type: object
       properties:
@@ -380,22 +588,51 @@ components:
       type: object
       required: [code]
       properties:
-        code: { type: string, pattern: '^[A-Z0-9-]{3,40}$', example: 'TET2026-20260620-0001' }
+        code: { type: string, pattern: '^[A-Z0-9-]{3,40}$', description: 'Case-insensitive; whitespace is stripped before lookup.', example: 'TET2026-4KP9XM2A7B' }
     VoucherResponse:
       type: object
       properties:
         id: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        campaignId:
+          type: string
+          description: >
+            Campaign whose rules govern this voucher. Absent only on rows the
+            backfill migration has not reached, which fall back to legacy
+            behaviour (voucher cap, no eligibility restrictions).
+          example: '6601e3b3f1a2c3a4b5d6e7f8'
         customerId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        campaign:
+          allOf: [{ $ref: '#/components/schemas/VoucherCampaignPublic' }]
+          description: >
+            Campaign presentation + rules, EMBEDDED so a wallet renders from one
+            request instead of a lookup per card. Absent on rows the backfill
+            has not reached.
         customerName: { type: string, description: 'Present on admin list', example: 'Nguyễn Văn A' }
         customerEmail: { type: string, example: 'a@example.com' }
-        code: { type: string, example: 'FREEWASH-20260527-001' }
+        code: { type: string, example: 'FREEWASH-4KP9XM2A7B' }
         type: { type: string, description: 'VoucherTypeEnum', example: 'free_wash' }
-        status: { type: string, description: 'VoucherStatusEnum', example: 'unused' }
+        status:
+          type: string
+          enum: [unused, reserved, used, expired, revoked]
+          description: >
+            VoucherStatusEnum. `reserved` = held for one in-flight order.
+            `revoked` = killed early by an admin; it is NOT reported as `expired`.
+          example: 'unused'
         discountCapVnd: { type: integer, example: 100000 }
         expiresAt: { type: string, format: date-time, example: '2026-08-25T00:00:00.000Z' }
-        grantedReason: { type: string, example: 'Reward for 10 completed washes' }
+        grantedReason: { type: string, example: 'Thưởng mốc 10 lượt rửa hợp lệ' }
+        grantedSource:
+          type: string
+          enum: [loyalty_milestone, admin_grant, campaign, birthday, referral, winback, legacy]
+          description: 'Acquisition channel. Absent on vouchers minted before this was tracked.'
+          example: 'loyalty_milestone'
+        grantedAt: { type: string, format: date-time, example: '2026-05-27T08:00:00.000Z' }
         usedAt: { type: string, format: date-time, example: '2026-06-01T08:00:00.000Z' }
         usedOrderId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        reservedOrderId: { type: string, description: 'Set while status is reserved', example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        reservedUntil: { type: string, format: date-time, example: '2026-06-01T08:15:00.000Z' }
+        revokedAt: { type: string, format: date-time, example: '2026-06-02T09:00:00.000Z' }
+        revokeReason: { type: string, example: 'Granted to the wrong customer' }
         createdAt: { type: string, format: date-time }
     VoucherListResponse:
       type: object
@@ -545,7 +782,13 @@ components:
           enum: [pending_payment, confirmed, checked_in, in_progress, completed, cancelled, no_show]
           example: confirmed
         paymentMethod: { type: string, enum: [online, cash], example: online }
-        paymentStatus: { type: string, enum: [unpaid, paid, refunded], example: paid }
+        paymentStatus:
+          type: string
+          enum: [unpaid, paid, refunded, no_payment_required]
+          description: >
+            `no_payment_required` = discounts covered the whole order, so there is
+            nothing to collect. Settled, but deliberately not counted as revenue.
+          example: paid
         amount: { type: integer, example: 150000 }
         originalAmount: { type: integer, example: 150000 }
         discountAmount: { type: integer, example: 15000 }
@@ -599,7 +842,13 @@ components:
           properties:
             licensePlate: { type: string, example: '51T-56019' }
         location: { type: string, example: 'Bay 2' }
-        paymentStatus: { type: string, enum: [unpaid, paid, refunded], example: paid }
+        paymentStatus:
+          type: string
+          enum: [unpaid, paid, refunded, no_payment_required]
+          description: >
+            `no_payment_required` = discounts covered the whole order, so there is
+            nothing to collect. Settled, but deliberately not counted as revenue.
+          example: paid
     CreateWorkOrder:
       type: object
       required: [orderId]
@@ -901,6 +1150,126 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/google:
+    post:
+      tags: [auth]
+      summary: Sign in / sign up with a Google id_token (SPA flow)
+      description: >-
+        For a frontend using Google Identity Services, which already holds a
+        signed id_token. Registers the account on first use and logs it in on
+        every later call - there is no separate Google sign-up endpoint.
+
+
+        The server verifies Google's signature, the expiry, the issuer and that
+        the token's audience is this app's client id, and refuses any profile
+        whose email Google has not verified.
+
+
+        Account matching, in order: Google `sub` -> existing email (the two are
+        linked, since Google proved the same mailbox) -> new CUSTOMER. A new
+        account is created already email-verified but with NO phone and NO
+        password; the client should collect a phone via PATCH /me/profile before
+        the first booking, and POST /auth/forgot-password is how a password gets
+        added later.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoogleLogin' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthResponse' }
+        '401':
+          description: Invalid Google token, unverified Google email, or deactivated account
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Email already linked to a different Google account
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '503':
+          description: Google sign-in is not configured (GOOGLE_* env vars missing)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    get:
+      tags: [auth]
+      summary: Start the Google redirect flow (browser)
+      description: >-
+        Navigate the BROWSER here (a plain link, not fetch - the response is a
+        302 to Google's consent screen and CORS does not apply). A single-use
+        `state` nonce is stored server-side for 10 minutes and checked on the way
+        back, so a callback this server did not start is rejected.
+      parameters:
+        - in: query
+          name: redirect
+          required: false
+          schema: { type: string }
+          description: >-
+            Where to land after login. Must resolve to the FRONTEND_URL origin -
+            anything else is silently replaced by the default
+            `{FRONTEND_URL}/auth/google/callback`, because this URL carries
+            session tokens.
+          example: 'https://wave-wash.vercel.app/dashboard'
+      responses:
+        '302':
+          description: Redirect to Google's consent screen
+          headers:
+            Location:
+              schema: { type: string }
+              description: 'https://accounts.google.com/o/oauth2/v2/auth?...'
+        '503':
+          description: Google sign-in is not configured (GOOGLE_* env vars missing)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/google/callback:
+    get:
+      tags: [auth]
+      summary: Google redirect-flow callback (browser)
+      description: >-
+        Google sends the browser here; this is the URL registered as
+        GOOGLE_CALLBACK_URL. Never called by application code.
+
+
+        Always answers 302, never JSON - the caller is a browser mid-navigation,
+        so failures come back as a redirect too. Tokens are returned in the URL
+        FRAGMENT rather than the query string, so they are never transmitted to
+        the frontend's server and stay out of its access logs and the Referer
+        header. Read them client-side from `window.location.hash`.
+
+
+        Success: `{redirect}#accessToken=...&refreshToken=...`
+
+        Failure: `{redirect}#error=<message>`
+      parameters:
+        - in: query
+          name: code
+          required: false
+          schema: { type: string }
+          description: One-time authorization code issued by Google.
+        - in: query
+          name: state
+          required: false
+          schema: { type: string }
+          description: The nonce from GET /auth/google. Single-use; a replay fails.
+        - in: query
+          name: error
+          required: false
+          schema: { type: string }
+          description: Set by Google when the user cancels the consent screen.
+      responses:
+        '302':
+          description: Redirect back to the frontend, with tokens or an error in the fragment
+          headers:
+            Location:
+              schema: { type: string }
+              description: '{redirect}#accessToken=...&refreshToken=... or {redirect}#error=...'
   /auth/refresh:
     post:
       tags: [auth]
@@ -965,6 +1334,57 @@ paths:
               schema: { $ref: '#/components/schemas/OtpVerifyResponse' }
         '400':
           description: Invalid/expired code
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/forgot-password:
+    post:
+      tags: [auth]
+      summary: Mail a password-reset code
+      description: >-
+        Always answers 200 with the same message whether or not the address has
+        an account, so it cannot be used to enumerate users. Throttled to 5
+        requests per hour per email address.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ForgotPassword' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: 'If an account exists for that email, a reset code has been sent' }
+        '429':
+          description: Too many reset requests for this email
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /auth/reset-password:
+    post:
+      tags: [auth]
+      summary: Set a new password using a reset code
+      description: >-
+        Consumes the single-use code from /auth/forgot-password. Five wrong
+        attempts burn the code. On success every refresh token issued to the
+        account before now is revoked, so other sessions must log in again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ResetPassword' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageResponse' }
+        '400':
+          description: Invalid/expired code or validation error
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -2063,8 +2483,10 @@ paths:
                   total: { type: integer }
                   inPool: { type: integer, description: 'Chưa ai nhận' }
                   claimed: { type: integer, description: 'Đã nhận, chưa dùng' }
+                  reserved: { type: integer, description: 'Đang giữ cho đơn chưa hoàn tất' }
                   used: { type: integer }
-                  expired: { type: integer }
+                  expired: { type: integer, description: 'Hết hạn tự nhiên (khách không dùng)' }
+                  revoked: { type: integer, description: 'Bị admin thu hồi — KHÔNG gộp vào expired' }
   /admin/vouchers/batches:
     get:
       tags: [vouchers]
@@ -2165,6 +2587,270 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/VoucherResponse' }
+  /voucher-campaigns/{id}:
+    get:
+      tags: [voucher-campaigns]
+      summary: Campaign detail (public)
+      description: >
+        Customer-safe projection: presentation + the rules a customer needs to
+        understand the offer. Commercial internals are NEVER returned — no
+        `budgetVnd`, no spend counters, no `maxUsesTotal`, no `publicClaimCode`.
+        A DRAFT campaign returns 404 so an unannounced promotion cannot leak.
+
+
+        For rendering a wallet, prefer the `campaign` object embedded in each
+        voucher from `GET /me/vouchers` — one request instead of one per card.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherCampaignPublic' }
+        '404':
+          description: Not found, or campaign is still a DRAFT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+  /admin/voucher-campaigns:
+    post:
+      tags: [voucher-campaigns]
+      summary: Create a voucher campaign (admin/manager)
+      description: >
+        Creates the campaign in DRAFT. Nothing is issued until it is activated.
+        Cross-field rules are enforced server-side: validFrom must precede
+        validUntil, percent_off needs discountValue 1-100, free_service needs a
+        non-empty applicableServiceTypeIds, and discountCapVnd is only valid for
+        percent_off.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateVoucherCampaign' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherCampaignResponse' }
+        '400':
+          description: Incoherent campaign rules
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: Duplicate name or publicClaimCode
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    get:
+      tags: [voucher-campaigns]
+      summary: List voucher campaigns (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [draft, scheduled, active, paused, ended] } }
+        - { name: source, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherCampaignListResponse' }
+  /admin/voucher-campaigns/{id}:
+    get:
+      tags: [voucher-campaigns]
+      summary: Get one voucher campaign (admin/manager)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherCampaignResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    patch:
+      tags: [voucher-campaigns]
+      summary: Edit a voucher campaign (admin/manager)
+      description: >
+        Partial update. Coherence is judged on the MERGED document, so a patch
+        cannot leave the campaign in a state it could not have been created in.
+        An ENDED campaign is immutable. Status is NOT editable here — use the
+        activate/pause/end endpoints.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateVoucherCampaign' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherCampaignResponse' }
+        '409':
+          description: Campaign already ended, or claim code taken
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/voucher-campaigns/{id}/activate:
+    post:
+      tags: [voucher-campaigns]
+      summary: Activate a campaign (admin/manager)
+      description: >
+        DRAFT/SCHEDULED/PAUSED → ACTIVE, or → SCHEDULED when validFrom is still
+        in the future. Refused once validUntil has passed.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherCampaignResponse' }
+        '409':
+          description: Invalid transition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/voucher-campaigns/{id}/pause:
+    post:
+      tags: [voucher-campaigns]
+      summary: Pause a campaign (admin/manager)
+      description: >
+        ACTIVE/SCHEDULED → PAUSED. Existing vouchers stop being redeemable while
+        paused, but are not revoked.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherCampaignResponse' }
+        '409':
+          description: Invalid transition
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /admin/voucher-campaigns/{id}/end:
+    post:
+      tags: [voucher-campaigns]
+      summary: End a campaign (admin/manager)
+      description: >
+        Terminal. The campaign and its vouchers are kept as history — reporting
+        reads them — so a campaign is never hard-deleted.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherCampaignResponse' }
+  /admin/voucher-campaigns/{id}/stats:
+    get:
+      tags: [voucher-campaigns]
+      summary: Campaign performance (admin/manager)
+      description: >
+        Voucher counts come from the vouchers themselves and money from the
+        redemption records, so no figure depends on the cached counters.
+        `countersInSync` reports whether those caches currently agree; run the
+        `campaign-reconcile` job to repair them when it is false.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CampaignStatsResponse' }
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /internal/jobs/{name}:
+    get:
+      tags: [jobs]
+      summary: Run a scheduled job (Vercel Cron)
+      description: >
+        Drives the maintenance jobs that node-cron cannot run on serverless.
+        Authorised by the CRON_SECRET shared secret — either
+        `Authorization: Bearer <secret>` (what Vercel Cron sends) or an
+        `X-Cron-Secret` header — NOT by a user token. Returns 404 when no secret
+        is configured, so the endpoint does not exist rather than existing
+        unprotected. Every job is idempotent and safe to re-run.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - voucher-expiry
+              - voucher-reservation-sweep
+              - campaign-lifecycle
+              - campaign-reconcile
+              - order-expiry
+              - cash-no-show
+              - voucher-expiry-reminder
+              - loyalty-reset-warning
+              - loyalty-annual-reset
+      responses:
+        '200':
+          description: Job finished
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: { type: string, example: voucher-reservation-sweep }
+                  durationMs: { type: integer, example: 42 }
+                  result: { description: 'Job-specific summary' }
+        '401':
+          description: Missing or wrong cron secret
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: Unknown job, or cron secret not configured
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    post:
+      tags: [jobs]
+      summary: Run a scheduled job (manual trigger)
+      description: Same as the GET form; provided for triggering a job by hand.
+      parameters:
+        - { name: name, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Job finished
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: { type: string }
+                  durationMs: { type: integer }
+                  result: {}
   /shifts/available:
     get:
       tags: [shifts]

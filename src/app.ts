@@ -24,6 +24,7 @@ import {
   washerFeedbackRouter,
 } from './modules/feedback/feedback.router';
 import { adminGoldenHourRouter } from './modules/golden-hour/golden-hour.router';
+import { jobsRouter } from './modules/jobs/jobs.router';
 import { meLoyaltyRouter } from './modules/loyalty/loyalty.router';
 import { meNotificationRouter } from './modules/notification/notification.router';
 import {
@@ -51,6 +52,10 @@ import {
   adminVoucherRouter,
   meVoucherRouter,
 } from './modules/voucher/voucher.router';
+import {
+  adminVoucherCampaignRouter,
+  voucherCampaignRouter,
+} from './modules/voucher-campaign/voucher-campaign.router';
 import {
   adminVehicleRouter,
   meVehicleRouter,
@@ -98,10 +103,14 @@ export function createApp() {
   apiRouter.use('/vehicle-types', vehicleTypeRouter);
   apiRouter.use('/service-types', serviceTypeRouter);
   apiRouter.use('/tier-configs', tierConfigRouter);
+  apiRouter.use('/voucher-campaigns', voucherCampaignRouter);
   apiRouter.use('/upload', uploadRouter);
   apiRouter.use('/payments', paymentWebhookRouter); // PayOS webhook (no auth)
   // Chat: stricter limiter (= Nest @Throttle 20/60s) on top of the global one.
   apiRouter.use('/chat', chatRateLimiter, chatRouter); // optional auth inside
+  // Scheduled jobs driven by Vercel Cron. Authorised by CRON_SECRET, not by a
+  // user token, so it sits outside the authenticated routes below.
+  apiRouter.use('/internal/jobs', jobsRouter);
 
   // Authenticated routes
   apiRouter.use('/me/vehicles', meVehicleRouter);
@@ -125,6 +134,7 @@ export function createApp() {
   apiRouter.use('/admin/tier-configs', adminTierConfigRouter);
   apiRouter.use('/admin/vehicles', adminVehicleRouter);
   apiRouter.use('/admin/vouchers', adminVoucherRouter);
+  apiRouter.use('/admin/voucher-campaigns', adminVoucherCampaignRouter);
   apiRouter.use('/admin/shifts', adminShiftRouter);
   apiRouter.use('/admin/users', adminUserRouter);
   apiRouter.use('/admin/orders', adminOrderRouter);

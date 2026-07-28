@@ -15,6 +15,7 @@ import {
   washerFeedbackRouter,
 } from '../modules/feedback/feedback.router';
 import { adminGoldenHourRouter } from '../modules/golden-hour/golden-hour.router';
+import { jobsRouter } from '../modules/jobs/jobs.router';
 import { meNotificationRouter } from '../modules/notification/notification.router';
 import { meLoyaltyRouter } from '../modules/loyalty/loyalty.router';
 import {
@@ -43,6 +44,10 @@ import {
   meVoucherRouter,
 } from '../modules/voucher/voucher.router';
 import {
+  adminVoucherCampaignRouter,
+  voucherCampaignRouter,
+} from '../modules/voucher-campaign/voucher-campaign.router';
+import {
   adminVehicleRouter,
   meVehicleRouter,
 } from '../modules/vehicle/vehicle.router';
@@ -63,9 +68,11 @@ const groups: Array<[Router, string]> = [
   [vehicleTypeRouter, '/vehicle-types'],
   [serviceTypeRouter, '/service-types'],
   [tierConfigRouter, '/tier-configs'],
+  [voucherCampaignRouter, '/voucher-campaigns'],
   [uploadRouter, '/upload'],
   [paymentWebhookRouter, '/payments'],
   [chatRouter, '/chat'],
+  [jobsRouter, '/internal/jobs'],
   [meVehicleRouter, '/me/vehicles'],
   [meVoucherRouter, '/me/vouchers'],
   [meLoyaltyRouter, '/me/loyalty'],
@@ -85,6 +92,7 @@ const groups: Array<[Router, string]> = [
   [adminTierConfigRouter, '/admin/tier-configs'],
   [adminVehicleRouter, '/admin/vehicles'],
   [adminVoucherRouter, '/admin/vouchers'],
+  [adminVoucherCampaignRouter, '/admin/voucher-campaigns'],
   [adminShiftRouter, '/admin/shifts'],
   [adminUserRouter, '/admin/users'],
   [adminOrderRouter, '/admin/orders'],

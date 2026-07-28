@@ -20,6 +20,14 @@ export const config = {
     port: toInt(process.env.PORT, 3000),
     nodeEnv: process.env.NODE_ENV ?? 'development',
     globalPrefix: process.env.GLOBAL_API_PREFIX ?? 'api',
+    // Origin of the SPA. The Google redirect flow bounces the browser back here
+    // when it is done, and it is the ONLY origin an `?redirect=` parameter is
+    // allowed to point at (see GoogleAuthService.resolveRedirect). Trailing
+    // slash stripped so concatenation never produces `//auth/...`.
+    frontendUrl: (process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(
+      /\/+$/,
+      '',
+    ),
   },
   database: {
     uri: `mongodb+srv://${dbUsername}:${dbPassword}@${dbHost}/${dbName}?retryWrites=true&w=majority`,
@@ -46,6 +54,16 @@ export const config = {
     verifiedEmailSkipDays: toInt(process.env.OTP_VERIFIED_EMAIL_SKIP_DAYS, 7),
     verifiedEmailSecret: process.env.JWT_VERIFIED_EMAIL_SECRET ?? '',
     verifiedEmailTtl: process.env.JWT_VERIFIED_EMAIL_TTL ?? '15m',
+  },
+  // Forgot/reset password. Deliberately NOT folded into `otp` above: the two
+  // flows must not share a Redis key (a code mailed to prove inbox ownership
+  // would otherwise be spendable as a password reset, and vice versa) and a
+  // reset code is given a longer window because the user has to pick a new
+  // password before submitting it.
+  passwordReset: {
+    ttlSeconds: toInt(process.env.PASSWORD_RESET_TTL_SECONDS, 900),
+    maxVerifyAttempts: toInt(process.env.PASSWORD_RESET_MAX_VERIFY_ATTEMPTS, 5),
+    perEmailHourlyLimit: toInt(process.env.PASSWORD_RESET_HOURLY_LIMIT, 5),
   },
   // Maps src/config/email.config.ts (SMTP transport).
   email: {
@@ -106,6 +124,25 @@ export const config = {
     cancelUrl:
       process.env.PAYOS_CANCEL_URL ?? 'http://localhost:3000/payment/cancel',
     webhookUrl: process.env.PAYOS_WEBHOOK_URL ?? '',
+  },
+  // Scheduled jobs. node-cron only ticks on a long-lived process (server.ts);
+  // the Vercel deployment freezes between requests, so production drives the
+  // same jobs over HTTP via POST /api/internal/jobs/:name, authorised by this
+  // shared secret. An empty secret disables the endpoint entirely rather than
+  // leaving it open.
+  cron: {
+    secret: process.env.CRON_SECRET ?? '',
+  },
+  // Google OAuth 2.0 / "Sign in with Google". An empty clientId disables both
+  // Google endpoints (503) instead of letting them half-work against Google's
+  // API with an empty audience — an id_token verified with `audience: ''` would
+  // be rejected anyway, just with a much less obvious error.
+  google: {
+    clientId: (process.env.GOOGLE_CLIENT_ID ?? '').trim(),
+    clientSecret: (process.env.GOOGLE_CLIENT_SECRET ?? '').trim(),
+    // Must match a redirect URI registered in the Google Cloud console byte for
+    // byte, and points at THIS backend (not the SPA): the callback runs here.
+    callbackUrl: (process.env.GOOGLE_CALLBACK_URL ?? '').trim(),
   },
   // Maps src/config/gemini.config.ts (chat AI assistant).
   gemini: {
