@@ -9,7 +9,10 @@ import {
   LoyaltyTransactionResponseDto,
 } from '../../shared/loyalty/dto/loyalty-transaction-response.dto';
 import { LoyaltyTransactionTypeEnum } from '../../shared/loyalty/types/loyalty-transaction-type.enum';
+import { NotificationTypeEnum } from '../../shared/notification/types/notification-type.enum';
+import { notificationService } from '../notification/notification.router';
 import { TierNameEnum } from '../../shared/tier-config/types/tier-name.enum';
+import { VoucherSourceEnum } from '../../shared/voucher/types/voucher-source.enum';
 import { TierConfigDocument } from '../tier-config/tier-config.model';
 import { TierConfigRepository } from '../tier-config/tier-config.repository';
 import { VoucherService } from '../voucher/voucher.service';
@@ -19,14 +22,53 @@ import { LoyaltyTransactionRepository } from './loyalty-transaction.repository';
 
 // Penalty for not showing up to a confirmed booking.
 const NO_SHOW_PENALTY_POINTS = 50;
-// Number of VALID completed washes that earn a voucher.
-const WASHES_PER_FREE_VOUCHER = 10;
 
-// ─── Voucher economics (loyalty giveaway program) ───────────────────────────
-const MIN_VALID_WASH_VND = 40_000;
-const VOUCHER_GIVEAWAY_RATE = 0.05;
-const VOUCHER_FLOOR_VND = 20_000;
-const VOUCHER_CEIL_VND = 100_000;
+// The voucher economics that used to live here as module constants
+// (WASHES_PER_FREE_VOUCHER, MIN_VALID_WASH_VND, VOUCHER_GIVEAWAY_RATE,
+// VOUCHER_FLOOR_VND, VOUCHER_CEIL_VND) now come from TierConfig, so marketing
+// can move a threshold without a deploy and each tier can reward differently.
+
+/**
+ * Value of the reward voucher for `spendVnd` of accumulated eligible spend,
+ * under one tier's economics: a percentage of the spend, scaled by the tier
+ * multiplier, then clamped between the tier's floor and ceiling.
+ *
+ * Exported so the gamification DTO can show an honest estimate of what the
+ * customer is working toward, computed by the same formula that will actually
+ * mint the voucher.
+ */
+export function rewardCapFor(
+  tier: TierConfigDocument,
+  spendVnd: number,
+): number {
+  const raw = Math.round(
+    (spendVnd *
+      tier.voucher_reward_rate_percent *
+      tier.voucher_reward_multiplier) /
+      100,
+  );
+  return Math.min(
+    Math.max(raw, tier.voucher_reward_floor_vnd),
+    tier.voucher_reward_ceil_vnd,
+  );
+}
+
+/**
+ * Projects the reward a customer is heading for, by extrapolating their spend
+ * so far across the full milestone. An estimate, clearly — but one produced by
+ * the real formula rather than a hand-wavy number in the UI.
+ */
+export function estimateReward(
+  tier: TierConfigDocument,
+  spendSoFarVnd: number,
+  washesSoFar: number,
+): number {
+  if (washesSoFar <= 0) return tier.voucher_reward_floor_vnd;
+  const projectedSpend = Math.round(
+    (spendSoFarVnd / washesSoFar) * tier.washes_per_reward_voucher,
+  );
+  return rewardCapFor(tier, projectedSpend);
+}
 
 // Business logic copied verbatim from features/loyalty/loyalty.service.ts; only
 // DI + Nest exceptions + Logger were swapped out.
@@ -92,15 +134,28 @@ export class LoyaltyService {
 
   async getForCustomer(customerId: string): Promise<LoyaltyAccountResponseDto> {
     const account = await this.ensureForCustomer(customerId);
-    const tier = await this.tierConfigRepository.findById(
-      account.tier_config_id,
-    );
+    const [tier, ladder] = await Promise.all([
+      this.tierConfigRepository.findById(account.tier_config_id),
+      this.tierConfigRepository.findActive(),
+    ]);
     if (!tier) {
       throw new NotFoundException(
         'Linked tier_config not found - DB inconsistent',
       );
     }
-    return LoyaltyAccountResponseDto.fromDocument(account, tier.tier_name);
+    // Computed here rather than in the DTO so the estimate always comes from
+    // the same function that actually mints the voucher.
+    const estimate = estimateReward(
+      tier,
+      account.spend_toward_voucher,
+      account.successful_washes_toward_voucher,
+    );
+    return LoyaltyAccountResponseDto.fromDocument(
+      account,
+      tier,
+      ladder,
+      estimate,
+    );
   }
 
   async getTierForCustomer(
@@ -144,6 +199,8 @@ export class LoyaltyService {
     orderId: Types.ObjectId,
     amountVnd: number,
     isVoucherEligibleService: boolean,
+    /** What discounts took off this order, for the lifetime "you saved" figure. */
+    discountVnd = 0,
   ): Promise<void> {
     const account = await this.ensureForCustomer(customerId);
     const tier = await this.tierConfigRepository.findById(
@@ -160,8 +217,9 @@ export class LoyaltyService {
     const newBalance = account.points_balance + earned;
     const newTotalWashes = account.total_successful_washes + 1;
 
+    const threshold = tier.washes_per_reward_voucher;
     const isValidWash =
-      isVoucherEligibleService && amountVnd >= MIN_VALID_WASH_VND;
+      isVoucherEligibleService && amountVnd >= tier.minimum_valid_wash_vnd;
 
     let washesAfterReward = account.successful_washes_toward_voucher;
     let spendAfterReward = account.spend_toward_voucher;
@@ -172,20 +230,25 @@ export class LoyaltyService {
       washesAfterReward += 1;
       spendAfterReward += amountVnd;
 
-      if (washesAfterReward >= WASHES_PER_FREE_VOUCHER) {
-        mintedCap = Math.min(
-          Math.max(
-            Math.round(spendAfterReward * VOUCHER_GIVEAWAY_RATE),
-            VOUCHER_FLOOR_VND,
-          ),
-          VOUCHER_CEIL_VND,
-        );
+      // `>=` rather than `===`, and the threshold is SUBTRACTED rather than
+      // zeroed: if an operator lowers the threshold from 10 to 8, a customer
+      // sitting on 9 qualifies on their next wash and keeps the surplus toward
+      // the following voucher. Lowering a threshold can never destroy progress.
+      if (washesAfterReward >= threshold) {
+        mintedCap = rewardCapFor(tier, spendAfterReward);
         const voucher = await this.voucherService.grantFreeWash({
           customerId: new Types.ObjectId(customerId),
           discountCapVnd: mintedCap,
+          expiresAt: new Date(
+            Date.now() + tier.voucher_expiry_days * 24 * 60 * 60 * 1000,
+          ),
+          source: VoucherSourceEnum.LOYALTY_MILESTONE,
+          reason:
+            `Thưởng mốc ${threshold} lượt rửa hợp lệ ` +
+            `(chi tiêu ${spendAfterReward.toLocaleString('vi-VN')}đ, hạng ${tier.tier_name})`,
         });
         mintedVoucherId = voucher._id;
-        washesAfterReward -= WASHES_PER_FREE_VOUCHER;
+        washesAfterReward -= threshold;
         spendAfterReward = 0;
       }
     }
@@ -195,7 +258,22 @@ export class LoyaltyService {
       successfulWashesTowardVoucher: washesAfterReward,
       spendTowardVoucher: spendAfterReward,
       totalSuccessfulWashes: newTotalWashes,
+      lifetimePoints: account.lifetime_points + earned,
+      lifetimeSpendVnd: account.lifetime_spend_vnd + amountVnd,
+      lifetimeSavedVnd: account.lifetime_saved_vnd + Math.max(0, discountVnd),
     });
+
+    if (mintedVoucherId) {
+      void this.notifyVoucherGranted(customerId, mintedCap, threshold);
+    } else if (isValidWash) {
+      void this.notifyIfNearVoucher(
+        customerId,
+        washesAfterReward,
+        threshold,
+        spendAfterReward,
+        tier,
+      );
+    }
 
     await this.transactionRepository.create({
       customerId: new Types.ObjectId(customerId),
@@ -214,7 +292,7 @@ export class LoyaltyService {
         balanceAfter: newBalance,
         orderId,
         voucherId: mintedVoucherId,
-        reason: `Voucher thưởng cap ${mintedCap.toLocaleString('vi-VN')}đ tại mốc ${WASHES_PER_FREE_VOUCHER} lượt hợp lệ`,
+        reason: `Voucher thưởng cap ${mintedCap.toLocaleString('vi-VN')}đ tại mốc ${threshold} lượt hợp lệ`,
       });
     }
 
@@ -272,11 +350,26 @@ export class LoyaltyService {
   }
 
   /**
-   * Annual reset: zeroes points_balance and the voucher counters for every
-   * account, demotes everyone to None, logs ANNUAL_RESET. Lifetime
-   * total_successful_washes is preserved. Called once per year by the cron.
+   * Annual reset: zeroes the tier-qualification balance and demotes everyone to
+   * None, then logs ANNUAL_RESET.
+   *
+   * Three things this deliberately does NOT touch, all of which the previous
+   * version wiped:
+   *   - `successful_washes_toward_voucher` / `spend_toward_voucher`. Progress
+   *     toward a reward voucher is not a calendar-year concept; a customer at
+   *     9/10 washes on 31 December used to lose it silently overnight.
+   *   - `lifetime_points` / `lifetime_spend_vnd` / `lifetime_saved_vnd`.
+   *   - Vouchers already granted. They expire on their own schedule.
+   *
+   * Idempotent: each account is claimed with a compare-and-set on
+   * `last_annual_reset_year`, so a job that fires twice — or an HTTP cron call
+   * that Vercel retries — resets each account at most once per year.
    */
-  async annualReset(): Promise<{ resetCount: number }> {
+  async annualReset(now = new Date()): Promise<{
+    resetCount: number;
+    skippedCount: number;
+    year: number;
+  }> {
     const noneTier = await this.tierConfigRepository.findByName(
       TierNameEnum.NONE,
     );
@@ -286,16 +379,24 @@ export class LoyaltyService {
       );
     }
 
-    const accounts = await this.loyaltyRepository.findAll();
-    const now = new Date();
+    const year = now.getUTCFullYear();
+    const accounts = await this.loyaltyRepository.findDueForAnnualReset(year);
     let resetCount = 0;
+    let skippedCount = 0;
+
     for (const account of accounts) {
       const previousTierId = account.tier_config_id;
       try {
+        // Claim first. Losing this race means a peer already reset the account.
+        if (
+          !(await this.loyaltyRepository.claimForAnnualReset(account._id, year))
+        ) {
+          skippedCount += 1;
+          continue;
+        }
+
         await this.loyaltyRepository.updateById(account._id, {
           pointsBalance: 0,
-          successfulWashesTowardVoucher: 0,
-          spendTowardVoucher: 0,
           tierConfigId: noneTier._id,
           lastAnnualResetAt: now,
         });
@@ -306,8 +407,11 @@ export class LoyaltyService {
           balanceAfter: 0,
           previousTierConfigId: previousTierId,
           newTierConfigId: noneTier._id,
-          reason: `Annual reset on ${now.toISOString()}`,
+          reason:
+            `Annual reset for ${year}. Điểm về 0, hạng về None. ` +
+            `Tiến độ voucher (${account.successful_washes_toward_voucher} lượt) được giữ nguyên.`,
         });
+        void this.notifyTierReset(account.customer_id.toString(), year);
         resetCount += 1;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -316,8 +420,149 @@ export class LoyaltyService {
         );
       }
     }
-    console.log(`Annual reset complete count=${resetCount}`);
-    return { resetCount };
+    console.log(
+      `loyalty.annual_reset year=${year} reset=${resetCount} skipped=${skippedCount}`,
+    );
+    return { resetCount, skippedCount, year };
+  }
+
+  /**
+   * Warns customers whose tier is about to be reset. Run on a schedule ahead of
+   * the reset itself so the notification lands during the grace period rather
+   * than after the points are already gone.
+   *
+   * Idempotent through the notification layer's own dedupe key, so re-running it
+   * on the same day does not spam anyone.
+   */
+  async notifyUpcomingReset(daysUntilReset: number): Promise<number> {
+    const accounts = await this.loyaltyRepository.findAll();
+    let notified = 0;
+    for (const account of accounts) {
+      if (account.points_balance <= 0) continue;
+      const tier = await this.tierConfigRepository.findById(
+        account.tier_config_id,
+      );
+      if (!tier || tier.tier_name === TierNameEnum.NONE) continue;
+
+      await this.notify(
+        account.customer_id.toString(),
+        `reset-warning:${new Date().getUTCFullYear()}:${daysUntilReset}`,
+        {
+          type: NotificationTypeEnum.LOYALTY_RESET_WARNING,
+          title: `Còn ${daysUntilReset} ngày để giữ hạng ${tier.tier_name}`,
+          body:
+            `Điểm tích lũy sẽ về 0 vào đầu năm sau. Tiến độ voucher của bạn ` +
+            `(${account.successful_washes_toward_voucher} lượt) vẫn được giữ nguyên.`,
+          data: { tierName: tier.tier_name, daysUntilReset },
+        },
+      );
+      notified += 1;
+    }
+    console.log(`loyalty.reset_warning_sent count=${notified}`);
+    return notified;
+  }
+
+  // ---------- notifications ----------
+
+  /**
+   * All loyalty notifications go through here. Best-effort by design: a
+   * notification failure must never roll back the points the customer earned.
+   */
+  private async notify(
+    customerId: string,
+    dedupeKey: string,
+    input: {
+      type: NotificationTypeEnum;
+      title: string;
+      body: string;
+      data?: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    try {
+      await notificationService.notifyUserOnce(customerId, dedupeKey, input);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`loyalty notify failed customerId=${customerId}: ${msg}`);
+    }
+  }
+
+  private async notifyVoucherGranted(
+    customerId: Types.ObjectId | string,
+    capVnd: number,
+    threshold: number,
+  ): Promise<void> {
+    await this.notify(
+      customerId.toString(),
+      // Milestones are rare and each mints a distinct voucher, so the timestamp
+      // keeps two legitimate rewards from deduping into one.
+      `voucher-granted:${Date.now()}`,
+      {
+        type: NotificationTypeEnum.VOUCHER_GRANTED,
+        title: '🎁 Bạn vừa nhận voucher thưởng!',
+        body:
+          `Hoàn thành ${threshold} lượt rửa hợp lệ — voucher giảm tới ` +
+          `${capVnd.toLocaleString('vi-VN')}đ đã vào ví của bạn.`,
+        data: { capVnd, threshold },
+      },
+    );
+  }
+
+  /** Nudges a customer who is one or two washes from their next reward. */
+  private async notifyIfNearVoucher(
+    customerId: Types.ObjectId | string,
+    washesSoFar: number,
+    threshold: number,
+    spendSoFar: number,
+    tier: TierConfigDocument,
+  ): Promise<void> {
+    const remaining = threshold - washesSoFar;
+    if (remaining < 1 || remaining > 2) return;
+
+    await this.notify(
+      customerId.toString(),
+      // Keyed on the progress point, so the same nudge is not repeated until
+      // the customer actually moves forward.
+      `voucher-near:${threshold}:${washesSoFar}`,
+      {
+        type: NotificationTypeEnum.VOUCHER_MILESTONE_NEAR,
+        title: `Còn ${remaining} lượt nữa là có voucher`,
+        body:
+          `Bạn đang ở ${washesSoFar}/${threshold} lượt. Phần thưởng ước tính ` +
+          `khoảng ${estimateReward(tier, spendSoFar, washesSoFar).toLocaleString('vi-VN')}đ.`,
+        data: { washesSoFar, threshold, remaining },
+      },
+    );
+  }
+
+  private async notifyTierUpgraded(
+    customerId: Types.ObjectId | string,
+    fromTier: string,
+    toTier: string,
+  ): Promise<void> {
+    await this.notify(
+      customerId.toString(),
+      `tier-up:${toTier}:${new Date().getUTCFullYear()}`,
+      {
+        type: NotificationTypeEnum.TIER_UPGRADED,
+        title: `🎉 Chúc mừng! Bạn đã lên hạng ${toTier}`,
+        body: `Từ hạng ${fromTier} lên ${toTier} — mở khoá thêm nhiều ưu đãi.`,
+        data: { fromTier, toTier },
+      },
+    );
+  }
+
+  private async notifyTierReset(
+    customerId: string,
+    year: number,
+  ): Promise<void> {
+    await this.notify(customerId, `reset-done:${year}`, {
+      type: NotificationTypeEnum.LOYALTY_RESET_DONE,
+      title: 'Điểm tích lũy đã được làm mới cho năm nay',
+      body:
+        'Hạng thành viên bắt đầu lại từ đầu, nhưng tiến độ voucher và ' +
+        'lịch sử tích lũy trọn đời của bạn vẫn được giữ nguyên.',
+      data: { year },
+    });
   }
 
   /**
@@ -356,5 +601,15 @@ export class LoyaltyService {
     console.log(
       `Tier changed customerId=${customerId.toString()} ${currentTier.tier_name} → ${target.tier_name}`,
     );
+
+    // Only celebrate a promotion. A demotion (no-show penalty, annual reset) is
+    // not something to congratulate anyone about.
+    if (target.priority_level > currentTier.priority_level) {
+      void this.notifyTierUpgraded(
+        customerId,
+        currentTier.tier_name,
+        target.tier_name,
+      );
+    }
   }
 }

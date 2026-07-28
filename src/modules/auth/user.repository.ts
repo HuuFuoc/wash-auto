@@ -11,9 +11,13 @@ type UserQuery = {
 export interface ICreateUserInput {
   roleId: Types.ObjectId;
   name: string;
-  phone: string;
+  /** Omitted for Google sign-ups; see User.phone. */
+  phone?: string;
   email: string;
-  passwordHash: string;
+  /** Omitted for Google sign-ups; see User.password_hash. */
+  passwordHash?: string;
+  googleId?: string;
+  emailVerifiedAt?: Date;
   avatarUrl?: string;
   dateOfBirth?: Date;
 }
@@ -43,6 +47,43 @@ export class UserRepository {
 
   async findById(id: Types.ObjectId | string): Promise<UserDocument | null> {
     return UserModel.findById(id).exec();
+  }
+
+  /** Google's `sub` claim. Preferred over the email: it survives an email change. */
+  async findByGoogleId(googleId: string): Promise<UserDocument | null> {
+    return UserModel.findOne({ google_id: googleId }).exec();
+  }
+
+  /**
+   * Attaches a Google identity to an account that already existed (signed up by
+   * password, then came back through Google). The `google_id: { $exists: false }`
+   * guard makes it a no-op — returns null — if a DIFFERENT Google account got
+   * there first, so one Google login can never steal another's link.
+   *
+   * `avatar_url` is only filled when the account has none, so a user who
+   * uploaded their own picture does not get it replaced by their Google one.
+   */
+  async linkGoogleAccount(
+    id: Types.ObjectId | string,
+    googleId: string,
+    avatarUrl?: string,
+  ): Promise<UserDocument | null> {
+    const set: Record<string, unknown> = {
+      google_id: googleId,
+      // Google only hands us a profile once it has verified the address, so the
+      // account is verified by the same evidence an OTP would have produced.
+      email_verified_at: new Date(),
+    };
+    // `$ifNull` keeps the existing avatar when there is one; an update pipeline
+    // is what lets that read-then-write happen inside the single atomic update.
+    if (avatarUrl) {
+      set.avatar_url = { $ifNull: ['$avatar_url', avatarUrl] };
+    }
+    return UserModel.findOneAndUpdate(
+      { _id: id, google_id: { $exists: false } },
+      [{ $set: set }],
+      { returnDocument: 'after' },
+    ).exec();
   }
 
   /** Batch lookup by id - used to enrich list responses with user name/email. */
@@ -125,12 +166,17 @@ export class UserRepository {
   }
 
   async createUser(input: ICreateUserInput): Promise<UserDocument> {
+    // `undefined` values are dropped by Mongoose, so a phone-less Google account
+    // is stored with the key ABSENT rather than null — which is exactly what the
+    // sparse unique index on `phone` needs in order to skip it.
     return UserModel.create({
       role_id: input.roleId,
       name: input.name,
       phone: input.phone,
       email: input.email.toLowerCase(),
       password_hash: input.passwordHash,
+      google_id: input.googleId,
+      email_verified_at: input.emailVerifiedAt,
       avatar_url: input.avatarUrl,
       date_of_birth: input.dateOfBirth,
     });

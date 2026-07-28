@@ -8,7 +8,9 @@ import {
   IsString,
   Matches,
   Max,
+  MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
 
 /**
@@ -29,7 +31,7 @@ export class GrantVoucherAdminDto {
     example: 'FREEWASH-KHOI',
     description:
       'Optional human-readable code so staff can read it out to the ' +
-      'customer. Omit to auto-generate FREEWASH-YYYYMMDD-NNN. Must be ' +
+      'customer. Omit to auto-generate a random code. Must be ' +
       'unique; 3-30 chars of A-Z, 0-9 or dash (lowercased input is upcased).',
   })
   @IsOptional()
@@ -67,4 +69,18 @@ export class GrantVoucherAdminDto {
   @Type(() => Date)
   @IsDate()
   expiresAt?: Date;
+
+  @ApiPropertyOptional({
+    example: 'Đền bù khiếu nại đơn #1234',
+    minLength: 5,
+    maxLength: 500,
+    description:
+      'Why this voucher was granted. Stored on the voucher so grant history ' +
+      'is auditable. Omit to fall back to a generic per-source reason.',
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(5)
+  @MaxLength(500)
+  reason?: string;
 }

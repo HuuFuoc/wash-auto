@@ -22,7 +22,10 @@ import { serviceTypeRepository } from '../service-type/service-type.router';
 import { staffShiftRepository } from '../staff-shift/staff-shift.router';
 import { tierConfigRepository } from '../tier-config/tier-config.router';
 import { vehicleRepository, vehicleService } from '../vehicle/vehicle.router';
-import { voucherService } from '../voucher/voucher.router';
+import { voucherRepository, voucherService } from '../voucher/voucher.router';
+import { voucherCampaignRepository } from '../voucher-campaign/voucher-campaign.router';
+import { DiscountCalculationService } from '../pricing/discount-calculation.service';
+import { VoucherEligibilityService } from '../pricing/voucher-eligibility.service';
 import { AdminOrderController } from './admin-order.controller';
 import { OrderController, PaymentWebhookController } from './order.controller';
 import { registerOrderCrons } from './order.crons';
@@ -42,6 +45,12 @@ const userRepository = new UserRepository();
 const workOrderRepository = new WorkOrderRepository();
 const feedbackRepository = new FeedbackRepository();
 
+// One pricing engine, shared by preview and order creation so the quote and the
+// charge can never come from two different implementations.
+const discountCalculation = new DiscountCalculationService(
+  new VoucherEligibilityService(voucherRepository, voucherCampaignRepository),
+);
+
 const service = new OrderService(
   orderRepository,
   transactionRepository,
@@ -59,6 +68,7 @@ const service = new OrderService(
   pricingPolicyService,
   workOrderRepository,
   feedbackRepository,
+  discountCalculation,
 );
 
 const orderController = new OrderController(service);

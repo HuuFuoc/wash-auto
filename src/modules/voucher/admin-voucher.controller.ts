@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { IdParam } from '../../common/params';
+import { AuthRequest } from '../../middlewares/auth.middleware';
 import { BulkCreateVoucherDto } from '../../shared/voucher/dto/bulk-create-voucher.dto';
 import { QueryVoucherDto } from '../../shared/voucher/dto/query-voucher.dto';
 import { RevokeVoucherDto } from '../../shared/voucher/dto/revoke-voucher.dto';
@@ -39,9 +40,12 @@ export class AdminVoucherController {
     res.json(await this.service.adminGetById(req.params.id));
   };
 
-  // @Patch + @HttpCode(OK) → 200.
-  revoke = async (req: Request<IdParam>, res: Response): Promise<void> => {
+  // @Patch + @HttpCode(OK) → 200. The acting admin comes from the verified JWT,
+  // never from the body — the client must not be able to name someone else.
+  revoke = async (req: AuthRequest<IdParam>, res: Response): Promise<void> => {
     const dto = req.body as RevokeVoucherDto;
-    res.json(await this.service.adminRevoke(req.params.id, dto.reason));
+    res.json(
+      await this.service.adminRevoke(req.params.id, dto.reason, req.user?.sub),
+    );
   };
 }

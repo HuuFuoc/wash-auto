@@ -12,8 +12,9 @@ export class UserResponseDto {
   @ApiProperty({ example: 'Nguyen Van A' })
   name: string;
 
-  @ApiProperty({ example: '0901234567' })
-  phone: string;
+  // Optional: a Google sign-up has no phone until the user fills one in.
+  @ApiPropertyOptional({ example: '0901234567' })
+  phone?: string;
 
   @ApiProperty({ example: 'customer@example.com' })
   email: string;

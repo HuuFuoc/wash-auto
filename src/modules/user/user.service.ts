@@ -195,6 +195,14 @@ export class UserService {
     dto: ChangeMyPasswordDto,
   ): Promise<{ message: string }> {
     const user = await this.requireUser(userId);
+    // Google-only account: there is no old password to prove. Unlike /auth/login
+    // this caller is already authenticated, so naming the reason leaks nothing
+    // and saves them guessing at a password that was never set.
+    if (!user.password_hash) {
+      throw new BadRequestException(
+        'This account signs in with Google and has no password yet - use forgot-password to set one',
+      );
+    }
     const matches = await bcrypt.compare(dto.oldPassword, user.password_hash);
     if (!matches) {
       throw new BadRequestException('Old password is incorrect');

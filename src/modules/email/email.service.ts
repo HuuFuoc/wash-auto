@@ -74,6 +74,37 @@ export class EmailService {
   }
 
   /**
+   * Sends the forgot-password code. Awaited by the caller for the same reason
+   * as sendOtpEmail: storing a code we failed to deliver only produces a user
+   * who waits for a mail that never arrives.
+   */
+  async sendPasswordResetEmail(
+    to: string,
+    code: string,
+    ttlSeconds: number,
+  ): Promise<void> {
+    const ttlMin = Math.round(ttlSeconds / 60);
+    const from = config.email.from;
+
+    try {
+      await this.transporter.sendMail({
+        from,
+        to,
+        subject: 'Wash-Auto - Mã đặt lại mật khẩu',
+        text: this.passwordResetPlainBody(code, ttlMin),
+        html: this.passwordResetHtmlBody(code, ttlMin),
+        headers: { 'X-Entity-Ref-ID': `pwreset-${Date.now()}` },
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[EmailService] SMTP send failed (password-reset) to=${to} reason=${msg}`,
+      );
+      throw err;
+    }
+  }
+
+  /**
    * Sends an order confirmation email after a successful create-order call.
    * Caller is expected to swallow errors - failing the API on SMTP hiccup
    * is worse than a missed email.
@@ -121,6 +152,32 @@ export class EmailService {
   <p style="font-size:28px;letter-spacing:6px;font-weight:700;margin:24px 0;">${code}</p>
   <p>This code expires in <strong>${ttlMin} minutes</strong>.</p>
   <p style="color:#6b7280;font-size:12px;">If you did not request it, please ignore this email.</p>
+</body></html>`;
+  }
+
+  private passwordResetPlainBody(code: string, ttlMin: number): string {
+    return [
+      'Bạn vừa yêu cầu đặt lại mật khẩu tài khoản Wash-Auto.',
+      '',
+      `Mã xác nhận của bạn là:`,
+      '',
+      `    ${code}`,
+      '',
+      `Mã có hiệu lực trong ${ttlMin} phút và chỉ dùng được một lần.`,
+      'Nếu bạn không yêu cầu, hãy bỏ qua email này - mật khẩu hiện tại vẫn giữ nguyên.',
+    ].join('\n');
+  }
+
+  private passwordResetHtmlBody(code: string, ttlMin: number): string {
+    return `<!doctype html>
+<html><body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.6;color:#1f2937;background:#f9fafb;padding:24px;">
+  <div style="max-width:560px;margin:0 auto;background:#fff;padding:32px;border-radius:8px;border:1px solid #e5e7eb;">
+    <h2 style="margin:0 0 8px;color:#111827;">Đặt lại mật khẩu</h2>
+    <p>Bạn vừa yêu cầu đặt lại mật khẩu tài khoản <strong>Wash-Auto</strong>. Nhập mã sau để tiếp tục:</p>
+    <p style="font-size:28px;letter-spacing:6px;font-weight:700;margin:24px 0;">${code}</p>
+    <p>Mã có hiệu lực trong <strong>${ttlMin} phút</strong> và chỉ dùng được một lần.</p>
+    <p style="color:#6b7280;font-size:12px;margin-top:32px;">Nếu bạn không yêu cầu đặt lại mật khẩu, hãy bỏ qua email này - mật khẩu hiện tại vẫn giữ nguyên.</p>
+  </div>
 </body></html>`;
   }
 
