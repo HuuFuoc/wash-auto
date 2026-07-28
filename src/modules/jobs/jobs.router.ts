@@ -21,6 +21,25 @@ import { voucherCampaignService } from '../voucher-campaign/voucher-campaign.rou
  * Deliberately mounted OUTSIDE the auth middleware: the caller is Vercel's
  * scheduler, not a user. Authorisation is a shared secret compared in constant
  * time, and an unset secret disables the endpoint rather than leaving it open.
+ *
+ * TWO schedulers drive these routes in production, and vercel.json only lists
+ * one of them — it is strict JSON, so the split is recorded here instead:
+ *
+ *   Vercel Cron (vercel.json)     everything that runs daily or less often:
+ *                                 voucher-expiry, campaign-reconcile,
+ *                                 voucher-expiry-reminder, loyalty-reset-warning,
+ *                                 loyalty-annual-reset.
+ *
+ *   External cron (cron-job.org)  the four sub-daily jobs, which the Hobby plan
+ *                                 refuses to schedule (it caps cron at once per
+ *                                 day and FAILS THE DEPLOY on anything tighter):
+ *                                 order-expiry + voucher-reservation-sweep (5m),
+ *                                 cash-no-show (10m), campaign-lifecycle (1h).
+ *
+ * Do NOT "tidy up" by adding those four back to vercel.json — the deploy will
+ * break. They are time-sensitive (order-expiry frees a slot held by an unpaid
+ * booking after 15 minutes), so demoting them to daily is not an option either.
+ * Setup and cron expressions: SCHEDULED_JOBS.md.
  */
 type JobRunner = () => Promise<unknown>;
 
