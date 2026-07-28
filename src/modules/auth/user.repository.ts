@@ -171,8 +171,9 @@ export class UserRepository {
 
   async createUser(input: ICreateUserInput): Promise<UserDocument> {
     // `undefined` values are dropped by Mongoose, so a phone-less Google account
-    // is stored with the key ABSENT rather than null — which is exactly what the
-    // sparse unique index on `phone` needs in order to skip it.
+    // is stored with the key ABSENT rather than null. The partial unique index
+    // on `phone` skips it either way, but keeping the key out means the API
+    // never emits `phone: null` as a third state next to "string" and "absent".
     return UserModel.create({
       role_id: input.roleId,
       name: input.name,

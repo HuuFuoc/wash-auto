@@ -101,9 +101,9 @@ describe('UserRepository.linkGoogleAccount', () => {
 });
 
 /**
- * createUser has the same exposure: a Google sign-up must leave `phone` ABSENT,
- * because the unique index on it is sparse and a null WOULD be indexed — the
- * second phone-less account would then collide with the first.
+ * A Google sign-up must leave `phone` ABSENT rather than null: the API contract
+ * is `phone?: string`, and `phone: null` would be a third state the frontend
+ * does not handle. (The partial index tolerates either, but the DTO does not.)
  */
 describe('UserRepository.createUser', () => {
   const repository = new UserRepository();

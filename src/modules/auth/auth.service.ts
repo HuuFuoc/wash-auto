@@ -339,12 +339,12 @@ export class AuthService {
       );
 
       if (duplicateFields.includes('phone')) {
-        // The `phone_1` index is still the old non-sparse one, which indexes a
-        // missing field as null — so exactly ONE phone-less account can exist
-        // and every Google sign-up after it collides on `{ phone: null }`.
+        // `phone_1` is still the old plain-unique index, which stores a MISSING
+        // field as null — so exactly ONE phone-less account can exist and every
+        // Google sign-up after it collides on `{ phone: null }`.
         throw new InternalServerErrorException(
           'Google sign-up is unavailable until the users.phone index is rebuilt ' +
-            'as sparse — run scripts/migrate-google-auth.ts',
+            'as a partial index — run scripts/migrate-google-auth.ts',
         );
       }
       throw new ConflictException('Account already exists');
