@@ -47,7 +47,8 @@ function accountDoc(over: Record<string, unknown> = {}) {
   return {
     _id: new Types.ObjectId(),
     customer_id: customerId,
-    tier_config_id: new Types.ObjectId(),
+    // tier_config_id is filled in by makeService to point at the harness tier.
+    // Tests that want a dangling or mismatched reference pass it explicitly.
     points_balance: 0,
     successful_washes_toward_voucher: 0,
     spend_toward_voucher: 0,
@@ -69,6 +70,10 @@ function makeService(overrides: {
 }) {
   const account = overrides.account ?? accountDoc();
   const tier = overrides.tier ?? tierDoc();
+  // A real account points AT its tier. Left unset, ensureForCustomer would read
+  // the mismatch as corruption and repair it before the test's own assertions.
+  const acct = account as Record<string, unknown>;
+  if (acct.tier_config_id === undefined) acct.tier_config_id = tier._id;
   const loyaltyRepository = {
     findByCustomerId: jest.fn(async () => account),
     updateById: jest.fn(
@@ -391,5 +396,135 @@ describe('estimateReward', () => {
 
   it('falls back to the floor before any progress exists', async () => {
     expect(estimateReward(tierDoc() as never, 0, 0)).toBe(20_000);
+  });
+});
+
+describe('ensureForCustomer repairs a dangling tier without demoting', () => {
+  // Every reseed of tier_configs minted fresh _ids, so accounts promoted under
+  // an older generation ended up pointing at a tier row that no longer exists.
+  // The self-heal must put them back on the tier their balance earns them, not
+  // reset the ladder to None.
+  const noneTier = tierDoc({
+    tier_name: TierNameEnum.NONE,
+    min_loyalty_points: 0,
+  });
+  const bronzeTier = tierDoc({
+    tier_name: TierNameEnum.BRONZE,
+    min_loyalty_points: 200,
+  });
+  const silverTier = tierDoc({
+    tier_name: TierNameEnum.SILVER,
+    min_loyalty_points: 500,
+  });
+  const ladder = [noneTier, bronzeTier, silverTier];
+
+  function danglingHarness(pointsBalance: number) {
+    const account = accountDoc({
+      tier_config_id: new Types.ObjectId(), // points at a wiped generation
+      points_balance: pointsBalance,
+    });
+    return makeService({
+      account,
+      tierConfigRepository: {
+        findById: jest.fn(async () => null), // the dangling ref resolves to nothing
+        findByName: jest.fn(async () => noneTier),
+        findActive: jest.fn(async () => ladder),
+      },
+    });
+  }
+
+  it('snaps a 643-point account back to Silver, not None', async () => {
+    const h = danglingHarness(643);
+
+    await h.service.ensureForCustomer(customerId);
+
+    expect(h.loyaltyRepository.updateById).toHaveBeenCalledWith(
+      expect.anything(),
+      { tierConfigId: silverTier._id },
+    );
+  });
+
+  it('snaps a 454-point account back to Bronze', async () => {
+    const h = danglingHarness(454);
+
+    await h.service.ensureForCustomer(customerId);
+
+    expect(h.loyaltyRepository.updateById).toHaveBeenCalledWith(
+      expect.anything(),
+      { tierConfigId: bronzeTier._id },
+    );
+  });
+
+  it('still lands a 0-point account on None', async () => {
+    const h = danglingHarness(0);
+
+    await h.service.ensureForCustomer(customerId);
+
+    expect(h.loyaltyRepository.updateById).toHaveBeenCalledWith(
+      expect.anything(),
+      { tierConfigId: noneTier._id },
+    );
+  });
+});
+
+describe('ensureForCustomer corrects a tier that disagrees with the balance', () => {
+  // The dangling-reference repair above only fires when the linked tier is
+  // GONE. Accounts that the previous code already snapped down to a real None
+  // row look perfectly consistent — a live tier_config_id — so nothing ever
+  // reconsidered them, and a 438-point customer stayed None indefinitely.
+  const noneTier = tierDoc({
+    tier_name: TierNameEnum.NONE,
+    min_loyalty_points: 0,
+  });
+  const bronzeTier = tierDoc({
+    tier_name: TierNameEnum.BRONZE,
+    min_loyalty_points: 200,
+  });
+  const silverTier = tierDoc({
+    tier_name: TierNameEnum.SILVER,
+    min_loyalty_points: 500,
+  });
+  const ladder = [noneTier, bronzeTier, silverTier];
+
+  function harness(pointsBalance: number, linked: Record<string, unknown>) {
+    const account = accountDoc({
+      tier_config_id: linked._id as Types.ObjectId,
+      points_balance: pointsBalance,
+    });
+    return makeService({
+      account,
+      tierConfigRepository: {
+        findById: jest.fn(async () => linked),
+        findByName: jest.fn(async () => noneTier),
+        findActive: jest.fn(async () => ladder),
+      },
+    });
+  }
+
+  it('promotes a 438-point account stuck on None to Bronze', async () => {
+    const h = harness(438, noneTier);
+
+    await h.service.ensureForCustomer(customerId);
+
+    expect(h.loyaltyRepository.updateById).toHaveBeenCalledWith(
+      expect.anything(),
+      { tierConfigId: bronzeTier._id },
+    );
+  });
+
+  it('leaves an account already on the right tier untouched', async () => {
+    const h = harness(438, bronzeTier);
+
+    await h.service.ensureForCustomer(customerId);
+
+    expect(h.loyaltyRepository.updateById).not.toHaveBeenCalled();
+  });
+
+  it('does not touch a 0-point account sitting on None', async () => {
+    const h = harness(0, noneTier);
+
+    await h.service.ensureForCustomer(customerId);
+
+    expect(h.loyaltyRepository.updateById).not.toHaveBeenCalled();
   });
 });

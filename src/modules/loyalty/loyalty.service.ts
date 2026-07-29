@@ -70,6 +70,25 @@ export function estimateReward(
   return rewardCapFor(tier, projectedSpend);
 }
 
+/**
+ * The single rule for "which tier does this balance earn": the highest active
+ * tier whose threshold is met. `findActive` returns ascending priority, so the
+ * last match wins. Returns null only when no tier is seeded at all.
+ *
+ * Shared by the points-change path and the dangling-reference repair so the two
+ * can never disagree about what a balance is worth.
+ */
+export function highestTierFor(
+  tiers: TierConfigDocument[],
+  balance: number,
+): TierConfigDocument | null {
+  let target: TierConfigDocument | null = null;
+  for (const t of tiers) {
+    if (balance >= t.min_loyalty_points) target = t;
+  }
+  return target;
+}
+
 // Business logic copied verbatim from features/loyalty/loyalty.service.ts; only
 // DI + Nest exceptions + Logger were swapped out.
 export class LoyaltyService {
@@ -89,26 +108,43 @@ export class LoyaltyService {
   ): Promise<LoyaltyAccountDocument> {
     const existing = await this.loyaltyRepository.findByCustomerId(customerId);
     if (existing) {
-      // Self-heal: accounts created under the previous 4-tier schema may still
-      // reference a tier_config_id that no longer exists. Snap them to None.
-      const linked = await this.tierConfigRepository.findById(
-        existing.tier_config_id,
-      );
-      if (linked) return existing;
-
-      const fallback = await this.tierConfigRepository.findByName(
-        TierNameEnum.NONE,
-      );
-      if (!fallback) {
+      // Self-heal. The stored tier is DERIVED from points_balance, so any
+      // disagreement is corruption, and there are two flavours of it:
+      //
+      //   1. A tier_config_id that no longer resolves. seedDefaults used to
+      //      drop and recreate the whole collection on boot, so every restart
+      //      minted new _ids and orphaned every account pointing at the
+      //      previous generation.
+      //   2. A tier that resolves but is WRONG. The previous version of this
+      //      repair snapped case 1 to None, which silently demoted paying
+      //      customers. Those accounts now look consistent — a live
+      //      tier_config_id — so nothing reconsidered them, and a 438-point
+      //      customer stayed None indefinitely (the tier is otherwise only
+      //      recomputed when points change).
+      //
+      // Both are fixed the same way: re-derive from the balance with the rule
+      // recomputeTierAndLog uses. No tier_changed audit row is written — the
+      // customer's standing never actually changed, only the pointer, so
+      // inventing promotion events would misreport history.
+      const tiers = await this.tierConfigRepository.findActive();
+      const earnedTier = highestTierFor(tiers, existing.points_balance);
+      if (!earnedTier) {
         throw new InternalServerErrorException(
           'None tier_config not seeded - restart app',
         );
       }
+      if (earnedTier._id.equals(existing.tier_config_id)) return existing;
+
+      const linked = await this.tierConfigRepository.findById(
+        existing.tier_config_id,
+      );
       const repaired = await this.loyaltyRepository.updateById(existing._id, {
-        tierConfigId: fallback._id,
+        tierConfigId: earnedTier._id,
       });
       console.warn(
-        `Loyalty account ${existing._id.toString()} pointed at missing tier - repaired to None`,
+        `Loyalty account ${existing._id.toString()} had tier ` +
+          `${linked?.tier_name ?? 'MISSING'} - repaired to ${earnedTier.tier_name} ` +
+          `from balance ${existing.points_balance}`,
       );
       return repaired ?? existing;
     }
@@ -577,12 +613,7 @@ export class LoyaltyService {
     orderId: Types.ObjectId | undefined,
   ): Promise<void> {
     const tiers = await this.tierConfigRepository.findActive();
-    // findActive returns ascending priority - pick the last one whose threshold
-    // is satisfied so we land on the highest qualifying tier.
-    let target: TierConfigDocument | null = null;
-    for (const t of tiers) {
-      if (balance >= t.min_loyalty_points) target = t;
-    }
+    const target = highestTierFor(tiers, balance);
     if (!target || target._id.equals(currentTier._id)) return;
 
     await this.loyaltyRepository.updateById(accountId, {
