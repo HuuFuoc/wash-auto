@@ -12,6 +12,7 @@ import { LoyaltyTransactionTypeEnum } from '../../shared/loyalty/types/loyalty-t
 import { NotificationTypeEnum } from '../../shared/notification/types/notification-type.enum';
 import { notificationService } from '../notification/notification.router';
 import { TierNameEnum } from '../../shared/tier-config/types/tier-name.enum';
+import { tierLabel } from '../../shared/tier-config/tier-label';
 import { VoucherSourceEnum } from '../../shared/voucher/types/voucher-source.enum';
 import { TierConfigDocument } from '../tier-config/tier-config.model';
 import { TierConfigRepository } from '../tier-config/tier-config.repository';
@@ -281,7 +282,7 @@ export class LoyaltyService {
           source: VoucherSourceEnum.LOYALTY_MILESTONE,
           reason:
             `Thưởng mốc ${threshold} lượt rửa hợp lệ ` +
-            `(chi tiêu ${spendAfterReward.toLocaleString('vi-VN')}đ, hạng ${tier.tier_name})`,
+            `(chi tiêu ${spendAfterReward.toLocaleString('vi-VN')}đ, hạng ${tierLabel(tier.tier_name)})`,
         });
         mintedVoucherId = voucher._id;
         washesAfterReward -= threshold;
@@ -485,7 +486,7 @@ export class LoyaltyService {
         `reset-warning:${new Date().getUTCFullYear()}:${daysUntilReset}`,
         {
           type: NotificationTypeEnum.LOYALTY_RESET_WARNING,
-          title: `Còn ${daysUntilReset} ngày để giữ hạng ${tier.tier_name}`,
+          title: `Còn ${daysUntilReset} ngày để giữ hạng ${tierLabel(tier.tier_name)}`,
           body:
             `Điểm tích lũy sẽ về 0 vào đầu năm sau. Tiến độ voucher của bạn ` +
             `(${account.successful_washes_toward_voucher} lượt) vẫn được giữ nguyên.`,
@@ -580,8 +581,9 @@ export class LoyaltyService {
       `tier-up:${toTier}:${new Date().getUTCFullYear()}`,
       {
         type: NotificationTypeEnum.TIER_UPGRADED,
-        title: `🎉 Chúc mừng! Bạn đã lên hạng ${toTier}`,
-        body: `Từ hạng ${fromTier} lên ${toTier} — mở khoá thêm nhiều ưu đãi.`,
+        title: `🎉 Chúc mừng! Bạn đã lên hạng ${tierLabel(toTier)}`,
+        body: `Từ hạng ${tierLabel(fromTier)} lên ${tierLabel(toTier)} — mở khoá thêm nhiều ưu đãi.`,
+        // data giữ nguyên enum để client xử lý theo máy, không phải để hiển thị.
         data: { fromTier, toTier },
       },
     );

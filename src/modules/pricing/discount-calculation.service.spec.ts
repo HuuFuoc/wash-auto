@@ -381,8 +381,9 @@ describe('DiscountCalculationService — eligibility refusals', () => {
       ),
       VoucherReasonCodeEnum.TIER_NOT_ELIGIBLE,
     );
-    // The message names the customer's actual tier so the UI can explain it.
-    expect(res.invalidReasonMessage).toContain('Silver');
+    // The message names the customer's actual tier so the UI can explain it —
+    // as the label a customer reads, not the 'Silver' enum stored in the DB.
+    expect(res.invalidReasonMessage).toContain('Bạc');
   });
 
   it('accepts when the tier IS on the whitelist', async () => {

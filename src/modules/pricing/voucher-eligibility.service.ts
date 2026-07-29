@@ -10,6 +10,7 @@ import { VoucherDocument } from '../voucher/voucher.model';
 import { VoucherRepository } from '../voucher/voucher.repository';
 import { VoucherCampaignDocument } from '../voucher-campaign/voucher-campaign.model';
 import { VoucherCampaignRepository } from '../voucher-campaign/voucher-campaign.repository';
+import { tierLabel } from '../../shared/tier-config/tier-label';
 
 /** Everything the checks need, all of it already read from the database. */
 export interface IEligibilityContext {
@@ -168,7 +169,7 @@ export class VoucherEligibilityService {
       return reject(
         VoucherReasonCodeEnum.TIER_NOT_ELIGIBLE,
         voucher,
-        `Voucher này chỉ dành cho hạng thành viên khác (bạn đang ở hạng ${ctx.tier.tier_name})`,
+        `Voucher này chỉ dành cho hạng thành viên khác (bạn đang ở hạng ${tierLabel(ctx.tier.tier_name)})`,
       );
     }
     if (
