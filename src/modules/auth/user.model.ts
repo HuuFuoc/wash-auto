@@ -20,9 +20,18 @@ export interface User {
   google_id?: string;
   avatar_url?: string;
   date_of_birth?: Date;
+  /**
+   * Whether the account can log in. False means one of two things, told apart by
+   * `email_verified_at`: a password sign-up that has not entered its OTP yet
+   * (no timestamp), or an account an admin switched off (timestamp present).
+   * See AuthService.isPendingVerification — nothing else should re-derive this.
+   */
   is_active: boolean;
   delete_requested_at?: Date;
-  /** Timestamp of the most recent successful email OTP verification. */
+  /**
+   * Timestamp of the most recent successful email OTP verification. Absent until
+   * the first one, which is also what activates a password sign-up.
+   */
   email_verified_at?: Date;
 }
 

@@ -127,8 +127,37 @@ describe('AuthService Google sign-in', () => {
       userId,
       profile.googleId,
       profile.avatarUrl,
+      // Already active - the link has no activation to do.
+      false,
     );
     expect(createUser).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Registered by password, never entered the OTP, then pressed "Sign in with
+   * Google". Google has proven the same mailbox the OTP would have, so this is
+   * the second way to activate an account - not a bypass of the check.
+   */
+  it('activates a sign-up still waiting on its OTP when it links Google', async () => {
+    const { service, linkGoogleAccount } = build({
+      byGoogleId: null,
+      byEmail: {
+        _id: userId,
+        role_id: roleId,
+        email: profile.email,
+        is_active: false,
+      },
+    });
+
+    await expect(
+      service.loginWithGoogleIdToken('id-token'),
+    ).resolves.toMatchObject({ refreshToken: 'refresh-token' });
+    expect(linkGoogleAccount).toHaveBeenCalledWith(
+      userId,
+      profile.googleId,
+      profile.avatarUrl,
+      true,
+    );
   });
 
   // linkGoogleAccount's `google_id: { $exists: false }` guard returned no doc:
