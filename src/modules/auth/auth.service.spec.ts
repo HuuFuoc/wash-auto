@@ -1,7 +1,12 @@
 /* eslint-disable @typescript-eslint/require-await -- async jest mocks mirror the real async repo/service signatures */
 import * as bcrypt from 'bcrypt';
 import { Types } from 'mongoose';
-import { BadRequestException } from '../../common/exceptions';
+import {
+  BadRequestException,
+  ForbiddenException,
+  UnauthorizedException,
+} from '../../common/exceptions';
+import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { AuthService } from './auth.service';
 
 describe('AuthService password reset', () => {
@@ -124,6 +129,197 @@ describe('AuthService password reset', () => {
       );
       expect(updateById).not.toHaveBeenCalled();
       expect(refreshTokenService.revokeAllForUser).not.toHaveBeenCalled();
+    });
+  });
+});
+
+/**
+ * A password sign-up is created switched OFF and only the email OTP switches it
+ * on, so these three endpoints have to agree on what "inactive" means: register
+ * writes the state, otp/verify clears it, and login has to tell it apart from an
+ * account an admin deactivated. `email_verified_at` is the only thing separating
+ * the two - see AuthService.isPendingVerification.
+ */
+describe('AuthService email-verification lifecycle', () => {
+  const userId = new Types.ObjectId();
+  const roleId = new Types.ObjectId();
+  const password = 'correct-horse-battery';
+
+  function build(user: Record<string, unknown> | null) {
+    const created = {
+      _id: userId,
+      name: 'Nguyen Van A',
+      email: 'customer@example.com',
+      is_active: false,
+    };
+    const userRepository = {
+      existsByEmail: jest.fn(async () => false),
+      existsByPhone: jest.fn(async () => false),
+      createUser: jest.fn(async () => created),
+      findByEmail: jest.fn(async () => user),
+      setEmailVerifiedAt: jest.fn(async () => undefined),
+    };
+    const roleRepository = {
+      findByCode: jest.fn(async () => ({
+        _id: roleId,
+        code: RoleEnum.CUSTOMER,
+      })),
+      findById: jest.fn(async () => ({
+        _id: roleId,
+        code: RoleEnum.CUSTOMER,
+        is_active: true,
+      })),
+    };
+    const refreshTokenService = {
+      sign: jest.fn(async () => ({ token: 'refresh-token', jti: 'jti' })),
+    };
+    const loyaltyService = {
+      ensureForCustomer: jest.fn(async () => undefined),
+    };
+    const otpService = {
+      issueAndSend: jest.fn(async () => undefined),
+      verify: jest.fn(async () => undefined),
+    };
+    const verifiedEmailTokenService = {
+      sign: jest.fn(async () => 'verified-email-token'),
+    };
+    const service = new AuthService(
+      userRepository as never,
+      roleRepository as never,
+      refreshTokenService as never,
+      loyaltyService as never,
+      otpService as never,
+      verifiedEmailTokenService,
+      {} as never,
+    );
+    return { service, userRepository, otpService };
+  }
+
+  /** An account whose OTP is still outstanding: off, and never verified. */
+  const pendingUser = async () => ({
+    _id: userId,
+    email: 'customer@example.com',
+    is_active: false,
+    password_hash: await bcrypt.hash(password, 10),
+  });
+
+  describe('register', () => {
+    it('creates the account switched off and mails the code', async () => {
+      const { service, userRepository, otpService } = build(null);
+
+      const res = await service.register({
+        name: 'Nguyen Van A',
+        phone: '0901234567',
+        email: 'customer@example.com',
+        password,
+      });
+
+      expect(userRepository.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ isActive: false }),
+      );
+      expect(res.isActive).toBe(false);
+      expect(otpService.issueAndSend).toHaveBeenCalledWith(
+        'customer@example.com',
+        'register',
+      );
+    });
+  });
+
+  describe('verifyEmailOtp', () => {
+    it('activates an account that was waiting on its first verification', async () => {
+      const { service, userRepository } = build(await pendingUser());
+
+      await service.verifyEmailOtp('customer@example.com', '123456', 'ip');
+
+      expect(userRepository.setEmailVerifiedAt).toHaveBeenCalledWith(
+        userId,
+        expect.any(Date),
+        true,
+      );
+    });
+
+    // The pre-booking re-verification: nothing to activate, just a fresh stamp.
+    it('only re-stamps an account that is already active', async () => {
+      const { service, userRepository } = build({
+        _id: userId,
+        email: 'customer@example.com',
+        is_active: true,
+        email_verified_at: new Date('2026-01-01'),
+      });
+
+      await service.verifyEmailOtp('customer@example.com', '123456', 'ip');
+
+      expect(userRepository.setEmailVerifiedAt).toHaveBeenCalledWith(
+        userId,
+        expect.any(Date),
+        false,
+      );
+    });
+
+    // Verified once, then switched off by an admin - the OTP is not a way back in.
+    it('refuses to revive an account an admin deactivated', async () => {
+      const { service, userRepository } = build({
+        _id: userId,
+        email: 'customer@example.com',
+        is_active: false,
+        email_verified_at: new Date('2026-01-01'),
+      });
+
+      await expect(
+        service.verifyEmailOtp('customer@example.com', '123456', 'ip'),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(userRepository.setEmailVerifiedAt).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('login', () => {
+    it('names the real reason once the password proves who is asking', async () => {
+      const { service } = build(await pendingUser());
+
+      await expect(
+        service.login({ email: 'customer@example.com', password }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    // A stranger guessing at addresses learns nothing: the unverified state is
+    // only disclosed behind a correct password.
+    it('still answers a wrong password on the same account generically', async () => {
+      const { service } = build(await pendingUser());
+
+      await expect(
+        service.login({
+          email: 'customer@example.com',
+          password: 'wrong',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('requestEmailOtp', () => {
+    // Without this the account could never be activated: it is inactive, and
+    // this endpoint is the only way to get a replacement code.
+    it('re-sends a code to an account still waiting on verification', async () => {
+      const { service, otpService } = build(await pendingUser());
+
+      await service.requestEmailOtp('customer@example.com', 'ip');
+
+      expect(otpService.issueAndSend).toHaveBeenCalledWith(
+        'customer@example.com',
+        'ip',
+      );
+    });
+
+    it('sends nothing to an account an admin deactivated', async () => {
+      const { service, otpService } = build({
+        _id: userId,
+        email: 'customer@example.com',
+        is_active: false,
+        email_verified_at: new Date('2026-01-01'),
+      });
+
+      await service.requestEmailOtp('customer@example.com', 'ip');
+
+      expect(otpService.issueAndSend).not.toHaveBeenCalled();
     });
   });
 });

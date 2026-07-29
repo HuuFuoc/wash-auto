@@ -3,6 +3,7 @@ import jwt, { SignOptions } from 'jsonwebtoken';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   InternalServerErrorException,
   UnauthorizedException,
 } from '../../common/exceptions';
@@ -19,7 +20,7 @@ import { OtpService } from '../otp/otp.service';
 import { GoogleAuthService, IGoogleProfile } from './google-auth.service';
 import { PasswordResetService } from './password-reset.service';
 import { RoleRepository } from './role.repository';
-import { UserDocument } from './user.model';
+import { User, UserDocument } from './user.model';
 import { UserRepository } from './user.repository';
 import {
   IRefreshTokenPayload,
@@ -27,13 +28,20 @@ import {
 } from './refresh-token.service';
 import { VerifiedEmailTokenService } from './verified-email-token.service';
 
-/** Mongo E11000 — a unique index rejected the write. */
-function isDuplicateKeyError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    (error as { code?: unknown }).code === 11000
-  );
+/**
+ * Mongo E11000 — a unique index rejected the write. Returns the offending field
+ * names (from the driver's `keyPattern`), or null when this is not a duplicate
+ * key error at all. Which index tripped decides whether the write was a benign
+ * race or a broken deployment, so the caller needs more than a boolean.
+ */
+function duplicateKeyFields(error: unknown): string[] | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const candidate = error as {
+    code?: unknown;
+    keyPattern?: Record<string, unknown>;
+  };
+  if (candidate.code !== 11000) return null;
+  return Object.keys(candidate.keyPattern ?? {});
 }
 
 // Business logic copied verbatim from features/auth/auth.service.ts; DI +
@@ -57,6 +65,24 @@ export class AuthService {
    */
   private static readonly FORGOT_PASSWORD_MESSAGE =
     'If an account exists for that email, a reset code has been sent';
+
+  /**
+   * A password sign-up that has not passed its email OTP yet. register() creates
+   * these with `is_active: false`; verifyEmailOtp() is what switches them on.
+   *
+   * `is_active` is doing double duty — "deactivated by an admin" and "never
+   * verified" are both false — so the two are told apart by `email_verified_at`,
+   * which only the OTP (or a Google link) ever writes. The one case that stays
+   * ambiguous: an account an admin switched off BEFORE it was ever verified
+   * looks exactly like a fresh sign-up and can re-enable itself by completing
+   * the OTP. If that stops being a corner case, the fix is a dedicated
+   * verification-status field rather than more inference here.
+   */
+  private static isPendingVerification(
+    user: Pick<User, 'is_active' | 'email_verified_at'>,
+  ): boolean {
+    return !user.is_active && !user.email_verified_at;
+  }
 
   /**
    * Step 1 - Request an email OTP. If the user is already verified within the
@@ -83,7 +109,13 @@ export class AuthService {
       }
     }
 
-    if (!user || !user.is_active) {
+    // An account still waiting on its first OTP is inactive BY DESIGN, and this
+    // endpoint is how it gets its code (re-send after an expiry, say). Turning it
+    // away here would leave every fresh sign-up with no way to ever activate.
+    if (
+      !user ||
+      (!user.is_active && !AuthService.isPendingVerification(user))
+    ) {
       // Don't leak existence - but also don't actually send.
       console.log(`OTP request for unknown/inactive email=${email} ip=${ip}`);
       return { message: 'OTP sent if account exists' };
@@ -105,12 +137,19 @@ export class AuthService {
     await this.otpService.verify(email, code);
 
     const user = await this.userRepository.findByEmail(email);
-    if (!user || !user.is_active) {
+    const pending = user !== null && AuthService.isPendingVerification(user);
+    if (!user || (!user.is_active && !pending)) {
       console.warn(`OTP verified for missing user email=${email} ip=${ip}`);
       throw new UnauthorizedException('Invalid or expired OTP');
     }
 
-    await this.userRepository.setEmailVerifiedAt(user._id, new Date());
+    // For a sign-up this is the activation step, not just a timestamp: passing
+    // the OTP is what makes the account usable. Already-active accounts (the
+    // pre-booking re-verification) only get the timestamp refreshed.
+    await this.userRepository.setEmailVerifiedAt(user._id, new Date(), pending);
+    if (pending) {
+      console.log(`Account activated by OTP userId=${user._id.toString()}`);
+    }
     const token = await this.verifiedEmailTokenService.sign(
       user._id.toString(),
       user.email,
@@ -147,6 +186,9 @@ export class AuthService {
       email: dto.email,
       passwordHash,
       dateOfBirth: dto.dateOfBirth,
+      // Held shut until the OTP below comes back verified, so an address nobody
+      // can read never becomes a login. verifyEmailOtp() flips it on.
+      isActive: false,
     });
 
     // Auto-create loyalty account at None tier. Idempotent.
@@ -176,7 +218,11 @@ export class AuthService {
     console.log('Login attempt', { email: dto.email });
 
     const user = await this.userRepository.findByEmail(dto.email);
-    if (!user || !user.is_active) {
+    // An unverified sign-up is let through this guard so its password can still
+    // be checked; it is turned away further down, once that password has proven
+    // the caller owns the account and is therefore entitled to know why.
+    const pending = user !== null && AuthService.isPendingVerification(user);
+    if (!user || (!user.is_active && !pending)) {
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -197,6 +243,16 @@ export class AuthService {
     );
     if (!isPasswordValid) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    // Only now, with the password proven, is it safe to name the real reason:
+    // the answer tells a stranger nothing they could not already infer, and the
+    // owner needs it to know a code is waiting rather than that they mistyped.
+    if (pending) {
+      console.log(`Login blocked, email not verified email=${dto.email}`);
+      throw new ForbiddenException(
+        'Email not verified. Enter the code sent to your email, or request a new one at POST /auth/otp/send.',
+      );
     }
 
     return this.issueTokenPair(user);
@@ -262,13 +318,20 @@ export class AuthService {
 
     const byEmail = await this.userRepository.findByEmail(profile.email);
     if (byEmail) {
-      if (!byEmail.is_active) {
+      // A sign-up that never ran its OTP is not a deactivated account, and this
+      // is not a way around the check: Google has just proven ownership of the
+      // very mailbox the OTP would have tested, so the link activates it. Without
+      // this, registering by password and then pressing "Sign in with Google" is
+      // a dead end — the link stamps email_verified_at but the account stays off.
+      const pending = AuthService.isPendingVerification(byEmail);
+      if (!byEmail.is_active && !pending) {
         throw new UnauthorizedException('Account is deactivated');
       }
       const linked = await this.userRepository.linkGoogleAccount(
         byEmail._id,
         profile.googleId,
         profile.avatarUrl,
+        pending,
       );
       // Null means another Google identity claimed this account between the read
       // and the write. Refuse rather than log the caller into someone else's.
@@ -312,14 +375,35 @@ export class AuthService {
         avatarUrl: profile.avatarUrl,
       });
     } catch (error) {
+      const duplicateFields = duplicateKeyFields(error);
+      if (!duplicateFields) throw error;
+
       // Two first-time logins racing each other: both saw "no such user", one
       // won the unique index. Re-read instead of failing the loser's sign-in.
-      if (!isDuplicateKeyError(error)) throw error;
       const existing = await this.userRepository.findByGoogleId(
         profile.googleId,
       );
-      if (!existing) throw error;
-      return existing;
+      if (existing) return existing;
+
+      // Not a race — the write is genuinely rejected. Never let the driver's
+      // message through: it names the database and collection, and the callback
+      // paints whatever we throw straight onto the user's screen.
+      console.error(
+        `Google sign-up rejected by unique index [${duplicateFields.join(', ')}] ` +
+          `email=${profile.email}`,
+        error,
+      );
+
+      if (duplicateFields.includes('phone')) {
+        // `phone_1` is still the old plain-unique index, which stores a MISSING
+        // field as null — so exactly ONE phone-less account can exist and every
+        // Google sign-up after it collides on `{ phone: null }`.
+        throw new InternalServerErrorException(
+          'Google sign-up is unavailable until the users.phone index is rebuilt ' +
+            'as a partial index — run scripts/migrate-google-auth.ts',
+        );
+      }
+      throw new ConflictException('Account already exists');
     }
 
     // Same fire-and-forget contract as register(): a loyalty hiccup must not

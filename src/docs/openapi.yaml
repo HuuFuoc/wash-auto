@@ -1114,6 +1114,14 @@ paths:
     post:
       tags: [auth]
       summary: Register a customer account
+      description: >-
+        The account is created INACTIVE (`isActive: false`) and a verification
+        code is mailed straight away. POST /auth/otp/verify is what activates it;
+        until then POST /auth/login answers 403 for the correct password.
+
+
+        Signing in with Google on the same address activates the account too -
+        Google proves the same mailbox the code would have.
       requestBody:
         required: true
         content:
@@ -1147,6 +1155,15 @@ paths:
               schema: { $ref: '#/components/schemas/AuthResponse' }
         '401':
           description: Invalid credentials
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '403':
+          description: >-
+            Correct password, but the account has not verified its email yet.
+            Send the user to the OTP screen; POST /auth/otp/send mails a new
+            code. A deactivated account gets 401, not this - the unverified
+            state is only disclosed once the password proves who is asking.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
@@ -1321,6 +1338,11 @@ paths:
     post:
       tags: [auth]
       summary: Verify an email OTP code
+      description: >-
+        Doubles as account activation: an account created by POST /auth/register
+        is switched on (`isActive: true`) the first time it passes this check.
+        Later calls only refresh the verification timestamp. An account an admin
+        deactivated is NOT revived here - it answers 401.
       requestBody:
         required: true
         content:

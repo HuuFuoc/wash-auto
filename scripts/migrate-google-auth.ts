@@ -1,24 +1,34 @@
 /*
- * Rebuilds the `users.phone` unique index as SPARSE, so Google accounts (which
- * have no phone number) can exist.
+ * Rebuilds `users.phone` and `users.google_id` as PARTIAL unique indexes, so
+ * that they are unique only among documents that actually have them. Google
+ * accounts have no phone; password accounts have no google_id.
  *
- * Why a script and not just the schema change: MongoDB cannot alter an index's
- * options in place. `createIndex` with the same key pattern but different
- * options fails with IndexOptionsConflict, and Mongoose's autoIndex swallows
- * that into an 'index' event nobody listens to — so the app boots looking
- * healthy while the OLD non-sparse index is still enforcing the constraint.
- *
- * What goes wrong without it: a plain unique index stores a missing field as
+ * What goes wrong without it: a plain unique index stores a MISSING field as
  * null and indexes that null. The FIRST phone-less Google sign-up succeeds; the
- * SECOND one dies with `E11000 duplicate key: phone_1 dup key: { phone: null }`.
- * One user gets in, everyone after them is locked out — and the error names a
- * field the user never supplied, so it reads as a mystery.
+ * SECOND dies with `E11000 duplicate key: phone_1 dup key: { phone: null }`.
+ * One user gets in and everyone after them is locked out — and the error names
+ * a field the user never supplied, so it reads as a mystery. (The app does not
+ * write `phone: null`; Mongoose drops undefined keys. The null in that message
+ * is MongoDB describing how it indexed the absent field.)
+ *
+ * Why a script and not just the schema change: an index's options are immutable.
+ * `createIndex` with the same key pattern but different options fails with
+ * IndexOptionsConflict, and Mongoose's autoIndex swallows that into an 'index'
+ * event nobody listens to — so the app boots looking healthy while the OLD
+ * index carries on rejecting writes.
+ *
+ * Why partial rather than sparse: both work for the writes this code makes,
+ * because it only ever omits the key. Sparse skips a MISSING field but still
+ * indexes one that is present and explicitly null, so it would stop covering us
+ * the day some other path writes `phone: null`. `$type: 'string'` indexes a
+ * document only when the value is really a string, which is the actual rule.
  *
  * Guarantees:
- *   - Idempotent. Re-running when the index is already sparse is a no-op.
- *   - Non-destructive. Only index metadata changes; no document is touched.
- *   - Safe to run before deploying the new code (the old code never wrote a
- *     phone-less user, so a sparse index behaves identically for it).
+ *   - Idempotent. Re-running against correct indexes is a no-op.
+ *   - Only `phone` is written, and only where it is explicitly `null` — that key
+ *     is removed. No other field is modified.
+ *   - Safe to run before deploying the new code: the old code never created a
+ *     phone-less user, so the new index is equivalent for it.
  *
  * Run once, BEFORE or WITH the deploy that adds Google sign-in:
  *   pnpm exec ts-node scripts/migrate-google-auth.ts
@@ -30,14 +40,13 @@
  *   db.users.dropIndex('phone_1');
  *   db.users.createIndex({ phone: 1 }, { unique: true });
  *
- * There is a brief window between the drop and the recreate during which two
+ * There is a brief window between each drop and recreate during which two
  * concurrent writes could insert the same phone number. On a system this size
  * that is a fraction of a second; run it off-peak if that still bothers you.
  */
 import mongoose from 'mongoose';
 import { config } from '../src/config';
 
-const PHONE_INDEX = 'phone_1';
 const dryRun = process.argv.includes('--dry-run');
 
 interface IIndexInfo {
@@ -45,6 +54,54 @@ interface IIndexInfo {
   key: Record<string, number>;
   unique?: boolean;
   sparse?: boolean;
+  partialFilterExpression?: Record<string, unknown>;
+}
+
+type Users = ReturnType<typeof mongoose.connection.collection>;
+
+/** What the schema declares — see src/modules/auth/user.model.ts. */
+const wanted = (field: string) => ({
+  unique: true,
+  partialFilterExpression: { [field]: { $type: 'string' } },
+});
+
+/** True when the live index already matches what the schema wants. */
+function isCorrect(index: IIndexInfo, field: string): boolean {
+  const filter = index.partialFilterExpression?.[field] as
+    | { $type?: unknown }
+    | undefined;
+  return index.unique === true && filter?.$type === 'string';
+}
+
+async function ensureUniqueWhenPresent(
+  users: Users,
+  field: 'phone' | 'google_id',
+  indexes: IIndexInfo[],
+): Promise<void> {
+  const name = `${field}_1`;
+  const existing = indexes.find((i) => i.name === name);
+
+  if (existing && isCorrect(existing, field)) {
+    console.log(`${name} is already unique + partial — nothing to do.`);
+    return;
+  }
+
+  if (existing) {
+    console.log(
+      `Rebuilding ${name} (unique=${String(existing.unique)} ` +
+        `sparse=${String(existing.sparse)} ` +
+        `partial=${existing.partialFilterExpression ? 'yes' : 'no'}) ` +
+        `as unique + partial on $type:'string'.`,
+    );
+    // Index options are immutable, so the old one has to go first. There is a
+    // sub-second window here with no uniqueness on the field; run it off-peak if
+    // that matters.
+    if (!dryRun) await users.dropIndex(name);
+  } else {
+    console.log(`No ${name} index — creating it unique + partial.`);
+  }
+
+  if (!dryRun) await users.createIndex({ [field]: 1 }, wanted(field));
 }
 
 async function main(): Promise<void> {
@@ -55,45 +112,30 @@ async function main(): Promise<void> {
   );
 
   const indexes = (await users.indexes()) as unknown as IIndexInfo[];
-  const phoneIndex = indexes.find((i) => i.name === PHONE_INDEX);
+  await ensureUniqueWhenPresent(users, 'phone', indexes);
+  await ensureUniqueWhenPresent(users, 'google_id', indexes);
 
-  if (!phoneIndex) {
-    console.log(`No ${PHONE_INDEX} index found — creating it sparse + unique.`);
-    if (!dryRun) {
-      await users.createIndex({ phone: 1 }, { unique: true, sparse: true });
-    }
-  } else if (phoneIndex.sparse === true && phoneIndex.unique === true) {
-    console.log(`${PHONE_INDEX} is already unique + sparse — nothing to do.`);
-  } else {
-    // Documents that would break the unique constraint on the way back in. A
-    // pre-existing duplicate cannot exist (the old index forbade it), but a
-    // dropIndex followed by a failed createIndex would leave the collection with
-    // NO uniqueness at all, so check before touching anything.
-    const nulls = await users.countDocuments({
-      $or: [{ phone: null }, { phone: { $exists: false } }],
-    });
-    if (nulls > 1) {
-      throw new Error(
-        `${nulls} users have a null/missing phone — the sparse index only skips ` +
-          `MISSING fields, so unset the explicit nulls first: ` +
-          `db.users.updateMany({ phone: null }, { $unset: { phone: "" } })`,
-      );
-    }
-
+  // Data hygiene, not a correctness requirement: a partial index on
+  // `$type: 'string'` already ignores nulls. But `phone: null` would serialise
+  // into the API as a third state alongside "a string" and "absent", which the
+  // frontend contract (phone?: string) does not allow for.
+  //
+  // `{ phone: null }` would be the WRONG query here — in MongoDB that also
+  // matches documents with no `phone` field at all, i.e. every Google account.
+  // `$type: 'null'` matches only a field that is present and null.
+  const explicitNulls = await users.countDocuments({
+    phone: { $type: 'null' },
+  });
+  if (explicitNulls > 0) {
     console.log(
-      `Rebuilding ${PHONE_INDEX} (unique=${String(phoneIndex.unique)} ` +
-        `sparse=${String(phoneIndex.sparse)}) as unique + sparse.`,
+      `Unsetting ${explicitNulls} explicit \`phone: null\` value(s).`,
     );
     if (!dryRun) {
-      await users.dropIndex(PHONE_INDEX);
-      await users.createIndex({ phone: 1 }, { unique: true, sparse: true });
+      await users.updateMany(
+        { phone: { $type: 'null' } },
+        { $unset: { phone: '' } },
+      );
     }
-  }
-
-  // New field, so this is a plain create — no conflict is possible.
-  console.log('Ensuring google_id_1 (unique + sparse).');
-  if (!dryRun) {
-    await users.createIndex({ google_id: 1 }, { unique: true, sparse: true });
   }
 
   console.log(

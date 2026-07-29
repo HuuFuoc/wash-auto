@@ -127,8 +127,37 @@ describe('AuthService Google sign-in', () => {
       userId,
       profile.googleId,
       profile.avatarUrl,
+      // Already active - the link has no activation to do.
+      false,
     );
     expect(createUser).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Registered by password, never entered the OTP, then pressed "Sign in with
+   * Google". Google has proven the same mailbox the OTP would have, so this is
+   * the second way to activate an account - not a bypass of the check.
+   */
+  it('activates a sign-up still waiting on its OTP when it links Google', async () => {
+    const { service, linkGoogleAccount } = build({
+      byGoogleId: null,
+      byEmail: {
+        _id: userId,
+        role_id: roleId,
+        email: profile.email,
+        is_active: false,
+      },
+    });
+
+    await expect(
+      service.loginWithGoogleIdToken('id-token'),
+    ).resolves.toMatchObject({ refreshToken: 'refresh-token' });
+    expect(linkGoogleAccount).toHaveBeenCalledWith(
+      userId,
+      profile.googleId,
+      profile.avatarUrl,
+      true,
+    );
   });
 
   // linkGoogleAccount's `google_id: { $exists: false }` guard returned no doc:
@@ -187,6 +216,77 @@ describe('AuthService Google sign-in', () => {
     await expect(service.loginWithGoogleIdToken('id-token')).rejects.toThrow(
       UnauthorizedException,
     );
+  });
+
+  /**
+   * The un-run migration, as it actually reached production: the old non-sparse
+   * `phone_1` index treats a missing field as null, so the first phone-less
+   * account is fine and every Google sign-up after it dies on `{ phone: null }`.
+   */
+  describe('when createUser hits a unique index', () => {
+    const e11000 = (keyPattern: Record<string, number>) =>
+      Object.assign(new Error('E11000 duplicate key error'), {
+        code: 11000,
+        keyPattern,
+      });
+
+    it('recovers a racing sign-up by re-reading the winner', async () => {
+      const { service, userRepository, createUser } = build({
+        byGoogleId: null,
+        byEmail: null,
+      });
+      const winner = {
+        _id: userId,
+        role_id: roleId,
+        email: profile.email,
+        is_active: true,
+      };
+      createUser.mockRejectedValueOnce(e11000({ google_id: 1 }));
+      // First lookup (before insert) misses, second (after the clash) finds it.
+      userRepository.findByGoogleId
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(winner);
+
+      await expect(
+        service.loginWithGoogleIdToken('id-token'),
+      ).resolves.toMatchObject({ refreshToken: 'refresh-token' });
+    });
+
+    it('reports the phone-index collision as a fixable server fault', async () => {
+      const { service, createUser } = build({
+        byGoogleId: null,
+        byEmail: null,
+      });
+      createUser.mockRejectedValueOnce(e11000({ phone: 1 }));
+
+      await expect(service.loginWithGoogleIdToken('id-token')).rejects.toThrow(
+        /migrate-google-auth/,
+      );
+    });
+
+    // The driver's message names the database and collection, and the redirect
+    // callback paints whatever we throw onto the user's screen.
+    it('never leaks the raw driver message', async () => {
+      const { service, createUser } = build({
+        byGoogleId: null,
+        byEmail: null,
+      });
+      createUser.mockRejectedValueOnce(
+        Object.assign(
+          new Error(
+            'E11000 duplicate key error collection: wdp301.users index: email_1',
+          ),
+          { code: 11000, keyPattern: { email: 1 } },
+        ),
+      );
+
+      const thrown = await service
+        .loginWithGoogleIdToken('id-token')
+        .catch((err: Error) => err);
+
+      expect(thrown).toBeInstanceOf(ConflictException);
+      expect((thrown as Error).message).not.toContain('wdp301');
+    });
   });
 
   // A loyalty outage must not cost the user the account that was just created.

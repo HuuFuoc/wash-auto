@@ -18,6 +18,11 @@ export interface ICreateUserInput {
   passwordHash?: string;
   googleId?: string;
   emailVerifiedAt?: Date;
+  /**
+   * Omit to get the schema default (`true`). Password sign-ups pass `false` and
+   * stay switched off until the email OTP goes through — see AuthService.register.
+   */
+  isActive?: boolean;
   avatarUrl?: string;
   dateOfBirth?: Date;
 }
@@ -62,11 +67,16 @@ export class UserRepository {
    *
    * `avatar_url` is only filled when the account has none, so a user who
    * uploaded their own picture does not get it replaced by their Google one.
+   *
+   * `activate` carries the same meaning as in setEmailVerifiedAt: the caller has
+   * established that this account is only switched off because it never ran its
+   * OTP, and Google has now supplied that proof.
    */
   async linkGoogleAccount(
     id: Types.ObjectId | string,
     googleId: string,
     avatarUrl?: string,
+    activate = false,
   ): Promise<UserDocument | null> {
     const set: Record<string, unknown> = {
       google_id: googleId,
@@ -74,6 +84,7 @@ export class UserRepository {
       // account is verified by the same evidence an OTP would have produced.
       email_verified_at: new Date(),
     };
+    if (activate) set.is_active = true;
     // `$ifNull` keeps the existing avatar when there is one; an update pipeline
     // is what lets that read-then-write happen inside the single atomic update.
     if (avatarUrl) {
@@ -158,21 +169,28 @@ export class UserRepository {
     return docs.map((d) => d._id);
   }
 
-  /** Stamps email_verified_at after a successful OTP verification. */
+  /**
+   * Stamps email_verified_at after a successful OTP verification.
+   * `activate` additionally switches `is_active` on —
+   * that is the moment a password sign-up becomes a usable account. It is an
+   * explicit argument rather than something inferred here so that an account an
+   * admin deactivated cannot re-enable itself just by running the OTP flow.
+   */
   async setEmailVerifiedAt(
     id: Types.ObjectId | string,
     at: Date,
+    activate = false,
   ): Promise<void> {
-    await UserModel.updateOne(
-      { _id: id },
-      { $set: { email_verified_at: at } },
-    ).exec();
+    const set: Record<string, unknown> = { email_verified_at: at };
+    if (activate) set.is_active = true;
+    await UserModel.updateOne({ _id: id }, { $set: set }).exec();
   }
 
   async createUser(input: ICreateUserInput): Promise<UserDocument> {
     // `undefined` values are dropped by Mongoose, so a phone-less Google account
-    // is stored with the key ABSENT rather than null — which is exactly what the
-    // sparse unique index on `phone` needs in order to skip it.
+    // is stored with the key ABSENT rather than null. The partial unique index
+    // on `phone` skips it either way, but keeping the key out means the API
+    // never emits `phone: null` as a third state next to "string" and "absent".
     return UserModel.create({
       role_id: input.roleId,
       name: input.name,
@@ -181,6 +199,9 @@ export class UserRepository {
       password_hash: input.passwordHash,
       google_id: input.googleId,
       email_verified_at: input.emailVerifiedAt,
+      // Same `undefined` rule as above: leaving it out lets the schema default
+      // (`true`) stand, so only callers that mean "inactive" have to say so.
+      is_active: input.isActive,
       avatar_url: input.avatarUrl,
       date_of_birth: input.dateOfBirth,
     });
