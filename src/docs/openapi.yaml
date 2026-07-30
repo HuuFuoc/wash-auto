@@ -531,6 +531,28 @@ components:
           type: array
           items: { type: string }
           description: 'EMPTY = every vehicle type qualifies. Join with GET /vehicle-types.'
+        remaining:
+          type: integer
+          example: 42
+          description: >-
+            Vouchers still unclaimed in this campaign's pool. Pool stock ONLY —
+            not the budget and not maxUsesTotal, neither of which a customer may
+            see. Present on the /voucher-campaigns endpoints; absent where a
+            campaign is embedded in another payload (e.g. VoucherResponse).
+        soldOut:
+          type: boolean
+          example: false
+          description: >-
+            Shorthand for `remaining === 0`, so a card can show "Hết lượt"
+            instead of the customer finding out by tapping Claim.
+        alreadyClaimed:
+          type: boolean
+          example: false
+          description: >-
+            The signed-in customer has taken their full `maxUsesPerCustomer`
+            allowance from this campaign. Only computed when the request carries
+            a bearer token; ABSENT on an anonymous request, which means
+            "unknown" and must not be rendered as "chưa nhận".
     VoucherCampaignPublicListResponse:
       type: object
       properties:
@@ -2651,8 +2673,16 @@ paths:
         Sorted by `validUntil` ascending — the offer about to expire first.
 
 
-        Listing a campaign does not make it claimable: claiming still needs the
-        campaign's claim code, which this endpoint never returns.
+        Auth is OPTIONAL. Anonymous callers get the page as before; send a
+        bearer token and every card also carries `alreadyClaimed` for that
+        customer. `remaining` / `soldOut` are returned either way.
+
+
+        A campaign listed here can be claimed in one tap with
+        `POST /voucher-campaigns/{id}/claim` when it has an open pool. The
+        `publicClaimCode` path still exists for targeted promotions that are
+        NOT listed here, and this endpoint never returns those codes.
+      security: [{ bearerAuth: [] }, {}]
       parameters:
         - { name: status, in: query, schema: { type: string, enum: [active, scheduled, paused, ended], default: active } }
         - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
@@ -2681,6 +2711,11 @@ paths:
 
         For rendering a wallet, prefer the `campaign` object embedded in each
         voucher from `GET /me/vouchers` — one request instead of one per card.
+
+
+        Auth is OPTIONAL: a bearer token adds `alreadyClaimed` for that
+        customer, and nothing else changes.
+      security: [{ bearerAuth: [] }, {}]
       responses:
         '200':
           description: OK
@@ -2694,6 +2729,78 @@ paths:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
+  /voucher-campaigns/{id}/claim:
+    post:
+      tags: [voucher-campaigns]
+      summary: Claim a voucher from this campaign (customer, one tap)
+      description: >
+        Draws ONE unclaimed voucher out of the campaign's pool and assigns it to
+        the caller. No body — the campaign id in the path is the whole request,
+        which is what lets the promotions page offer a single-tap claim instead
+        of asking the customer to type a code.
+
+
+        Same result as `POST /me/vouchers/claim` with the campaign's
+        `publicClaimCode`, and the same 201 + `VoucherResponse` body. The
+        difference is the errors: the code route flattens every refusal into one
+        404 so a scraper cannot confirm which secret codes exist, whereas a
+        campaign id is published by `GET /voucher-campaigns`, so this route can
+        and does say precisely what went wrong.
+
+
+        Gates, in order, matching what the pricing engine will later check —
+        a voucher handed out here is one checkout will accept:
+
+          * campaign is ACTIVE and inside its validity window → 409
+          * `allowedTierIds` contains the customer's loyalty tier → 403
+          * `budgetVnd` not yet exhausted → 409
+          * customer is under `maxUsesPerCustomer` → 409
+          * the pool still has a voucher left → 409
+
+
+        Rate-limited per ACCOUNT (10 / 10 min), sharing one budget with
+        `POST /me/vouchers/claim`.
+
+
+        Poll-free alternative: `remaining` / `soldOut` / `alreadyClaimed` on the
+        campaign let the UI disable the button before the customer taps it.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '201':
+          description: Claimed — the voucher is now in the customer's wallet
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherResponse' }
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '403':
+          description: Customer's loyalty tier is not on `allowedTierIds`
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: No such campaign, or it is still a DRAFT
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: >-
+            Not claimable right now — campaign not running, budget spent,
+            per-customer limit reached, or the pool is empty. The `message` says
+            which.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '429':
+          description: Too many claim attempts (10 / 10 min per account)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /admin/voucher-campaigns:
     post:
       tags: [voucher-campaigns]

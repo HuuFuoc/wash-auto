@@ -49,6 +49,23 @@ export interface IVoucherBatchRow extends IVoucherStatsRow {
   createdAt: Date;
 }
 
+/** One `$group` row from the per-campaign rollups below. */
+interface ICampaignCountRow {
+  _id: Types.ObjectId;
+  count: number;
+}
+
+/** Drops anything that is not a usable ObjectId before it reaches `$in`. */
+function toObjectIds(ids: Array<Types.ObjectId | string>): Types.ObjectId[] {
+  return ids
+    .filter((id) => Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id));
+}
+
+function toCountMap(rows: ICampaignCountRow[]): Map<string, number> {
+  return new Map(rows.map((row) => [row._id.toString(), row.count]));
+}
+
 const EMPTY_STATS: IVoucherStatsRow = {
   total: 0,
   used: 0,
@@ -205,6 +222,61 @@ export class VoucherRepository {
       campaign_id: new Types.ObjectId(campaignId),
       customer_id: new Types.ObjectId(customerId),
     }).exec();
+  }
+
+  /**
+   * How many claimable vouchers each campaign still has sitting in its pool.
+   *
+   * The filter is deliberately IDENTICAL to `claimAnyFromCampaign`'s, so a
+   * campaign this reports as having stock is one that claim can actually draw
+   * from — counting rows the claim would skip (already owned, expired) would
+   * show "còn 3 suất" on a card that then fails.
+   *
+   * Bulk by design: the promotions list renders N cards and must not fan out
+   * into N round-trips. Campaigns with an empty pool are simply absent from the
+   * returned map, so callers default to 0.
+   */
+  async countInPoolByCampaigns(
+    campaignIds: Array<Types.ObjectId | string>,
+    now: Date = new Date(),
+  ): Promise<Map<string, number>> {
+    const ids = toObjectIds(campaignIds);
+    if (ids.length === 0) return new Map();
+    const rows = await VoucherModel.aggregate<ICampaignCountRow>([
+      {
+        $match: {
+          campaign_id: { $in: ids },
+          customer_id: { $exists: false },
+          status: VoucherStatusEnum.UNUSED,
+          expires_at: { $gt: now },
+        },
+      },
+      { $group: { _id: '$campaign_id', count: { $sum: 1 } } },
+    ]).exec();
+    return toCountMap(rows);
+  }
+
+  /**
+   * Bulk form of `countByCampaignForCustomer` — how many vouchers of each
+   * campaign this one customer already holds. Feeds the "Đã nhận" state on the
+   * promotions list in a single query.
+   */
+  async countByCampaignsForCustomer(
+    campaignIds: Array<Types.ObjectId | string>,
+    customerId: Types.ObjectId | string,
+  ): Promise<Map<string, number>> {
+    const ids = toObjectIds(campaignIds);
+    if (ids.length === 0) return new Map();
+    const rows = await VoucherModel.aggregate<ICampaignCountRow>([
+      {
+        $match: {
+          campaign_id: { $in: ids },
+          customer_id: new Types.ObjectId(customerId),
+        },
+      },
+      { $group: { _id: '$campaign_id', count: { $sum: 1 } } },
+    ]).exec();
+    return toCountMap(rows);
   }
 
   /**

@@ -43,10 +43,23 @@ function campaignDoc(over: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * Availability comes from the voucher pool, so every public read now touches
+ * the voucher repository. Default the counts to "nothing", which is the shape
+ * the projection tests care about; the availability suite below overrides them.
+ */
+const voucherRepositoryStub = (
+  pool = new Map<string, number>(),
+  held = new Map<string, number>(),
+) => ({
+  countInPoolByCampaigns: jest.fn(async () => pool),
+  countByCampaignsForCustomer: jest.fn(async () => held),
+});
+
 const makeService = (campaign: Record<string, unknown> | null) =>
   new VoucherCampaignService(
     { findById: jest.fn(async () => campaign) } as never,
-    {} as never,
+    voucherRepositoryStub() as never,
     {} as never,
   );
 
@@ -138,7 +151,7 @@ describe('VoucherCampaignService.listPublic', () => {
     const count = jest.fn(async () => docs.length);
     const service = new VoucherCampaignService(
       { findPaginated, count } as never,
-      {} as never,
+      voucherRepositoryStub() as never,
       {} as never,
     );
     return { service, findPaginated, count };
@@ -214,5 +227,122 @@ describe('VoucherCampaignService.listPublic', () => {
 
     expect(result.data).toEqual([]);
     expect(result.meta.totalPages).toBe(1);
+  });
+});
+
+describe('campaign availability', () => {
+  const viewerId = new Types.ObjectId().toString();
+
+  const makeService = (
+    campaign: Record<string, unknown>,
+    pool: number | undefined,
+    held?: number,
+  ) => {
+    const campaignKey = (campaign._id as Types.ObjectId).toString();
+    const voucherRepository = voucherRepositoryStub(
+      pool === undefined ? new Map() : new Map([[campaignKey, pool]]),
+      held === undefined ? new Map() : new Map([[campaignKey, held]]),
+    );
+    const service = new VoucherCampaignService(
+      {
+        findById: jest.fn(async () => campaign),
+        findPaginated: jest.fn(async () => [campaign]),
+        count: jest.fn(async () => 1),
+      } as never,
+      voucherRepository as never,
+      {} as never,
+    );
+    return { service, voucherRepository };
+  };
+
+  it('reports what is left in the pool and that it is not sold out', async () => {
+    const { service } = makeService(campaignDoc(), 42);
+
+    const dto = await service.getPublicById(new Types.ObjectId().toString());
+
+    expect(dto.remaining).toBe(42);
+    expect(dto.soldOut).toBe(false);
+  });
+
+  it('calls a campaign with nothing left in the pool sold out', async () => {
+    // A campaign absent from the count map has no claimable vouchers at all.
+    const { service } = makeService(campaignDoc(), undefined);
+
+    const dto = await service.getPublicById(new Types.ObjectId().toString());
+
+    expect(dto.remaining).toBe(0);
+    expect(dto.soldOut).toBe(true);
+  });
+
+  it('omits alreadyClaimed for an anonymous viewer rather than guessing false', async () => {
+    // Absent means "unknown". Sending false would make the card invite a claim
+    // the customer may in fact have already taken. Asserted on the SERIALIZED
+    // payload, which is what the client sees — an undefined class field is
+    // still an own property in ES2023, but never survives JSON.stringify.
+    const { service, voucherRepository } = makeService(campaignDoc(), 5);
+
+    const dto = await service.getPublicById(new Types.ObjectId().toString());
+
+    expect(JSON.parse(JSON.stringify(dto))).not.toHaveProperty(
+      'alreadyClaimed',
+    );
+    expect(
+      voucherRepository.countByCampaignsForCustomer,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('flags alreadyClaimed once the viewer is at their per-customer cap', async () => {
+    const { service } = makeService(
+      campaignDoc({ max_uses_per_customer: 2 }),
+      5,
+      2,
+    );
+
+    const dto = await service.getPublicById(
+      new Types.ObjectId().toString(),
+      viewerId,
+    );
+
+    expect(dto.alreadyClaimed).toBe(true);
+  });
+
+  it('leaves alreadyClaimed false while the viewer is still under the cap', async () => {
+    // Holding one of two is not "đã nhận" — there is a second still to take.
+    const { service } = makeService(
+      campaignDoc({ max_uses_per_customer: 2 }),
+      5,
+      1,
+    );
+
+    const dto = await service.getPublicById(
+      new Types.ObjectId().toString(),
+      viewerId,
+    );
+
+    expect(dto.alreadyClaimed).toBe(false);
+  });
+
+  it('resolves the whole list in two queries, not two per card', async () => {
+    const { service, voucherRepository } = makeService(campaignDoc(), 3, 0);
+
+    const result = await service.listPublic(undefined, 1, 20, viewerId);
+
+    expect(result.data[0].remaining).toBe(3);
+    expect(result.data[0].alreadyClaimed).toBe(false);
+    expect(voucherRepository.countInPoolByCampaigns).toHaveBeenCalledTimes(1);
+    expect(voucherRepository.countByCampaignsForCustomer).toHaveBeenCalledTimes(
+      1,
+    );
+  });
+
+  it('leaves availability off a campaign embedded elsewhere', async () => {
+    // VoucherResponse embeds this DTO for a voucher already in the wallet; the
+    // pool state of its campaign is noise there, so nothing is serialized.
+    const dto = VoucherCampaignPublicDto.fromDocument(campaignDoc() as never);
+    const wire = JSON.parse(JSON.stringify(dto)) as Record<string, unknown>;
+
+    expect(wire).not.toHaveProperty('remaining');
+    expect(wire).not.toHaveProperty('soldOut');
+    expect(wire).not.toHaveProperty('alreadyClaimed');
   });
 });

@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/require-await -- async jest mocks mirror the real async repo/service signatures */
 import { Types } from 'mongoose';
 import { VoucherService } from './voucher.service';
-import { ConflictException, NotFoundException } from '../../common/exceptions';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '../../common/exceptions';
 import { VoucherSourceEnum } from '../../shared/voucher/types/voucher-source.enum';
 import { VoucherStatusEnum } from '../../shared/voucher/types/voucher-status.enum';
 import { CampaignStatusEnum } from '../../shared/voucher-campaign/types/campaign-status.enum';
@@ -41,6 +45,9 @@ function makeService(
     findByPublicClaimCode: jest.fn(async () => null),
     findById: jest.fn(async () => null),
   },
+  loyaltyAccountRepository: Record<string, unknown> = {
+    findByCustomerId: jest.fn(async () => null),
+  },
 ) {
   return new VoucherService(
     repository as never,
@@ -48,6 +55,7 @@ function makeService(
     {} as never,
     campaignRepository as never,
     {} as never,
+    loyaltyAccountRepository as never,
   );
 }
 
@@ -374,6 +382,187 @@ describe('VoucherService.claimByCode', () => {
 
     expect(res.code).toBe('WASH-ABC1234567');
     expect(repository.claimByCode).not.toHaveBeenCalled();
+  });
+});
+
+describe('VoucherService.claimFromCampaignId', () => {
+  const customerId = new Types.ObjectId();
+
+  /** Repository that hands out one voucher and reports the customer holds none. */
+  const claimableRepository = (campaign: { _id: Types.ObjectId }) => ({
+    claimAnyFromCampaign: jest.fn(async () =>
+      voucherDoc({ campaign_id: campaign._id, customer_id: customerId }),
+    ),
+    countByCampaignForCustomer: jest.fn(async () => 0),
+    releaseClaim: jest.fn(async () => undefined),
+  });
+
+  const claim = (
+    campaign: Record<string, unknown> | null,
+    repository: Record<string, unknown>,
+    loyaltyAccount: Record<string, unknown> | null = null,
+  ) =>
+    makeService(
+      repository,
+      { findById: jest.fn(async () => campaign) },
+      { findByCustomerId: jest.fn(async () => loyaltyAccount) },
+    ).claimFromCampaignId(
+      customerId.toString(),
+      (campaign?._id as Types.ObjectId | undefined)?.toString() ??
+        new Types.ObjectId().toString(),
+    );
+
+  it('draws one voucher from the pool without any code being typed', async () => {
+    const campaign = campaignDoc();
+    const repository = claimableRepository(campaign);
+
+    const res = await claim(campaign, repository);
+
+    expect(repository.claimAnyFromCampaign).toHaveBeenCalledWith(
+      campaign._id,
+      customerId.toString(),
+    );
+    expect(res.code).toBeTruthy();
+  });
+
+  it('404s a DRAFT campaign, which the public API pretends does not exist', async () => {
+    const campaign = campaignDoc({ status: CampaignStatusEnum.DRAFT });
+    const repository = { claimAnyFromCampaign: jest.fn() };
+
+    await expect(claim(campaign, repository)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(repository.claimAnyFromCampaign).not.toHaveBeenCalled();
+  });
+
+  it('404s an unknown campaign id', async () => {
+    await expect(
+      claim(null, { claimAnyFromCampaign: jest.fn() }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('409s a campaign that is not running', async () => {
+    const campaign = campaignDoc({ status: CampaignStatusEnum.PAUSED });
+    const repository = { claimAnyFromCampaign: jest.fn() };
+
+    await expect(claim(campaign, repository)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(repository.claimAnyFromCampaign).not.toHaveBeenCalled();
+  });
+
+  it('409s an empty pool with its own message, not a generic 404', async () => {
+    // The code route flattens everything into one 404 to stop code scraping.
+    // A campaign id is published, so there is nothing left to protect and the
+    // app can finally distinguish "hết voucher" from "sai mã".
+    const campaign = campaignDoc();
+    const repository = {
+      claimAnyFromCampaign: jest.fn(async () => null),
+      countByCampaignForCustomer: jest.fn(async () => 0),
+    };
+
+    await expect(claim(campaign, repository)).rejects.toThrow(/hết voucher/i);
+  });
+
+  it('409s once the customer has taken their allowance', async () => {
+    const campaign = campaignDoc({ max_uses_per_customer: 2 });
+    const repository = {
+      claimAnyFromCampaign: jest.fn(),
+      countByCampaignForCustomer: jest.fn(async () => 2),
+    };
+
+    await expect(claim(campaign, repository)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(repository.claimAnyFromCampaign).not.toHaveBeenCalled();
+  });
+
+  it('409s a campaign that has spent its budget', async () => {
+    // Claiming here would mint a voucher the pricing engine then refuses, which
+    // is a worse experience than being told no now.
+    const campaign = campaignDoc({
+      budget_vnd: 1_000_000,
+      redeemed_vnd: 1_000_000,
+    });
+    const repository = { claimAnyFromCampaign: jest.fn() };
+
+    await expect(claim(campaign, repository)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(repository.claimAnyFromCampaign).not.toHaveBeenCalled();
+  });
+
+  it('still claims when the campaign has budget left', async () => {
+    const campaign = campaignDoc({
+      budget_vnd: 1_000_000,
+      redeemed_vnd: 999_999,
+    });
+    const repository = claimableRepository(campaign);
+
+    await expect(claim(campaign, repository)).resolves.toBeDefined();
+  });
+
+  it('403s a customer whose tier is off the whitelist', async () => {
+    const campaign = campaignDoc({ allowed_tier_ids: [new Types.ObjectId()] });
+    const repository = { claimAnyFromCampaign: jest.fn() };
+
+    await expect(
+      claim(campaign, repository, { tier_config_id: new Types.ObjectId() }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(repository.claimAnyFromCampaign).not.toHaveBeenCalled();
+  });
+
+  it('403s a customer with no loyalty account at all — the gate fails closed', async () => {
+    const campaign = campaignDoc({ allowed_tier_ids: [new Types.ObjectId()] });
+
+    await expect(
+      claim(campaign, { claimAnyFromCampaign: jest.fn() }, null),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('claims when the tier IS on the whitelist', async () => {
+    const tierId = new Types.ObjectId();
+    const campaign = campaignDoc({ allowed_tier_ids: [tierId] });
+    const repository = claimableRepository(campaign);
+
+    await expect(
+      claim(campaign, repository, { tier_config_id: tierId }),
+    ).resolves.toBeDefined();
+  });
+
+  it('skips the tier lookup entirely when the campaign is open to everyone', async () => {
+    const campaign = campaignDoc({ allowed_tier_ids: [] });
+    const findByCustomerId = jest.fn(async () => null);
+
+    await makeService(
+      claimableRepository(campaign),
+      { findById: jest.fn(async () => campaign) },
+      { findByCustomerId },
+    ).claimFromCampaignId(customerId.toString(), campaign._id.toString());
+
+    expect(findByCustomerId).not.toHaveBeenCalled();
+  });
+
+  it('undoes a claim that raced past the per-customer limit', async () => {
+    const campaign = campaignDoc({ max_uses_per_customer: 1 });
+    const claimed = voucherDoc({ campaign_id: campaign._id });
+    let counted = 0;
+    const repository = {
+      claimAnyFromCampaign: jest.fn(async () => claimed),
+      // 0 before the claim, 2 after — a concurrent request already landed.
+      countByCampaignForCustomer: jest.fn(async () =>
+        counted++ === 0 ? 0 : 2,
+      ),
+      releaseClaim: jest.fn(async () => undefined),
+    };
+
+    await expect(claim(campaign, repository)).rejects.toBeInstanceOf(
+      ConflictException,
+    );
+    expect(repository.releaseClaim).toHaveBeenCalledWith(
+      claimed._id,
+      customerId.toString(),
+    );
   });
 });
 

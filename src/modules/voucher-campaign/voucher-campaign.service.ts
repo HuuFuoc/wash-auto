@@ -21,6 +21,7 @@ import {
 import { CampaignStatsResponseDto } from '../../shared/voucher-campaign/dto/campaign-stats-response.dto';
 import { BROWSABLE_CAMPAIGN_STATUSES } from '../../shared/voucher-campaign/dto/query-public-voucher-campaign.dto';
 import {
+  ICampaignAvailability,
   VoucherCampaignPublicDto,
   VoucherCampaignPublicListResponseDto,
 } from '../../shared/voucher-campaign/dto/voucher-campaign-public.dto';
@@ -179,13 +180,23 @@ export class VoucherCampaignService {
    * A DRAFT campaign is treated as non-existent: it is still being written, so
    * exposing its copy would leak an unannounced promotion to anyone who guessed
    * the id.
+   *
+   * `viewerId` comes from an OPTIONAL bearer token: signed in, the card also
+   * carries `alreadyClaimed`; anonymous, it simply omits it.
    */
-  async getPublicById(id: string): Promise<VoucherCampaignPublicDto> {
+  async getPublicById(
+    id: string,
+    viewerId?: string,
+  ): Promise<VoucherCampaignPublicDto> {
     const campaign = await this.requireCampaign(id);
     if (campaign.status === CampaignStatusEnum.DRAFT) {
       throw new NotFoundException('Campaign not found');
     }
-    return VoucherCampaignPublicDto.fromDocument(campaign);
+    const availability = await this.availabilityFor([campaign], viewerId);
+    return VoucherCampaignPublicDto.fromDocument(
+      campaign,
+      availability.get(campaign._id.toString()),
+    );
   }
 
   /**
@@ -204,6 +215,7 @@ export class VoucherCampaignService {
     status: CampaignStatusEnum | undefined,
     page: number,
     limit: number,
+    viewerId?: string,
   ): Promise<VoucherCampaignPublicListResponseDto> {
     const wanted =
       status && BROWSABLE_CAMPAIGN_STATUSES.includes(status)
@@ -220,8 +232,14 @@ export class VoucherCampaignService {
       this.repository.findPaginated(filter, page, limit, { valid_until: 1 }),
       this.repository.count(filter),
     ]);
+    const availability = await this.availabilityFor(docs, viewerId);
     return {
-      data: docs.map((d) => VoucherCampaignPublicDto.fromDocument(d)),
+      data: docs.map((d) =>
+        VoucherCampaignPublicDto.fromDocument(
+          d,
+          availability.get(d._id.toString()),
+        ),
+      ),
       meta: {
         page,
         limit,
@@ -428,6 +446,44 @@ export class VoucherCampaignService {
     }
     console.log(`campaign.status id=${id} ${current.status} → ${next}`);
     return VoucherCampaignResponseDto.fromDocument(moved);
+  }
+
+  /**
+   * "Can I still take this, and have I already?" for a page full of cards.
+   *
+   * Two aggregations for the whole page rather than two per card — the list is
+   * the hot public endpoint, and the naive version would fan out into 2N
+   * queries. Without these fields the client has no way to know either answer
+   * before it POSTs a claim, so every "Hết lượt" case arrives as a failed
+   * request the customer sees.
+   */
+  private async availabilityFor(
+    campaigns: VoucherCampaignDocument[],
+    viewerId?: string,
+  ): Promise<Map<string, ICampaignAvailability>> {
+    const out = new Map<string, ICampaignAvailability>();
+    if (campaigns.length === 0) return out;
+
+    const ids = campaigns.map((c) => c._id);
+    const [pool, held] = await Promise.all([
+      this.voucherRepository.countInPoolByCampaigns(ids),
+      viewerId
+        ? this.voucherRepository.countByCampaignsForCustomer(ids, viewerId)
+        : null,
+    ]);
+
+    for (const campaign of campaigns) {
+      const key = campaign._id.toString();
+      out.set(key, {
+        remaining: pool.get(key) ?? 0,
+        // Reaching the per-customer cap is what actually blocks a second claim,
+        // so that — not "holds at least one" — is what the flag reports.
+        alreadyClaimed: held
+          ? (held.get(key) ?? 0) >= campaign.max_uses_per_customer
+          : undefined,
+      });
+    }
+    return out;
   }
 
   private async requireCampaign(id: string): Promise<VoucherCampaignDocument> {

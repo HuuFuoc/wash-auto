@@ -55,6 +55,7 @@ function makeService(
     {} as never,
     campaignRepository as never,
     redemptionRepository as never,
+    {} as never,
   );
 }
 

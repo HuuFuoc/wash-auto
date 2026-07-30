@@ -103,6 +103,8 @@ export function createApp() {
   apiRouter.use('/vehicle-types', vehicleTypeRouter);
   apiRouter.use('/service-types', serviceTypeRouter);
   apiRouter.use('/tier-configs', tierConfigRouter);
+  // Reads are public (optional auth adds the viewer's `alreadyClaimed`); the
+  // POST /:id/claim inside this router guards itself with authMiddleware.
   apiRouter.use('/voucher-campaigns', voucherCampaignRouter);
   apiRouter.use('/upload', uploadRouter);
   apiRouter.use('/payments', paymentWebhookRouter); // PayOS webhook (no auth)
