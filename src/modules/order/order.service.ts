@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '../../common/exceptions';
 import { config } from '../../config';
+import { vnDateOf, vnDateTimeOf } from '../../common/vn-time';
 import { redisClient } from '../../core/redis';
 import {
   RealtimeEvent,
@@ -257,16 +258,9 @@ export function customerWasherView(
   };
 }
 
-/** Ngày dương lịch giờ Việt Nam (UTC+7 cố định, không DST) của một thời điểm. */
-export function vnDateOf(at: Date): string {
-  return new Date(at.getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
-}
-
-/** `2026-07-30 14:30` in Vietnam local time, for user-facing messages. */
-function vnDateTimeOf(at: Date): string {
-  const shifted = new Date(at.getTime() + 7 * 3_600_000).toISOString();
-  return `${shifted.slice(0, 10)} ${shifted.slice(11, 16)}`;
-}
+// Ngày dương lịch giờ Việt Nam của một thời điểm. Re-exported vì các module
+// khác (và spec) đã import từ đây; định nghĩa nằm ở common/vn-time.
+export { vnDateOf };
 
 /**
  * Turns the `active_slot_key` index rejection into the same 409 the read-time
