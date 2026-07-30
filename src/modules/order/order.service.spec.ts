@@ -18,6 +18,7 @@ import {
   customerWasherView,
   emitOrderStatus,
   emitSlotsChanged,
+  goldenHourSlotView,
   vnDateOf,
 } from './order.service';
 import { OrderStatusEnum } from '../../shared/order/types/order-status.enum';
@@ -85,6 +86,42 @@ describe('customerWasherView', () => {
     );
     expect(view.washerId).toBeUndefined();
     expect(view.canRate).toBe(false);
+  });
+});
+
+describe('goldenHourSlotView', () => {
+  const windowDoc = (discountPercent: number) =>
+    ({ discount_percent: discountPercent }) as never;
+
+  it('does not flag a slot golden when its window discounts nothing', () => {
+    // A 0% window pays no promotion, and the tier only pays inside a window
+    // that discounts — so the slot must advertise nothing, or the customer is
+    // quoted a discount that vanishes at the payment step.
+    expect(goldenHourSlotView(windowDoc(0), 5, 50)).toEqual({
+      isGoldenHour: false,
+      discountPercent: 0,
+    });
+  });
+
+  it('advertises window + tier for a discounting window', () => {
+    expect(goldenHourSlotView(windowDoc(10), 5, 50)).toEqual({
+      isGoldenHour: true,
+      discountPercent: 15,
+    });
+  });
+
+  it('never advertises more than the pricing-policy cap', () => {
+    expect(goldenHourSlotView(windowDoc(40), 5, 30)).toEqual({
+      isGoldenHour: true,
+      discountPercent: 30,
+    });
+  });
+
+  it('is not golden outside every window', () => {
+    expect(goldenHourSlotView(null, 5, 50)).toEqual({
+      isGoldenHour: false,
+      discountPercent: 0,
+    });
   });
 });
 

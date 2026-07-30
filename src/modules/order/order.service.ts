@@ -44,6 +44,7 @@ import { ShiftStatusEnum } from '../../shared/staff-shift/types/shift-status.enu
 import { ShiftTypeEnum } from '../../shared/staff-shift/types/shift-type.enum';
 import { UserRepository } from '../auth/user.repository';
 import { EmailService } from '../email/email.service';
+import { GoldenHourConfigDocument } from '../golden-hour/golden-hour.model';
 import { GoldenHourService } from '../golden-hour/golden-hour.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { PricingPolicyService } from '../pricing-policy/pricing-policy.service';
@@ -61,6 +62,7 @@ import { WorkOrderRepository } from '../work-order/work-order.repository';
 import {
   DiscountCalculationService,
   IPricingResult,
+  stackedDiscountPercent,
 } from '../pricing/discount-calculation.service';
 import { OrderDocument } from './order.model';
 import { IOrderListFilter, OrderRepository } from './order.repository';
@@ -71,15 +73,27 @@ const TXN_DEDUP_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 const MAX_SLOT_RANGE_MS = 31 * 24 * 60 * 60 * 1000; // slot query cap
 
 /**
- * Golden-hour window discount + tier discount, clamped to the admin-configured
- * pricing-policy cap. The voucher path stacks after this with its own VND cap.
+ * What a slot may advertise for a golden-hour window, decided by the pricing
+ * engine's own rule so the badge cannot promise a discount the order refuses.
+ *
+ * A window sitting at 0% is NOT golden as far as the customer is concerned:
+ * neither the promotion nor the tier pays there, so quoting the tier percent
+ * would collapse to full price at the payment step.
  */
-function stackedDiscountPercent(
-  windowDiscountPercent: number,
+export function goldenHourSlotView(
+  window: GoldenHourConfigDocument | null,
   tierDiscountPercent: number,
   capPercent: number,
-): number {
-  return Math.min(windowDiscountPercent + tierDiscountPercent, capPercent);
+): { isGoldenHour: boolean; discountPercent: number } {
+  const windowDiscountPercent = window?.discount_percent ?? 0;
+  return {
+    isGoldenHour: windowDiscountPercent > 0,
+    discountPercent: stackedDiscountPercent({
+      windowDiscountPercent,
+      tierDiscountPercent,
+      maxStackedPercent: capPercent,
+    }),
+  };
 }
 
 /**
@@ -818,17 +832,16 @@ export class OrderService {
       sortedEntries.map(async ([ms, capacity]) => {
         const scheduledAt = new Date(ms);
         const window = await this.goldenHourService.findActiveAt(scheduledAt);
+        const view = goldenHourSlotView(
+          window,
+          tier.discount_percent,
+          capPercent,
+        );
         const slot = new AvailableSlotDto();
         slot.scheduledAt = scheduledAt;
         slot.remainingCapacity = capacity;
-        slot.isGoldenHour = !!window;
-        slot.discountPercent = window
-          ? stackedDiscountPercent(
-              window.discount_percent ?? 0,
-              tier.discount_percent,
-              capPercent,
-            )
-          : 0;
+        slot.isGoldenHour = view.isGoldenHour;
+        slot.discountPercent = view.discountPercent;
         return slot;
       }),
     );
