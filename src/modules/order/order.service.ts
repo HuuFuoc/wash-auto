@@ -50,6 +50,7 @@ import { LoyaltyService } from '../loyalty/loyalty.service';
 import { PricingPolicyService } from '../pricing-policy/pricing-policy.service';
 import { ServiceTypeDocument } from '../service-type/service-type.model';
 import { ServiceTypeRepository } from '../service-type/service-type.repository';
+import { StaffShiftDocument } from '../staff-shift/staff-shift.model';
 import { StaffShiftRepository } from '../staff-shift/staff-shift.repository';
 import { TierConfigDocument } from '../tier-config/tier-config.model';
 import { TierConfigRepository } from '../tier-config/tier-config.repository';
@@ -929,12 +930,14 @@ export class OrderService {
     shiftIds: Types.ObjectId[],
     fromMs: number,
     toMs: number,
+    excludeOrderId?: Types.ObjectId,
   ): Promise<Map<string, number>> {
     const result = new Map<string, number>();
     if (shiftIds.length === 0) return result;
     const defaultDurationMs = toMs - fromMs;
     const orders = await this.orderRepository.findActiveByShifts(shiftIds);
     for (const o of orders) {
+      if (excludeOrderId && o._id.equals(excludeOrderId)) continue;
       const startMs = o.scheduled_at.getTime();
       const durMs =
         o.estimated_minutes > 0
@@ -969,24 +972,6 @@ export class OrderService {
       );
     }
 
-    const newShift = await this.staffShiftRepository.findById(dto.staffShiftId);
-    if (
-      !newShift ||
-      (newShift.status !== ShiftStatusEnum.SCHEDULED &&
-        newShift.status !== ShiftStatusEnum.ACTIVE) ||
-      newShift.shift_type !== ShiftTypeEnum.WASHER
-    ) {
-      throw new BadRequestException('New shift not available');
-    }
-    if (
-      dto.scheduledAt < newShift.start_at ||
-      dto.scheduledAt > newShift.end_at
-    ) {
-      throw new BadRequestException(
-        'scheduledAt is outside the new shift window',
-      );
-    }
-
     if (dto.scheduledAt.getTime() < Date.now() - 60_000) {
       throw new BadRequestException('scheduledAt must be in the future');
     }
@@ -1001,19 +986,63 @@ export class OrderService {
       durationMin = service.estimated_minutes;
     }
     const finishMs = dto.scheduledAt.getTime() + durationMin * 60_000;
-    if (finishMs > newShift.end_at.getTime()) {
-      throw new BadRequestException(
-        `Service requires ${durationMin} min and would overrun the new shift end`,
+
+    // Shifts are anonymous, so the customer moves to a *time* and the server
+    // finds the shift — mirroring createOrder. An explicit staffShiftId is
+    // still honoured for callers that already know the shift they want.
+    let candidates: StaffShiftDocument[];
+    if (dto.staffShiftId) {
+      const newShift = await this.staffShiftRepository.findById(
+        dto.staffShiftId,
       );
+      if (
+        !newShift ||
+        (newShift.status !== ShiftStatusEnum.SCHEDULED &&
+          newShift.status !== ShiftStatusEnum.ACTIVE) ||
+        newShift.shift_type !== ShiftTypeEnum.WASHER
+      ) {
+        throw new BadRequestException('New shift not available');
+      }
+      if (
+        dto.scheduledAt < newShift.start_at ||
+        dto.scheduledAt > newShift.end_at
+      ) {
+        throw new BadRequestException(
+          'scheduledAt is outside the new shift window',
+        );
+      }
+      if (finishMs > newShift.end_at.getTime()) {
+        throw new BadRequestException(
+          `Service requires ${durationMin} min and would overrun the new shift end`,
+        );
+      }
+      candidates = [newShift];
+    } else {
+      candidates = await this.staffShiftRepository.findShiftsContaining(
+        dto.scheduledAt,
+        durationMin,
+      );
+      if (candidates.length === 0) {
+        throw new ConflictException(
+          'No shift covers this time, or all shifts are full',
+        );
+      }
     }
 
+    // Excluding this order is what makes a move *within* its own shift work:
+    // its current booking overlaps the target window and would otherwise count
+    // as the conflict that blocks it.
     const concurrency = await this.countConcurrentByShift(
-      [new Types.ObjectId(dto.staffShiftId)],
+      candidates.map((c) => c._id),
       dto.scheduledAt.getTime(),
       finishMs,
+      order._id,
     );
-    if ((concurrency.get(dto.staffShiftId) ?? 0) >= 1) {
-      throw new ConflictException('New shift is full at this time');
+    const target = candidates.find(
+      (c) => (concurrency.get(c._id.toString()) ?? 0) < (c.capacity ?? 1),
+    );
+    if (!target) {
+      throw new ConflictException('All shifts at this time are full');
     }
 
     // The car must not land on top of another of its own bookings. This order is
@@ -1029,7 +1058,7 @@ export class OrderService {
     try {
       updated = await this.orderRepository.applyReschedule(
         id,
-        new Types.ObjectId(dto.staffShiftId),
+        target._id,
         dto.scheduledAt,
         order.vehicle_id,
       );
@@ -1038,7 +1067,7 @@ export class OrderService {
     }
     if (!updated) throw new NotFoundException('Order not found');
     console.log(
-      `Order rescheduled orderId=${id} newShiftId=${dto.staffShiftId}`,
+      `Order rescheduled orderId=${id} newShiftId=${target._id.toString()}`,
     );
     emitOrderStatus(updated);
     emitSlotsChanged(order.scheduled_at); // ngày cũ: slot được nhả
