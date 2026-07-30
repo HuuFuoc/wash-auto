@@ -29,7 +29,17 @@ export type IUpdateCampaignInput = Partial<
 export interface ICampaignListFilter {
   status?: CampaignStatusEnum;
   source?: string;
+  /**
+   * Keeps campaigns whose window is still open at this instant. The lifecycle
+   * sweep only runs periodically, so an ACTIVE row can sit a few minutes past
+   * `valid_until` — the public list must not advertise it in that gap.
+   */
+  windowOpenAt?: Date;
 }
+
+/** Mongo sort spec. Newest first is the default for every list. */
+export type CampaignSort = Record<string, 1 | -1>;
+const DEFAULT_SORT: CampaignSort = { created_at: -1 };
 
 export class VoucherCampaignRepository {
   async create(input: ICreateCampaignInput): Promise<VoucherCampaignDocument> {
@@ -76,9 +86,10 @@ export class VoucherCampaignRepository {
     filter: ICampaignListFilter,
     page: number,
     limit: number,
+    sort: CampaignSort = DEFAULT_SORT,
   ): Promise<VoucherCampaignDocument[]> {
     return VoucherCampaignModel.find(buildQuery(filter))
-      .sort({ created_at: -1 })
+      .sort(sort)
       .skip((page - 1) * limit)
       .limit(limit)
       .exec();
@@ -193,5 +204,6 @@ function buildQuery(filter: ICampaignListFilter): Record<string, unknown> {
   const query: Record<string, unknown> = {};
   if (filter.status) query.status = filter.status;
   if (filter.source) query.source = filter.source;
+  if (filter.windowOpenAt) query.valid_until = { $gt: filter.windowOpenAt };
   return query;
 }

@@ -131,3 +131,88 @@ describe('VoucherCampaignService.getPublicById', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
+
+describe('VoucherCampaignService.listPublic', () => {
+  const makeListService = (docs: Array<Record<string, unknown>>) => {
+    const findPaginated = jest.fn(async () => docs);
+    const count = jest.fn(async () => docs.length);
+    const service = new VoucherCampaignService(
+      { findPaginated, count } as never,
+      {} as never,
+      {} as never,
+    );
+    return { service, findPaginated, count };
+  };
+
+  it('defaults to the campaigns running right now, window still open', async () => {
+    const { service, findPaginated, count } = makeListService([campaignDoc()]);
+    const before = Date.now();
+
+    const result = await service.listPublic(undefined, 1, 20);
+
+    const [filter, page, limit, sort] = findPaginated.mock
+      .calls[0] as never as [
+      { status: string; windowOpenAt: Date },
+      number,
+      number,
+      Record<string, number>,
+    ];
+    expect(filter.status).toBe(CampaignStatusEnum.ACTIVE);
+    expect(filter.windowOpenAt.getTime()).toBeGreaterThanOrEqual(before);
+    // Soonest-ending first — the offer worth acting on leads the page.
+    expect(sort).toEqual({ valid_until: 1 });
+    expect([page, limit]).toEqual([1, 20]);
+    // The same filter must drive the count, or the meta contradicts the data.
+    expect(count).toHaveBeenCalledWith(filter);
+    expect(result.meta).toEqual({
+      page: 1,
+      limit: 20,
+      total: 1,
+      totalPages: 1,
+    });
+  });
+
+  it('drops the window filter for ended campaigns, which are all past it', async () => {
+    const { service, findPaginated } = makeListService([]);
+
+    await service.listPublic(CampaignStatusEnum.ENDED, 1, 20);
+
+    const [filter] = findPaginated.mock.calls[0] as never as [
+      { status: string; windowOpenAt?: Date },
+    ];
+    expect(filter.status).toBe(CampaignStatusEnum.ENDED);
+    expect(filter.windowOpenAt).toBeUndefined();
+  });
+
+  it('falls back to active rather than ever listing DRAFT campaigns', async () => {
+    // The query DTO already rejects `status=draft` with a 400; this is the
+    // second lock, for any internal caller that bypasses it.
+    const { service, findPaginated } = makeListService([]);
+
+    await service.listPublic(CampaignStatusEnum.DRAFT, 1, 20);
+
+    const [filter] = findPaginated.mock.calls[0] as never as [
+      { status: string },
+    ];
+    expect(filter.status).toBe(CampaignStatusEnum.ACTIVE);
+  });
+
+  it('returns the safe projection, never the admin one', async () => {
+    const { service } = makeListService([campaignDoc()]);
+
+    const result = await service.listPublic(undefined, 1, 20);
+
+    expect(result.data).toHaveLength(1);
+    expect(Object.keys(result.data[0])).not.toContain('budgetVnd');
+    expect(JSON.stringify(result.data[0])).not.toContain('TET2026');
+  });
+
+  it('reports at least one page when nothing matches', async () => {
+    const { service } = makeListService([]);
+
+    const result = await service.listPublic(undefined, 1, 20);
+
+    expect(result.data).toEqual([]);
+    expect(result.meta.totalPages).toBe(1);
+  });
+});

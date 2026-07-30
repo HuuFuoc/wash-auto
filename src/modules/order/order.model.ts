@@ -27,6 +27,30 @@ export interface Order {
   payos_order_code?: number;
   payos_checkout_url?: string;
   payos_payment_link_id?: string;
+
+  /**
+   * `<vehicle_id>@<scheduled_at epoch ms>` while the order is active, unset the
+   * moment it reaches a terminal status. A unique sparse index on this column is
+   * what physically stops one car being booked into the very same slot twice —
+   * the service-level overlap check reads before it writes, so two concurrent
+   * bookings (a double-submitted form) can both pass it; this one cannot.
+   *
+   * A partial index on `status` would depend on server-version support for `$in`
+   * inside partialFilterExpression, whereas unique+sparse works everywhere —
+   * same trade-off as `voucher_redemptions.active_voucher_id`.
+   *
+   * It only catches the identical-timestamp collision. Partial overlaps (10:00
+   * for 30 min vs 10:15) are the service check's job, which is why both exist.
+   */
+  active_slot_key?: string;
+}
+
+/** The value `active_slot_key` carries while an order holds its slot. */
+export function buildActiveSlotKey(
+  vehicleId: Types.ObjectId,
+  scheduledAt: Date,
+): string {
+  return `${vehicleId.toString()}@${scheduledAt.getTime()}`;
 }
 
 export type OrderDocument = HydratedDocument<Order>;
@@ -101,6 +125,7 @@ const orderSchema = new Schema<Order>(
     payos_order_code: { type: Number, unique: true, sparse: true, index: true },
     payos_checkout_url: { type: String },
     payos_payment_link_id: { type: String },
+    active_slot_key: { type: String, unique: true, sparse: true },
   },
   {
     timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' },
@@ -112,5 +137,7 @@ orderSchema.index({ customer_id: 1, scheduled_at: -1 });
 orderSchema.index({ scheduled_at: 1, status: 1 });
 orderSchema.index({ customer_id: 1, status: 1 });
 orderSchema.index({ staff_shift_id: 1, status: 1 });
+// "Is this car already booked?" — the double-booking guard on create/reschedule.
+orderSchema.index({ vehicle_id: 1, status: 1 });
 
 export const OrderModel = model<Order>('Order', orderSchema);
