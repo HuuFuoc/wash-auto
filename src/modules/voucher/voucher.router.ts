@@ -12,7 +12,8 @@ import { roleMiddleware } from '../../middlewares/roles.middleware';
 import { validateDto } from '../../middlewares/validate.middleware';
 import { RoleRepository } from '../auth/role.repository';
 import { UserRepository } from '../auth/user.repository';
-import { voucherCampaignRepository } from '../voucher-campaign/voucher-campaign.router';
+import { LoyaltyAccountRepository } from '../loyalty/loyalty-account.repository';
+import { VoucherCampaignRepository } from '../voucher-campaign/voucher-campaign.repository';
 import { AdminVoucherController } from './admin-voucher.controller';
 import { VoucherRedemptionRepository } from './voucher-redemption.repository';
 import { registerVoucherExpiryCron } from './voucher-expiry.cron';
@@ -20,9 +21,12 @@ import { VoucherController } from './voucher.controller';
 import { VoucherRepository } from './voucher.repository';
 import { VoucherService } from './voucher.service';
 
-// Manual DI wiring. UserRepository/RoleRepository are stateless and share the
-// same model singletons as the auth module (no DI cycle at the service level —
-// VoucherService needs auth's repositories, not its services).
+// Manual DI wiring. Every borrowed repository is imported as a CLASS rather
+// than pulled from its own module's router: they are stateless and share the
+// same model singletons, so a second instance is free, and taking the class
+// keeps this module at the BOTTOM of the dependency graph. That matters —
+// loyalty, order and voucher-campaign all import `voucherService` from here, so
+// an import back out of this file in the other direction would be a cycle.
 const repository = new VoucherRepository();
 const redemptionRepository = new VoucherRedemptionRepository();
 const userRepository = new UserRepository();
@@ -31,8 +35,9 @@ const service = new VoucherService(
   repository,
   userRepository,
   roleRepository,
-  voucherCampaignRepository,
+  new VoucherCampaignRepository(),
   redemptionRepository,
+  new LoyaltyAccountRepository(),
 );
 const customerController = new VoucherController(service);
 const adminController = new AdminVoucherController(service);

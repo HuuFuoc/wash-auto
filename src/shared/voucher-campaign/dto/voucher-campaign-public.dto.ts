@@ -5,6 +5,22 @@ import { CampaignStatusEnum } from '../types/campaign-status.enum';
 import { StackingPolicyEnum } from '../types/stacking-policy.enum';
 
 /**
+ * Per-viewer availability, computed by the service and layered onto the card.
+ *
+ * Split out from the document because it is not a property of the campaign: the
+ * same campaign is "Đã nhận" for one customer and claimable for the next.
+ */
+export interface ICampaignAvailability {
+  /** Vouchers still unclaimed in the pool, right now. */
+  remaining: number;
+  /**
+   * Whether the viewer has already taken their allowance. Undefined for an
+   * anonymous request — "unknown", which is not the same as "no".
+   */
+  alreadyClaimed?: boolean;
+}
+
+/**
  * The customer-safe view of a campaign: enough to render a voucher card and
  * explain the rules, and nothing more.
  *
@@ -101,7 +117,41 @@ export class VoucherCampaignPublicDto {
   })
   applicableVehicleTypeIds: string[];
 
-  static fromDocument(doc: VoucherCampaignDocument): VoucherCampaignPublicDto {
+  // ─── availability (only on the /voucher-campaigns endpoints) ───────────────
+  // Absent when a campaign is embedded inside another payload, e.g. the
+  // `campaign` on a VoucherResponse — a voucher in the wallet is already
+  // claimed, so the pool state of its campaign says nothing useful there.
+
+  @ApiPropertyOptional({
+    example: 42,
+    description:
+      'Vouchers still unclaimed in the pool. Pool stock only — NOT the ' +
+      'campaign budget or its total issue limit, neither of which a customer ' +
+      'may see.',
+  })
+  remaining?: number;
+
+  @ApiPropertyOptional({
+    example: false,
+    description:
+      'Shorthand for `remaining === 0`. Lets the card render "Hết lượt" up ' +
+      'front instead of the customer discovering it by tapping Claim.',
+  })
+  soldOut?: boolean;
+
+  @ApiPropertyOptional({
+    example: false,
+    description:
+      'The signed-in customer has already taken their full allowance ' +
+      '(`maxUsesPerCustomer`) from this campaign. ABSENT on an anonymous ' +
+      'request — unknown, which the UI must not render as "chưa nhận".',
+  })
+  alreadyClaimed?: boolean;
+
+  static fromDocument(
+    doc: VoucherCampaignDocument,
+    availability?: ICampaignAvailability,
+  ): VoucherCampaignPublicDto {
     const dto = new VoucherCampaignPublicDto();
     dto.id = doc._id.toString();
     dto.title = doc.title;
@@ -129,6 +179,15 @@ export class VoucherCampaignPublicDto {
     dto.applicableVehicleTypeIds = (doc.applicable_vehicle_type_ids ?? []).map(
       (id) => id.toString(),
     );
+    // Assigned only when the caller supplied availability, so the keys stay
+    // absent — rather than present-and-false — everywhere it was not computed.
+    if (availability) {
+      dto.remaining = availability.remaining;
+      dto.soldOut = availability.remaining === 0;
+      if (availability.alreadyClaimed !== undefined) {
+        dto.alreadyClaimed = availability.alreadyClaimed;
+      }
+    }
     return dto;
   }
 }

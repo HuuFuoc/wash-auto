@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '../../common/exceptions';
 import {
@@ -26,6 +27,7 @@ import { notificationService } from '../notification/notification.router';
 import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { RoleRepository } from '../auth/role.repository';
 import { UserRepository } from '../auth/user.repository';
+import { LoyaltyAccountRepository } from '../loyalty/loyalty-account.repository';
 import { VoucherCampaignDocument } from '../voucher-campaign/voucher-campaign.model';
 import { VoucherCampaignRepository } from '../voucher-campaign/voucher-campaign.repository';
 import { VoucherRedemptionDocument } from './voucher-redemption.model';
@@ -79,6 +81,26 @@ const DEFAULT_GRANT_REASON: Record<VoucherSourceEnum, string> = {
   [VoucherSourceEnum.LEGACY]: 'Dữ liệu cũ trước khi ghi nhận nguồn cấp',
 };
 
+/**
+ * Refuses a claim once the campaign has given away its budget.
+ *
+ * Read from the cached `redeemed_vnd` counter, exactly as
+ * `VoucherEligibilityService` does at checkout — handing out a voucher the
+ * pricing engine would then refuse is worse than saying no now. The counter is
+ * reconcilable from voucher_redemptions, so drift is repairable without this
+ * gate ever having failed open.
+ */
+function assertBudgetRemaining(campaign: VoucherCampaignDocument): void {
+  if (
+    campaign.budget_vnd != null &&
+    campaign.redeemed_vnd >= campaign.budget_vnd
+  ) {
+    throw new ConflictException(
+      'Chương trình đã dùng hết ngân sách ưu đãi. Bạn quay lại vào đợt sau nhé.',
+    );
+  }
+}
+
 /** True for a MongoDB unique-index violation (E11000), whatever wrapped it. */
 function isDuplicateKeyError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
@@ -101,6 +123,11 @@ export class VoucherService {
     private readonly roleRepository: RoleRepository,
     private readonly campaignRepository: VoucherCampaignRepository,
     private readonly redemptionRepository: VoucherRedemptionRepository,
+    // The loyalty REPOSITORY, not LoyaltyService: loyalty already depends on
+    // this service, so only the data-access direction can be taken without
+    // closing the cycle. Used solely to resolve a customer's tier for the
+    // `allowed_tier_ids` gate.
+    private readonly loyaltyAccountRepository: LoyaltyAccountRepository,
   ) {}
 
   /**
@@ -551,6 +578,77 @@ export class VoucherService {
         'Mã voucher không hợp lệ, đã được nhận, hoặc đã hết hạn',
       );
     }
+    return this.finishClaim(customerId, claimed, campaign);
+  }
+
+  /**
+   * One-tap claim straight from a campaign the customer is looking at. The id
+   * comes from `GET /voucher-campaigns`, so there is no code to type — the case
+   * a public promotions page needs and `claimByCode` cannot serve.
+   *
+   * Unlike `claimByCode`, the refusals here are NOT flattened into a single
+   * 404. That flattening exists to stop a scraper confirming which secret codes
+   * are real; a campaign id is published by the promotions list, so there is
+   * nothing left to hide — and the app genuinely needs to tell "hết voucher"
+   * apart from "bạn đã nhận rồi" to say anything useful.
+   *
+   * The gates run in the same order as `VoucherEligibilityService.checkCampaign`
+   * so a voucher this hands out is one the checkout will actually accept.
+   */
+  async claimFromCampaignId(
+    customerId: string,
+    campaignId: string,
+  ): Promise<VoucherResponseDto> {
+    const campaign = await this.campaignRepository.findById(campaignId);
+    // DRAFT is invisible on the whole public API, so claiming one must look
+    // like a campaign that does not exist rather than one that is not ready.
+    if (!campaign || campaign.status === CampaignStatusEnum.DRAFT) {
+      throw new NotFoundException('Campaign not found');
+    }
+
+    this.assertCampaignClaimable(campaign);
+    await this.assertTierEligible(campaign, customerId);
+    assertBudgetRemaining(campaign);
+    await this.assertUnderPerCustomerLimit(campaign, customerId);
+
+    const claimed = await this.repository.claimAnyFromCampaign(
+      campaign._id,
+      customerId,
+    );
+    // Not a transaction, deliberately: `claimAnyFromCampaign` is a single
+    // atomic find-and-update, so two customers racing the last voucher cannot
+    // both win it, and `enforceLimitAfterClaim` below re-counts and hands back
+    // anything that slipped past the pre-check. That is the same
+    // compare-and-set discipline the rest of the voucher module uses.
+    if (!claimed) {
+      console.warn(
+        `voucher.campaign_claim_empty campaign=${campaign._id.toString()} ` +
+          `customerId=${customerId}`,
+      );
+      throw new ConflictException(
+        'Chương trình đã hết voucher. Bạn quay lại vào đợt phát hành sau nhé.',
+      );
+    }
+    const settled = await this.enforceLimitAfterClaim(
+      campaign,
+      customerId,
+      claimed,
+    );
+    // enforceLimitAfterClaim either returns the voucher or throws; the nullable
+    // return only exists for the pass-through callers above.
+    return this.finishClaim(customerId, settled ?? claimed, campaign);
+  }
+
+  /**
+   * Shared tail of every successful claim: log it, notify once, and return the
+   * card with its campaign embedded so the app can render the result without a
+   * second round-trip.
+   */
+  private async finishClaim(
+    customerId: string,
+    claimed: VoucherDocument,
+    campaign: VoucherCampaignDocument | null,
+  ): Promise<VoucherResponseDto> {
     console.log(
       `voucher.claimed customerId=${customerId} code=${maskVoucherCode(claimed.code)} ` +
         `campaign=${claimed.campaign_id?.toString() ?? 'none'}`,
@@ -563,8 +661,6 @@ export class VoucherService {
         `đã vào ví, dùng trước ${formatVnDate(claimed.expires_at)}.`,
       data: { voucherId: claimed._id.toString() },
     });
-    // Enriched so the app can show the finished card straight away, without a
-    // second round-trip right after a successful claim.
     const enrichedCampaign =
       campaign ??
       (claimed.campaign_id
@@ -746,6 +842,32 @@ export class VoucherService {
         'Chương trình ưu đãi này hiện không nhận thêm người tham gia.',
       );
     }
+  }
+
+  /**
+   * Tier whitelist, resolved SERVER-SIDE from the loyalty account — a request
+   * cannot assert a tier it does not hold.
+   *
+   * Skipped entirely when the campaign has no tier restriction, which is the
+   * common case, so an open promotion pays nothing for this. A customer with no
+   * loyalty account is on no tier at all and therefore on no whitelist: the
+   * gate fails closed, which for a targeted promotion is the right direction.
+   */
+  private async assertTierEligible(
+    campaign: VoucherCampaignDocument,
+    customerId: string,
+  ): Promise<void> {
+    const allowed = campaign.allowed_tier_ids ?? [];
+    if (allowed.length === 0) return;
+
+    const account =
+      await this.loyaltyAccountRepository.findByCustomerId(customerId);
+    const tierId = account?.tier_config_id?.toString();
+    if (tierId && allowed.some((id) => id.toString() === tierId)) return;
+
+    throw new ForbiddenException(
+      'Chương trình này chỉ dành cho hạng thành viên khác.',
+    );
   }
 
   private async assertUnderPerCustomerLimit(
