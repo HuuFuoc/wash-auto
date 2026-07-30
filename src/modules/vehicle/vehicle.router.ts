@@ -7,6 +7,7 @@ import { UpdateVehicleDto } from '../../shared/vehicle/dto/update-vehicle.dto';
 import { authMiddleware } from '../../middlewares/auth.middleware';
 import { roleMiddleware } from '../../middlewares/roles.middleware';
 import { validateDto } from '../../middlewares/validate.middleware';
+import { OrderRepository } from '../order/order.repository';
 import { VehicleTypeRepository } from '../vehicle-type/vehicle-type.repository';
 import { AdminVehicleController } from './admin-vehicle.controller';
 import { VehicleController } from './vehicle.controller';
@@ -15,9 +16,19 @@ import { VehicleService } from './vehicle.service';
 
 // Manual DI wiring (VehicleTypeRepository is stateless — shares the same model
 // singleton as the vehicle-type module).
+//
+// OrderRepository is constructed here rather than imported from order.router:
+// that module already imports THIS one for vehicleService, so reaching back for
+// its singleton would close an import cycle. Repositories are stateless wrappers
+// over the shared Mongoose model, so a second instance is the same thing.
 const repository = new VehicleRepository();
 const vehicleTypeRepository = new VehicleTypeRepository();
-const service = new VehicleService(repository, vehicleTypeRepository);
+const orderRepository = new OrderRepository();
+const service = new VehicleService(
+  repository,
+  vehicleTypeRepository,
+  orderRepository,
+);
 const meController = new VehicleController(service);
 const adminController = new AdminVehicleController(service);
 

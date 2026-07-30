@@ -3253,13 +3253,28 @@ paths:
               schema: { $ref: '#/components/schemas/VehicleResponse' }
     delete:
       tags: [vehicles]
-      summary: Soft-delete one of my vehicles
+      summary: >-
+        Soft-delete one of my vehicles. Rejected while the car still has a
+        booking that has not been washed yet.
       security: [{ bearerAuth: [] }]
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       responses:
         '204':
-          description: No Content
+          description: No Content (also returned when already deleted)
+        '404':
+          description: Not found (or not owned)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: >-
+            The vehicle has at least one outstanding order (pending_payment,
+            confirmed, checked_in or in_progress). Cancel or finish the wash
+            first. Completed/cancelled/no-show history does not block deletion.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /me/vehicles/{id}/set-default:
     patch:
       tags: [vehicles]

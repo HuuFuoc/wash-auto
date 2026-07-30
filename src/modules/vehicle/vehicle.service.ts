@@ -14,6 +14,8 @@ import {
 import { UpdateVehicleDto } from '../../shared/vehicle/dto/update-vehicle.dto';
 import { VehicleListResponseDto } from '../../shared/vehicle/dto/vehicle-list-response.dto';
 import { VehicleResponseDto } from '../../shared/vehicle/dto/vehicle-response.dto';
+import { vnDateTimeOf } from '../../common/vn-time';
+import { OrderRepository } from '../order/order.repository';
 import { VehicleTypeRepository } from '../vehicle-type/vehicle-type.repository';
 import { VehicleDocument } from './vehicle.model';
 import {
@@ -48,6 +50,10 @@ export class VehicleService {
   constructor(
     private readonly vehicleRepository: VehicleRepository,
     private readonly vehicleTypeRepository: VehicleTypeRepository,
+    // Only ever read from, and only to answer "does this car still owe a wash?".
+    // Taking the repository rather than OrderService keeps the dependency one-way
+    // — OrderService already depends on this service.
+    private readonly orderRepository: OrderRepository,
   ) {}
 
   async listOwn(customerId: string): Promise<VehicleResponseDto[]> {
@@ -164,9 +170,40 @@ export class VehicleService {
     return VehicleResponseDto.fromDocument(updated);
   }
 
+  /**
+   * Removes a car from the customer's garage — but only once it owes no wash.
+   *
+   * A car with a booking still outstanding must stay: the order keeps holding
+   * its slot and its washer either way, so deleting the vehicle would only hide
+   * it from the customer's garage while ops are still expected to wash it, and
+   * the booking's `vehicle_id` would point at something the owner can no longer
+   * see or manage. Cancel (or complete) the wash first, then the car can go.
+   *
+   * Finished history is no obstacle — COMPLETED / CANCELLED / NO_SHOW orders
+   * keep referencing the soft-deleted vehicle, which is exactly why the delete
+   * is a soft one.
+   */
   async softDeleteOwn(customerId: string, id: string): Promise<void> {
     const existing = await this.requireOwned(id, customerId);
     if (!existing.is_active) return;
+
+    const outstanding = await this.orderRepository.findActiveByVehicle(
+      existing._id,
+    );
+    if (outstanding.length > 0) {
+      const soonest = outstanding.reduce((earliest, o) =>
+        o.scheduled_at < earliest.scheduled_at ? o : earliest,
+      );
+      const more =
+        outstanding.length > 1
+          ? ` (và ${outstanding.length - 1} lịch khác)`
+          : '';
+      throw new ConflictException(
+        `Xe này đang có lịch rửa chưa hoàn thành lúc ` +
+          `${vnDateTimeOf(soonest.scheduled_at)}${more}. ` +
+          'Vui lòng huỷ lịch hoặc chờ rửa xong trước khi xoá xe.',
+      );
+    }
 
     const updated = await this.vehicleRepository.updateById(id, {
       isActive: false,
