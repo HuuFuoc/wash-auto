@@ -46,6 +46,36 @@ export interface IPricingResult extends DiscountBreakdownDto {
 }
 
 /**
+ * Golden-hour + tier percent, capped by policy — the ONE rule for the stacked
+ * percent, exported so the slot listing quotes the same number the engine
+ * charges. A window that discounts nothing pays nothing: the tier has only ever
+ * paid out inside a discounting window, so a 0% window must not advertise the
+ * tier percent either.
+ */
+export function stackedDiscountPercent(args: {
+  /** Window percent for the booking time; 0 outside every window. */
+  windowDiscountPercent: number;
+  /** Tier percent, or 0 when the campaign forbids stacking with the tier. */
+  tierDiscountPercent: number;
+  /** Admin-configured ceiling on the stacked percent discount. */
+  maxStackedPercent: number;
+  /**
+   * False when the campaign forbids stacking with a promotion: the window still
+   * gates the tier payout, but its own percent is not paid.
+   */
+  payWindow?: boolean;
+}): number {
+  const windowPercent = Math.max(0, args.windowDiscountPercent);
+  const insideDiscountingWindow = windowPercent > 0;
+  const promotionPart =
+    insideDiscountingWindow && args.payWindow !== false ? windowPercent : 0;
+  const tierPart = insideDiscountingWindow
+    ? Math.max(0, args.tierDiscountPercent)
+    : 0;
+  return Math.min(promotionPart + tierPart, args.maxStackedPercent);
+}
+
+/**
  * The one place an order's price is decided.
  *
  * Preview, order creation and (Phase 3) payment all call this, which is the
@@ -144,16 +174,17 @@ export class DiscountCalculationService {
     input: IPricingInput,
     stacking: StackingPolicyEnum,
   ): number {
-    const windowPercent = allowsPromotion(stacking)
-      ? input.windowDiscountPercent
-      : 0;
-    // Tier has only ever paid out inside a golden-hour window; keeping that gate
-    // means adding campaigns cannot reprice bookings outside one.
-    const tierPercent =
-      allowsTier(stacking) && input.windowDiscountPercent > 0
+    // The window gate lives in `stackedDiscountPercent`: tier has only ever paid
+    // out inside a discounting golden-hour window, and adding campaigns cannot
+    // reprice bookings outside one.
+    return stackedDiscountPercent({
+      windowDiscountPercent: input.windowDiscountPercent,
+      tierDiscountPercent: allowsTier(stacking)
         ? input.tier.discount_percent
-        : 0;
-    return Math.min(windowPercent + tierPercent, input.maxStackedPercent);
+        : 0,
+      maxStackedPercent: input.maxStackedPercent,
+      payWindow: allowsPromotion(stacking),
+    });
   }
 
   /** Per-benefit-type voucher value, clamped to what is left on the order. */

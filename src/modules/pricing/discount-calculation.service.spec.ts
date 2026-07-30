@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/require-await -- async jest mocks mirror the real async repo signatures */
 import { Types } from 'mongoose';
-import { DiscountCalculationService } from './discount-calculation.service';
+import {
+  DiscountCalculationService,
+  stackedDiscountPercent,
+} from './discount-calculation.service';
 import { VoucherEligibilityService } from './voucher-eligibility.service';
 import { VoucherReasonCodeEnum } from '../../shared/pricing/types/voucher-reason-code.enum';
 import { VoucherStatusEnum } from '../../shared/voucher/types/voucher-status.enum';
@@ -89,6 +92,83 @@ function baseInput(over: Record<string, unknown> = {}) {
     ...over,
   };
 }
+
+describe('stackedDiscountPercent — the rule slot listing and pricing share', () => {
+  it('pays nothing when the window itself discounts nothing', () => {
+    // The seeded "quiet hours" windows sit at 0%. Advertising the tier percent
+    // on those slots promised a discount the engine then refused to apply.
+    expect(
+      stackedDiscountPercent({
+        windowDiscountPercent: 0,
+        tierDiscountPercent: 8,
+        maxStackedPercent: 30,
+      }),
+    ).toBe(0);
+  });
+
+  it('adds the tier percent on top of a discounting window', () => {
+    expect(
+      stackedDiscountPercent({
+        windowDiscountPercent: 10,
+        tierDiscountPercent: 8,
+        maxStackedPercent: 30,
+      }),
+    ).toBe(18);
+  });
+
+  it('clamps the pair to the pricing-policy cap', () => {
+    expect(
+      stackedDiscountPercent({
+        windowDiscountPercent: 40,
+        tierDiscountPercent: 8,
+        maxStackedPercent: 30,
+      }),
+    ).toBe(30);
+  });
+
+  it('still gates the tier on the window when the window percent is suppressed', () => {
+    // StackingPolicyEnum.WITH_TIER: the promotion is not paid, but the tier
+    // rides the window exactly as it did before campaigns existed.
+    expect(
+      stackedDiscountPercent({
+        windowDiscountPercent: 10,
+        tierDiscountPercent: 8,
+        maxStackedPercent: 30,
+        payWindow: false,
+      }),
+    ).toBe(8);
+  });
+
+  const agreementCases: Array<[number, number, number]> = [
+    // window %, tier %, percent the engine actually charges
+    [0, 8, 0],
+    [10, 8, 18],
+    [40, 8, 30],
+  ];
+
+  it.each(agreementCases)(
+    'matches what the engine charges for window %i%% + tier %i%%',
+    async (windowPercent, tierPercent, expectedPercent) => {
+      const res = await makeEngine(null).calculate(
+        baseInput({
+          windowDiscountPercent: windowPercent,
+          tier: tierDoc({ discount_percent: tierPercent }),
+        }),
+      );
+
+      const chargedPercent =
+        ((res.promotionDiscountVnd + res.tierDiscountVnd) / SUBTOTAL) * 100;
+      expect(chargedPercent).toBe(expectedPercent);
+      expect(
+        stackedDiscountPercent({
+          windowDiscountPercent: windowPercent,
+          tierDiscountPercent: tierPercent,
+          maxStackedPercent: 30,
+        }),
+      ).toBe(expectedPercent);
+    },
+  );
+});
 
 describe('DiscountCalculationService — no voucher', () => {
   it('applies nothing outside a golden hour, matching the pre-campaign rule', async () => {

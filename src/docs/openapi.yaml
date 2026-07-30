@@ -753,9 +753,9 @@ components:
         discountPercent: { type: integer, example: 5 }
     RescheduleOrder:
       type: object
-      required: [staffShiftId, scheduledAt]
+      required: [scheduledAt]
       properties:
-        staffShiftId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8' }
+        staffShiftId: { type: string, example: '6601e3b3f1a2c3a4b5d6e7f8', description: 'Optional. Omit it and the server picks a shift with free capacity covering scheduledAt, the same way booking does.' }
         scheduledAt: { type: string, format: date-time, example: '2026-06-02T10:00:00.000Z' }
     CancelOrder:
       type: object
