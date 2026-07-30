@@ -19,7 +19,11 @@ import {
   VoucherCampaignDocument,
 } from './voucher-campaign.model';
 import { CampaignStatsResponseDto } from '../../shared/voucher-campaign/dto/campaign-stats-response.dto';
-import { VoucherCampaignPublicDto } from '../../shared/voucher-campaign/dto/voucher-campaign-public.dto';
+import { BROWSABLE_CAMPAIGN_STATUSES } from '../../shared/voucher-campaign/dto/query-public-voucher-campaign.dto';
+import {
+  VoucherCampaignPublicDto,
+  VoucherCampaignPublicListResponseDto,
+} from '../../shared/voucher-campaign/dto/voucher-campaign-public.dto';
 import { VoucherRedemptionRepository } from '../voucher/voucher-redemption.repository';
 import { VoucherRepository } from '../voucher/voucher.repository';
 import {
@@ -182,6 +186,49 @@ export class VoucherCampaignService {
       throw new NotFoundException('Campaign not found');
     }
     return VoucherCampaignPublicDto.fromDocument(campaign);
+  }
+
+  /**
+   * Customer-facing promotions list. Same safe projection as `getPublicById`.
+   *
+   * Defaults to the campaigns running right now; `status` opts into the
+   * upcoming / paused / finished ones. DRAFT is unreachable twice over: the
+   * query DTO rejects it with a 400, and anything not on the browsable
+   * whitelist falls back to ACTIVE here, so no caller — HTTP or internal — can
+   * turn this into a way to read an unannounced promotion.
+   *
+   * Sorted by soonest-ending first, which is the order a promotions page wants:
+   * the offer about to expire is the one worth acting on.
+   */
+  async listPublic(
+    status: CampaignStatusEnum | undefined,
+    page: number,
+    limit: number,
+  ): Promise<VoucherCampaignPublicListResponseDto> {
+    const wanted =
+      status && BROWSABLE_CAMPAIGN_STATUSES.includes(status)
+        ? status
+        : CampaignStatusEnum.ACTIVE;
+    const filter: ICampaignListFilter = {
+      status: wanted,
+      // A finished campaign is by definition past its window, so asking for one
+      // and then filtering the window out would always return nothing.
+      windowOpenAt:
+        wanted === CampaignStatusEnum.ENDED ? undefined : new Date(),
+    };
+    const [docs, total] = await Promise.all([
+      this.repository.findPaginated(filter, page, limit, { valid_until: 1 }),
+      this.repository.count(filter),
+    ]);
+    return {
+      data: docs.map((d) => VoucherCampaignPublicDto.fromDocument(d)),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    };
   }
 
   async list(

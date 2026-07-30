@@ -5,7 +5,12 @@ import {
 } from '../../shared/order/types/order-status.enum';
 import { PaymentMethodEnum } from '../../shared/order/types/payment-method.enum';
 import { PaymentStatusEnum } from '../../shared/order/types/payment-status.enum';
-import { OrderDocument, OrderModel } from './order.model';
+import { OrderDocument, OrderModel, buildActiveSlotKey } from './order.model';
+
+/** True while the order still occupies its slot, i.e. carries a slot key. */
+function holdsSlot(status: OrderStatusEnum): boolean {
+  return ACTIVE_ORDER_STATUSES.includes(status);
+}
 
 export interface ICreateOrderInput {
   /**
@@ -67,9 +72,23 @@ type Query = {
 };
 
 export class OrderRepository {
+  /**
+   * Persists a booking. `active_slot_key` carries the unique index, so a second
+   * concurrent booking of the same car into the same instant fails with E11000
+   * instead of quietly becoming a duplicate — the caller reads that as "lost the
+   * race" and reports a conflict.
+   */
   async create(input: ICreateOrderInput): Promise<OrderDocument> {
     return OrderModel.create({
       ...(input.id ? { _id: input.id } : {}),
+      ...(holdsSlot(input.status)
+        ? {
+            active_slot_key: buildActiveSlotKey(
+              input.vehicleId,
+              input.scheduledAt,
+            ),
+          }
+        : {}),
       customer_id: input.customerId,
       vehicle_id: input.vehicleId,
       service_type_id: input.serviceTypeId,
@@ -147,6 +166,24 @@ export class OrderRepository {
       .exec();
   }
 
+  /**
+   * Active orders (those still holding a slot) for one car, so the caller can
+   * reject a booking whose wash window overlaps one the car already has. The
+   * order being rescheduled is excluded — it must not conflict with itself.
+   */
+  async findActiveByVehicle(
+    vehicleId: Types.ObjectId,
+    excludeOrderId?: Types.ObjectId | string,
+  ): Promise<OrderDocument[]> {
+    return OrderModel.find({
+      vehicle_id: vehicleId,
+      status: { $in: ACTIVE_ORDER_STATUSES },
+      ...(excludeOrderId ? { _id: { $ne: excludeOrderId } } : {}),
+    })
+      .select('scheduled_at estimated_minutes status service_type_id')
+      .exec();
+  }
+
   async updateById(
     id: Types.ObjectId | string,
     input: IUpdateOrderInput,
@@ -162,22 +199,40 @@ export class OrderRepository {
     if (input.payosPaymentLinkId !== undefined)
       update.payos_payment_link_id = input.payosPaymentLinkId;
 
+    // Reaching a terminal status frees the car, so the slot key comes off and
+    // that (vehicle, time) pair becomes bookable again. Active→active moves
+    // (PENDING_PAYMENT → CONFIRMED) keep the key they were created with.
+    const releasesSlot = input.status !== undefined && !holdsSlot(input.status);
+
     return OrderModel.findByIdAndUpdate(
       id,
-      { $set: update },
+      {
+        $set: update,
+        ...(releasesSlot ? { $unset: { active_slot_key: '' } } : {}),
+      },
       { returnDocument: 'after' },
     ).exec();
   }
 
+  /**
+   * Moves a booking to a new shift + time. `vehicleId` is required because the
+   * slot key encodes it: leaving the key on the OLD time would keep blocking a
+   * slot nobody occupies while leaving the new one unguarded.
+   */
   async applyReschedule(
     id: Types.ObjectId | string,
     staffShiftId: Types.ObjectId,
     scheduledAt: Date,
+    vehicleId: Types.ObjectId,
   ): Promise<OrderDocument | null> {
     return OrderModel.findByIdAndUpdate(
       id,
       {
-        $set: { staff_shift_id: staffShiftId, scheduled_at: scheduledAt },
+        $set: {
+          staff_shift_id: staffShiftId,
+          scheduled_at: scheduledAt,
+          active_slot_key: buildActiveSlotKey(vehicleId, scheduledAt),
+        },
         $inc: { reschedule_count: 1 },
       },
       { returnDocument: 'after' },

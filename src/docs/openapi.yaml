@@ -531,6 +531,13 @@ components:
           type: array
           items: { type: string }
           description: 'EMPTY = every vehicle type qualifies. Join with GET /vehicle-types.'
+    VoucherCampaignPublicListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/VoucherCampaignPublic' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
     CampaignStatsResponse:
       type: object
       properties:
@@ -2147,6 +2154,13 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '409':
+          description: >-
+            No shift covers this time / all shifts full, or this vehicle already
+            has an active booking overlapping the requested window.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
     get:
       tags: [orders]
       summary: List my orders
@@ -2229,6 +2243,13 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/OrderResponse' }
+        '409':
+          description: >-
+            The new shift is full at this time, or this vehicle already has
+            another active booking overlapping the new window.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /me/orders/{id}/cancel:
     patch:
       tags: [orders]
@@ -2609,6 +2630,44 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/VoucherResponse' }
+  /voucher-campaigns:
+    get:
+      tags: [voucher-campaigns]
+      summary: List running promotions (public)
+      description: >
+        Customer-safe campaign list — the same projection as
+        `GET /voucher-campaigns/{id}`, so no `budgetVnd`, no spend counters, no
+        `maxUsesTotal`, no `publicClaimCode`.
+
+
+        Defaults to `status=active`, i.e. the promotions running right now, and
+        never returns a campaign whose validity window has already closed (the
+        lifecycle sweep is periodic, so an ACTIVE row can briefly outlive its
+        `validUntil`). Pass `status=scheduled` for upcoming campaigns or
+        `status=ended` for finished ones; `status=draft` is rejected with 400 so
+        an unannounced promotion cannot be discovered.
+
+
+        Sorted by `validUntil` ascending — the offer about to expire first.
+
+
+        Listing a campaign does not make it claimable: claiming still needs the
+        campaign's claim code, which this endpoint never returns.
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [active, scheduled, paused, ended], default: active } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VoucherCampaignPublicListResponse' }
+        '400':
+          description: Invalid query (e.g. `status=draft`)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
   /voucher-campaigns/{id}:
     get:
       tags: [voucher-campaigns]

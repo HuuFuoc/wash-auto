@@ -261,6 +261,28 @@ export function vnDateOf(at: Date): string {
   return new Date(at.getTime() + 7 * 3_600_000).toISOString().slice(0, 10);
 }
 
+/** `2026-07-30 14:30` in Vietnam local time, for user-facing messages. */
+function vnDateTimeOf(at: Date): string {
+  const shifted = new Date(at.getTime() + 7 * 3_600_000).toISOString();
+  return `${shifted.slice(0, 10)} ${shifted.slice(11, 16)}`;
+}
+
+/**
+ * Turns the `active_slot_key` index rejection into the same 409 the read-time
+ * overlap check raises, so a customer who double-submits the booking form gets
+ * a sentence instead of a 500. Any other error passes through untouched —
+ * `payos_order_code` is unique too and its collision means something else.
+ */
+function asDoubleBookingConflict(err: unknown): unknown {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/E11000|duplicate key/i.test(msg) && /active_slot_key/.test(msg)) {
+    return new ConflictException(
+      'Xe này vừa được đặt vào đúng khung giờ đó. Vui lòng chọn giờ khác.',
+    );
+  }
+  return err;
+}
+
 /**
  * Slot của ngày chứa `scheduledAt` vừa thay đổi (đơn tạo/hủy/dời/no-show) —
  * khách đang mở màn đặt lịch refetch slot của đúng ngày đó. Best-effort.
@@ -424,6 +446,17 @@ export class OrderService {
       );
     }
 
+    // Only the saved-vehicle path can collide: the inline path registers a brand
+    // new vehicle, and `license_plate` is globally unique, so a plate that is
+    // already booked cannot reach here as a second vehicle document.
+    if (savedVehicle) {
+      await this.assertVehicleNotDoubleBooked({
+        vehicleId: savedVehicle._id,
+        startMs: dto.scheduledAt.getTime(),
+        durationMinutes: cell.estimatedMinutes,
+      });
+    }
+
     const candidates = await this.staffShiftRepository.findShiftsContaining(
       dto.scheduledAt,
       cell.estimatedMinutes,
@@ -564,7 +597,7 @@ export class OrderService {
       if (voucherReserved) {
         await this.voucherService.releaseForOrder(orderId);
       }
-      throw err;
+      throw asDoubleBookingConflict(err);
     }
 
     // An order that is CONFIRMED the moment it is created (cash bookings, and
@@ -849,6 +882,46 @@ export class OrderService {
   }
 
   /**
+   * Rejects a booking whose wash window overlaps one the same car already has.
+   *
+   * Shift capacity is counted per washer, so nothing in that check stops one car
+   * being booked twice into the same time — two free washers, or two different
+   * services in one slot, and the same vehicle ends up owing two washes it can
+   * only be present for once. This is the rule that says a car is in one place
+   * at a time; it is deliberately independent of who owns it, since a licence
+   * plate is unique across the whole system.
+   *
+   * Read-then-write, so two concurrent bookings can both pass here — the unique
+   * index on `active_slot_key` is what closes that window for the identical-time
+   * case, which is the one a double-submitted form produces.
+   */
+  private async assertVehicleNotDoubleBooked(args: {
+    vehicleId: Types.ObjectId;
+    startMs: number;
+    durationMinutes: number;
+    excludeOrderId?: Types.ObjectId | string;
+  }): Promise<void> {
+    const endMs = args.startMs + args.durationMinutes * 60_000;
+    const existing = await this.orderRepository.findActiveByVehicle(
+      args.vehicleId,
+      args.excludeOrderId,
+    );
+    for (const o of existing) {
+      const otherStartMs = o.scheduled_at.getTime();
+      const otherDurMs =
+        o.estimated_minutes > 0
+          ? o.estimated_minutes * 60_000
+          : endMs - args.startMs;
+      if (otherStartMs < endMs && args.startMs < otherStartMs + otherDurMs) {
+        throw new ConflictException(
+          `Xe này đã có lịch rửa lúc ${vnDateTimeOf(o.scheduled_at)} ` +
+            'trùng với khung giờ bạn chọn. Vui lòng chọn giờ khác hoặc huỷ lịch cũ.',
+        );
+      }
+    }
+  }
+
+  /**
    * For each given shift, count its active orders whose wash window overlaps
    * [fromMs, toMs). Enforces per-time-slot concurrency (one wash per washer).
    */
@@ -943,11 +1016,26 @@ export class OrderService {
       throw new ConflictException('New shift is full at this time');
     }
 
-    const updated = await this.orderRepository.applyReschedule(
-      id,
-      new Types.ObjectId(dto.staffShiftId),
-      dto.scheduledAt,
-    );
+    // The car must not land on top of another of its own bookings. This order is
+    // excluded so moving it within its current window is not a self-conflict.
+    await this.assertVehicleNotDoubleBooked({
+      vehicleId: order.vehicle_id,
+      startMs: dto.scheduledAt.getTime(),
+      durationMinutes: durationMin,
+      excludeOrderId: order._id,
+    });
+
+    let updated: OrderDocument | null;
+    try {
+      updated = await this.orderRepository.applyReschedule(
+        id,
+        new Types.ObjectId(dto.staffShiftId),
+        dto.scheduledAt,
+        order.vehicle_id,
+      );
+    } catch (err) {
+      throw asDoubleBookingConflict(err);
+    }
     if (!updated) throw new NotFoundException('Order not found');
     console.log(
       `Order rescheduled orderId=${id} newShiftId=${dto.staffShiftId}`,

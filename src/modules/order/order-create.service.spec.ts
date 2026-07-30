@@ -45,6 +45,12 @@ function makeHarness(voucherCapVnd: number) {
   const orderRepository = {
     countActiveByCustomer: jest.fn(async () => 0),
     findActiveByShifts: jest.fn(async () => []),
+    // The car is free by default; the double-booking tests override this.
+    findActiveByVehicle: jest.fn(
+      async (): Promise<
+        { scheduled_at: Date; estimated_minutes: number }[]
+      > => [],
+    ),
     // Echo the input back as a persisted document, translating the repository's
     // camelCase input into the snake_case column names the response DTO reads.
     create: jest.fn(async (input: Record<string, unknown>) => ({
@@ -312,5 +318,98 @@ describe('OrderService.createOrder — fully discounted orders', () => {
     expect(result.status).toBe(OrderStatusEnum.PENDING_PAYMENT);
     expect(result.paymentStatus).toBe(PaymentStatusEnum.UNPAID);
     expect(h.payosService.createPaymentLink).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('OrderService.createOrder — one car, one wash at a time', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  // The stubbed service is 30 minutes long, and shift capacity is 5, so nothing
+  // in the capacity check stands in the way of booking the same car twice.
+  const SERVICE_MINUTES = 30;
+
+  /** An active booking for the same car, `offsetMinutes` from the new one. */
+  function existingBookingAt(dto: CreateOrderDto, offsetMinutes: number) {
+    return [
+      {
+        scheduled_at: new Date(
+          dto.scheduledAt.getTime() + offsetMinutes * 60_000,
+        ),
+        estimated_minutes: SERVICE_MINUTES,
+      },
+    ];
+  }
+
+  it('refuses a second booking for the same car at the very same time', async () => {
+    const h = makeHarness(30_000);
+    const dto = dtoFor(PaymentMethodEnum.CASH);
+    h.orderRepository.findActiveByVehicle.mockResolvedValueOnce(
+      existingBookingAt(dto, 0),
+    );
+
+    await expect(
+      h.service.createOrder(customerId.toString(), dto),
+    ).rejects.toThrow(/đã có lịch rửa/);
+    expect(h.orderRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('refuses a booking that only partly overlaps an existing wash', async () => {
+    // 10:00–10:30 already booked, new request at 10:15 — the car cannot be in
+    // two bays at once even though the start times differ.
+    const h = makeHarness(30_000);
+    const dto = dtoFor(PaymentMethodEnum.CASH);
+    h.orderRepository.findActiveByVehicle.mockResolvedValueOnce(
+      existingBookingAt(dto, -15),
+    );
+
+    await expect(
+      h.service.createOrder(customerId.toString(), dto),
+    ).rejects.toThrow(/đã có lịch rửa/);
+  });
+
+  it('allows a back-to-back booking that starts as the previous wash ends', async () => {
+    const h = makeHarness(30_000);
+    const dto = dtoFor(PaymentMethodEnum.CASH);
+    h.orderRepository.findActiveByVehicle.mockResolvedValueOnce(
+      existingBookingAt(dto, -SERVICE_MINUTES),
+    );
+
+    await expect(
+      h.service.createOrder(customerId.toString(), dto),
+    ).resolves.toBeDefined();
+  });
+
+  it('reports the index rejection as a conflict, not a 500, when two requests race', async () => {
+    // Both requests passed the read-time check; the unique index on
+    // active_slot_key rejected the loser.
+    const h = makeHarness(30_000);
+    h.orderRepository.create.mockRejectedValueOnce(
+      new Error(
+        'E11000 duplicate key error collection: wdp301.orders index: active_slot_key_1',
+      ),
+    );
+
+    await expect(
+      h.service.createOrder(
+        customerId.toString(),
+        dtoFor(PaymentMethodEnum.CASH),
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('leaves an unrelated duplicate-key failure alone', async () => {
+    const h = makeHarness(30_000);
+    h.orderRepository.create.mockRejectedValueOnce(
+      new Error(
+        'E11000 duplicate key error collection: wdp301.orders index: payos_order_code_1',
+      ),
+    );
+
+    await expect(
+      h.service.createOrder(
+        customerId.toString(),
+        dtoFor(PaymentMethodEnum.CASH),
+      ),
+    ).rejects.toThrow(/payos_order_code/);
   });
 });

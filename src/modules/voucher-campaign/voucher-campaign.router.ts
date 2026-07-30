@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../../common/async-handler';
 import { RoleEnum } from '../../shared/auth/types/role.enum';
 import { CreateVoucherCampaignDto } from '../../shared/voucher-campaign/dto/create-voucher-campaign.dto';
+import { QueryPublicVoucherCampaignDto } from '../../shared/voucher-campaign/dto/query-public-voucher-campaign.dto';
 import { QueryVoucherCampaignDto } from '../../shared/voucher-campaign/dto/query-voucher-campaign.dto';
 import { UpdateVoucherCampaignDto } from '../../shared/voucher-campaign/dto/update-voucher-campaign.dto';
 import { authMiddleware } from '../../middlewares/auth.middleware';
@@ -31,6 +32,11 @@ const publicController = new VoucherCampaignController(service);
 // Public router — mounted at /voucher-campaigns. No auth, same as the other
 // public config routes. Serves the customer-safe projection only.
 export const voucherCampaignRouter = Router();
+voucherCampaignRouter.get(
+  '/',
+  validateDto(QueryPublicVoucherCampaignDto, 'query'),
+  asyncHandler(publicController.list),
+);
 voucherCampaignRouter.get('/:id', asyncHandler(publicController.getOne));
 
 // Admin router — mounted at /admin/voucher-campaigns.

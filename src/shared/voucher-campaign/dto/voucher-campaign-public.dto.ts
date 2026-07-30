@@ -132,3 +132,12 @@ export class VoucherCampaignPublicDto {
     return dto;
   }
 }
+
+/** Paginated envelope for `GET /voucher-campaigns`. */
+export class VoucherCampaignPublicListResponseDto {
+  @ApiProperty({ type: [VoucherCampaignPublicDto] })
+  data: VoucherCampaignPublicDto[];
+
+  @ApiProperty({ example: { page: 1, limit: 20, total: 3, totalPages: 1 } })
+  meta: { page: number; limit: number; total: number; totalPages: number };
+}
